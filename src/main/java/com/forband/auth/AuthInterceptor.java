@@ -64,11 +64,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
-                                Object handler, Exception ex) {
-        CurrentUserHolder.clear();
-    }
+    // ThreadLocal 的清理交给 AccessLogFilter 的 finally（拦截器 afterCompletion 先于它执行）；
+    // 非 /api 请求不会设置该 ThreadLocal，故无跨请求泄漏。
 
     private String extractBearer(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
