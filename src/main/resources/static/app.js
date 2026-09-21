@@ -88,7 +88,9 @@ const BAND = {
     const items = [
       ['events.html', '活动', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
       ['members.html', '名册', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
+      ['my-leave.html', '我的请假', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
       ['stats.html', '考勤统计', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
+      ['approve-leave.html', '请假审批', ['ADMIN', 'LEADER', 'SECTION_LEADER']],
       ['admin-events.html', '活动管理', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER']],
       ['admin-members.html', '团员管理', ['ADMIN']],
       ['admin-sections.html', '声部管理', ['ADMIN']],
@@ -130,13 +132,3 @@ const BAND = {
   roleLabel: (r) => ({ ADMIN: '管理员', LEADER: '团长', CONDUCTOR: '指挥', SECTION_LEADER: '声部长', MEMBER: '团员' }[r] || r),
   ratePct: (rate) => Math.round(rate * 1000) / 10 + '%',
 };
-
-document.addEventListener('DOMContentLoaded', () => {
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = '/vendor/bootstrap.min.css';
-  document.head.prepend(link);
-  const script = document.createElement('script');
-  script.src = '/vendor/bootstrap.bundle.min.js';
-  document.head.appendChild(script);
-});
