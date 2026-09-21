@@ -24,6 +24,10 @@
   改 gitignore 时别把这条删了（期 0 发现过：`*.sql` 连 `sql/schema.sql` 一起忽略，脚本会静默不进仓库）。
 - 启动：`mvn spring-boot:run`；网页端由后端直接托管，浏览器开 `http://localhost:8080`。
   首次在新机器上跑的准备工作（建库、建账号、执行建表脚本）见 `docs/12-部署与备份.md` §12.2。
+- **停止服务要按端口找 PID 杀**（`netstat -ano | findstr :8080` → `taskkill /F /PID <pid>`）：
+  杀掉外层的 shell / mvn 进程**不会**连带杀掉它启动的 `java` 孙进程，端口会一直被占着。
+- 静态资源改动要**重新构建**才生效：Spring Boot 从 `target/classes` 读 `static/`，正在跑的实例
+  看不到刚放进 `src/main/resources/static/` 的新文件（新增文件会 404）。
 
 ## 安全
 
