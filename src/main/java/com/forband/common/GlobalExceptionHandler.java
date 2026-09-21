@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -35,6 +36,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ErrorCode.BAD_REQUEST.getHttpStatus())
                 .body(ApiResponse.fail(ErrorCode.BAD_REQUEST.getCode(),
                         ErrorCode.BAD_REQUEST.getDefaultMessage()));
+    }
+
+    /** 静态资源不存在（含浏览器每次必请求的 /favicon.ico）→ 404，不打 ERROR 堆栈（docs/14 §14.4）。 */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> noResource(NoResourceFoundException e) {
+        return ResponseEntity.status(ErrorCode.NOT_FOUND.getHttpStatus())
+                .body(ApiResponse.fail(ErrorCode.NOT_FOUND.getCode(),
+                        ErrorCode.NOT_FOUND.getDefaultMessage()));
     }
 
     @ExceptionHandler(Exception.class)
