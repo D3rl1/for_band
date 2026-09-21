@@ -1,0 +1,80 @@
+package com.forband.auth;
+
+import com.forband.common.BusinessException;
+import com.forband.common.ErrorCode;
+import com.forband.member.Member;
+import com.forband.member.MemberMapper;
+import com.forband.member.MemberStatus;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
+
+/**
+ * 认证 + 粗粒度角色拦截（DECISIONS D5/D6）。只挂在 /api/** 上。
+ * 默认拒绝：无 @RequireRole 注解的 API 一律 30001/403。
+ */
+@Component
+public class AuthInterceptor implements HandlerInterceptor {
+
+    private final TokenService tokenService;
+    private final MemberMapper memberMapper;
+    private final PermissionService permissionService;
+
+    public AuthInterceptor(TokenService tokenService, MemberMapper memberMapper,
+                           PermissionService permissionService) {
+        this.tokenService = tokenService;
+        this.memberMapper = memberMapper;
+        this.permissionService = permissionService;
+    }
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return true;
+        }
+        Long memberId = tokenService.resolveMemberId(extractBearer(request));
+        if (memberId == null) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID);
+        }
+        Member member = memberMapper.selectById(memberId);
+        if (member == null) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID);
+        }
+        if (!MemberStatus.ACTIVE.equals(member.getStatus())) {
+            tokenService.revokeAllFor(memberId);
+            throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        CurrentUser user = new CurrentUser(member.getId(), member.getName(),
+                Role.valueOf(member.getRole()), member.getSectionId(),
+                Boolean.TRUE.equals(member.getIsSystem()));
+        CurrentUserHolder.set(user);
+
+        RequireRole required = handlerMethod.getMethodAnnotation(RequireRole.class);
+        if (required == null) {
+            required = handlerMethod.getBeanType().getAnnotation(RequireRole.class);
+        }
+        if (required == null) {
+            throw new BusinessException(ErrorCode.NO_PERMISSION);
+        }
+        if (!permissionService.hasAnyRole(user, required.value())) {
+            throw new BusinessException(ErrorCode.NO_PERMISSION);
+        }
+        return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
+                                Object handler, Exception ex) {
+        CurrentUserHolder.clear();
+    }
+
+    private String extractBearer(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID);
+        }
+        return header.substring("Bearer ".length()).trim();
+    }
+}

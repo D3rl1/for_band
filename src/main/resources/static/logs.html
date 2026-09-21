@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>操作日志 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 960px;">
+  <h1 class="h4 mb-3">操作日志</h1>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover bg-white align-middle">
+      <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <nav><ul class="pagination pagination-sm" id="pager"></ul></nav>
+</div>
+<script>
+const actionLabels = {
+  ACCOUNT_CREATE: '建号', ACCOUNT_UPDATE: '修改账号', ACCOUNT_RESET_PASSWORD: '重置密码',
+  ACCOUNT_EXPORT: '导出账号表', SECTION_CREATE: '新建声部', SECTION_UPDATE: '修改声部',
+  EVENT_CREATE: '创建活动', EVENT_BATCH_CREATE: '批量生成活动', EVENT_UPDATE: '修改活动',
+  EVENT_CANCEL: '取消活动', ATTENDANCE_MARK_FOR: '代签', ATTENDANCE_SET_STATUS: '修改考勤状态',
+};
+let page = 1;
+
+async function load() {
+  const me = await BAND.renderNav('logs.html');
+  if (!me) return;
+  const d = await BAND.must(`/api/operation-logs?page=${page}&size=20`);
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const log of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="text-secondary small"></td><td></td><td></td><td class="text-secondary small"></td><td class="text-secondary small"></td><td class="small"></td>';
+    tr.children[0].textContent = log.createdAt.replace('T', ' ').slice(0, 19);
+    tr.children[1].textContent = log.operatorName || log.operatorId;
+    tr.children[2].textContent = actionLabels[log.action] || log.action;
+    tr.children[3].textContent = (log.targetType || '') + (log.targetId ? '#' + log.targetId : '');
+    tr.children[4].textContent = log.ip || '';
+    tr.children[5].textContent = compact(log.after) || compact(log.before);
+    tbody.appendChild(tr);
+  }
+  const pager = document.getElementById('pager');
+  pager.innerHTML = '';
+  const totalPages = Math.max(1, Math.ceil(d.total / d.size));
+  for (let p = 1; p <= totalPages; p++) {
+    const li = document.createElement('li');
+    li.className = 'page-item' + (p === d.page ? ' active' : '');
+    li.innerHTML = `<a class="page-link" href="#">${p}</a>`;
+    li.querySelector('a').addEventListener('click', (e) => { e.preventDefault(); page = p; load(); });
+    pager.appendChild(li);
+  }
+}
+
+function compact(json) {
+  if (!json) return '';
+  try {
+    const obj = JSON.parse(json);
+    return Object.entries(obj)
+      .filter(([k]) => k !== 'before' && k !== 'after')
+      .map(([k, v]) => `${k}=${v}`)
+      .join(' ')
+      .slice(0, 120);
+  } catch (e) {
+    return json.slice(0, 120);
+  }
+}
+
+load();
+</script>
+</body>
+</html>

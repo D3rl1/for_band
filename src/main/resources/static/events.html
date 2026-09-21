@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>活动 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 760px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">活动安排</h1>
+    <select id="kind" class="form-select form-select-sm w-auto">
+      <option value="">全部类型</option>
+      <option value="REHEARSAL">排练</option>
+      <option value="SECTION_CLASS">声部课</option>
+      <option value="DRESS_REHEARSAL">彩排</option>
+    </select>
+  </div>
+  <div id="list" class="list-group"></div>
+  <p id="empty" class="text-center text-secondary py-4 d-none">暂无活动</p>
+</div>
+<script>
+function stateBadge(e) {
+  if (e.status === 'CANCELED') return '<span class="badge text-bg-secondary">已取消</span>';
+  return `<span class="badge text-bg-light border">${BAND.kindLabel(e.kind)}</span>`;
+}
+async function load() {
+  const me = await BAND.renderNav('events.html');
+  if (!me) return;
+  const kind = document.getElementById('kind').value;
+  const d = await BAND.must(`/api/events?size=100${kind ? '&kind=' + kind : ''}`);
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  document.getElementById('empty').classList.toggle('d-none', d.list.length > 0);
+  for (const e of d.list) {
+    const canceled = e.status === 'CANCELED';
+    const item = document.createElement('a');
+    item.className = 'list-group-item list-group-item-action' + (canceled ? ' opacity-50' : '');
+    item.href = `/event-detail.html?id=${e.id}`;
+    item.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fw-bold ${canceled ? 'text-decoration-line-through' : ''}"></div>
+          <small class="text-secondary"></small>
+        </div>
+        <div></div>
+      </div>`;
+    item.querySelector('.fw-bold').textContent = e.title;
+    item.querySelector('small').textContent =
+      `${e.date} ${e.startTime.slice(0,5)}-${e.endTime.slice(0,5)}${e.location ? ' · ' + e.location : ''}${e.sectionName ? ' · ' + e.sectionName : ''}`;
+    item.querySelector('.d-flex > div:last-child').innerHTML = stateBadge(e);
+    list.appendChild(item);
+  }
+}
+document.getElementById('kind').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>

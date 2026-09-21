@@ -24,13 +24,13 @@ public class DataSeeder implements ApplicationRunner {
         if (sectionMapper.selectCount(null) > 0) {
             return;
         }
-        String[] names = {"吹管", "弹拨", "拉弦", "打击乐"};
+        String[] names = {"打击声部", "提琴声部", "胡琴声部", "吹管声部", "古扬声部", "阮声部", "琵琶声部"};
         for (int i = 0; i < names.length; i++) {
             Section section = new Section();
             section.setName(names[i]);
             section.setOrderNo(i + 1);
             sectionMapper.insert(section);
         }
-        log.info("首次启动，已写入 4 个初始声部：吹管 / 弹拨 / 拉弦 / 打击乐");
+        log.info("首次启动，已写入 7 个初始声部：打击声部 / 提琴声部 / 胡琴声部 / 吹管声部 / 古扬声部 / 阮声部 / 琵琶声部");
     }
 }

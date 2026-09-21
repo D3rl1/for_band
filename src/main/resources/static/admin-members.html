@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>团员管理 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 960px;">
+  <div class="card mb-4">
+    <div class="card-body">
+      <h1 class="h5 mb-3">新建账号</h1>
+      <form id="create-form" class="row g-2">
+        <div class="col-6 col-md-2"><input id="c-name" class="form-control form-control-sm" placeholder="姓名*" required></div>
+        <div class="col-6 col-md-2"><input id="c-account" class="form-control form-control-sm" placeholder="账号*" required></div>
+        <div class="col-6 col-md-2"><select id="c-section" class="form-select form-select-sm"></select></div>
+        <div class="col-6 col-md-2">
+          <select id="c-role" class="form-select form-select-sm">
+            <option value="MEMBER">团员</option>
+            <option value="SECTION_LEADER">声部长</option>
+            <option value="CONDUCTOR">指挥</option>
+            <option value="LEADER">团长</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2"><input id="c-instrument" class="form-control form-control-sm" placeholder="乐器"></div>
+        <div class="col-6 col-md-2"><input id="c-phone" class="form-control form-control-sm" placeholder="手机号"></div>
+        <div class="col-12"><button class="btn btn-primary btn-sm">创建并生成初始密码</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 mb-0">成员列表</h2>
+    <a class="btn btn-outline-secondary btn-sm" href="/api/admin/accounts/export">导出账号表 CSV</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover bg-white align-middle">
+      <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="pw-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center">
+        <p id="pw-text" class="fs-4 fw-bold my-2"></p>
+        <p class="small text-secondary">初始密码只显示这一次，请立即发给本人</p>
+      </div>
+      <div class="modal-footer py-1"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">我已保存</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let sections = [];
+async function load() {
+  const me = await BAND.renderNav('admin-members.html');
+  if (!me) return;
+  sections = await BAND.must('/api/sections');
+  document.getElementById('c-section').innerHTML =
+    '<option value="">无声部</option>' + sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  await loadRows();
+}
+
+async function loadRows() {
+  const d = await BAND.must('/api/members?size=100');
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const m of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td class="text-secondary"></td><td></td><td class="text-end"></td>';
+    tr.children[0].textContent = m.name;
+    tr.children[1].textContent = m.sectionName || '';
+    tr.children[2].textContent = BAND.roleLabel(m.role);
+    tr.children[3].textContent = BAND.statusLabel(m.status);
+    tr.children[4].textContent = m.account || '';
+    tr.children[5].innerHTML = m.activated ? '<span class="badge text-bg-light border">已激活</span>'
+                                            : '<span class="badge text-bg-warning">未激活</span>';
+    const action = tr.children[6];
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn btn-outline-secondary btn-sm me-1';
+    resetBtn.textContent = '重置密码';
+    resetBtn.addEventListener('click', async () => {
+      if (!confirm(`确定重置 ${m.name} 的密码？原密码与登录态立即失效。`)) return;
+      const pw = await BAND.must(`/api/admin/members/${m.id}/reset-password`, { method: 'POST' });
+      showPassword(pw);
+    });
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'btn btn-outline-warning btn-sm';
+    toggleBtn.textContent = m.status === 'ACTIVE' ? '停用' : '恢复在团';
+    toggleBtn.addEventListener('click', async () => {
+      const status = m.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      if (!confirm(`${m.name} → ${BAND.statusLabel(status)}？${status !== 'ACTIVE' ? '其登录态将被吊销。' : ''}`)) return;
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { status } });
+      BAND.toast('已更新', 'success');
+      loadRows();
+    });
+    action.append(resetBtn, toggleBtn);
+    tbody.appendChild(tr);
+  }
+}
+
+function showPassword(pw) {
+  document.getElementById('pw-text').textContent = pw;
+  new bootstrap.Modal(document.getElementById('pw-modal')).show();
+}
+
+document.getElementById('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('c-name').value.trim(),
+    account: document.getElementById('c-account').value.trim(),
+    sectionId: document.getElementById('c-section').value ? Number(document.getElementById('c-section').value) : null,
+    role: document.getElementById('c-role').value,
+    instrument: document.getElementById('c-instrument').value.trim() || null,
+    phone: document.getElementById('c-phone').value.trim() || null,
+  };
+  const created = await BAND.must('/api/admin/members', { method: 'POST', body });
+  showPassword(created.initialPassword);
+  e.target.reset();
+  loadRows();
+});
+
+load();
+</script>
+</body>
+</html>

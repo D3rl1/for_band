@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>活动管理 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+<style>fieldset { border: 1px solid #dee2e6; border-radius: .375rem; padding: 1rem; margin-bottom: 1rem; }</style>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 860px;">
+  <fieldset>
+    <legend class="h6 mb-3">单场活动</legend>
+    <form id="single-form" class="row g-2">
+      <div class="col-4 col-md-2">
+        <select id="k-kind" class="form-select form-select-sm">
+          <option value="REHEARSAL">排练</option>
+          <option value="SECTION_CLASS">声部课</option>
+          <option value="DRESS_REHEARSAL">彩排</option>
+        </select>
+      </div>
+      <div class="col-8 col-md-3"><input id="k-title" class="form-control form-control-sm" placeholder="标题*" required></div>
+      <div class="col-6 col-md-2"><input id="k-date" type="date" class="form-control form-control-sm" required></div>
+      <div class="col-3 col-md-2"><input id="k-start" type="time" class="form-control form-control-sm" required></div>
+      <div class="col-3 col-md-2"><input id="k-end" type="time" class="form-control form-control-sm" required></div>
+      <div class="col-6 col-md-2"><select id="k-section" class="form-select form-select-sm" disabled></select></div>
+      <div class="col-6 col-md-3"><input id="k-location" class="form-control form-control-sm" placeholder="地点"></div>
+      <div class="col-6 col-md-2"><button class="btn btn-primary btn-sm">创建</button></div>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend class="h6 mb-3">批量生成（按星期几，节假日之后逐场取消）</legend>
+    <form id="batch-form" class="row g-2 align-items-center">
+      <div class="col-4 col-md-2">
+        <select id="b-kind" class="form-select form-select-sm">
+          <option value="REHEARSAL">排练</option>
+          <option value="SECTION_CLASS">声部课</option>
+        </select>
+      </div>
+      <div class="col-8 col-md-3"><input id="b-title" class="form-control form-control-sm" placeholder="标题*" required></div>
+      <div class="col-4 col-md-2"><input id="b-from" type="date" class="form-control form-control-sm" required></div>
+      <div class="col-4 col-md-2"><input id="b-to" type="date" class="form-control form-control-sm" required></div>
+      <div class="col-4 col-md-3 d-flex gap-1 weekdays" id="b-weekdays"></div>
+      <div class="col-3 col-md-2"><input id="b-start" type="time" class="form-control form-control-sm" required></div>
+      <div class="col-3 col-md-2"><input id="b-end" type="time" class="form-control form-control-sm" required></div>
+      <div class="col-4 col-md-2"><input id="b-location" class="form-control form-control-sm" placeholder="地点"></div>
+      <div class="col-4 col-md-2"><select id="b-section" class="form-select form-select-sm" disabled></select></div>
+      <div class="col-4 col-md-2"><button class="btn btn-primary btn-sm">批量生成</button></div>
+    </form>
+  </fieldset>
+
+  <h2 class="h5 mt-4 mb-2">活动列表</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover bg-white align-middle">
+      <thead><tr><th>日期</th><th>类型</th><th>标题</th><th>时间</th><th>声部</th><th>状态</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+let sections = [];
+const dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+
+function syncSectionSelect(kind, select) {
+  select.disabled = kind !== 'SECTION_CLASS';
+}
+
+async function load() {
+  const me = await BAND.renderNav('admin-events.html');
+  if (!me) return;
+  sections = await BAND.must('/api/sections');
+  const options = '<option value="">无声部</option>' +
+    sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('k-section').innerHTML = options;
+  document.getElementById('b-section').innerHTML = options;
+  document.getElementById('k-kind').addEventListener('change',
+    (e) => syncSectionSelect(e.target.value, document.getElementById('k-section')));
+  document.getElementById('b-kind').addEventListener('change',
+    (e) => syncSectionSelect(e.target.value, document.getElementById('b-section')));
+  document.getElementById('b-weekdays').innerHTML = dayNames
+    .map((n, i) => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${i + 1}" id="wd${i}">
+      <label class="form-check-label small" for="wd${i}">${n}</label></div>`).join('');
+  await loadRows();
+}
+
+async function loadRows() {
+  const d = await BAND.must('/api/events?size=100');
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const e of d.list) {
+    const tr = document.createElement('tr');
+    if (e.status === 'CANCELED') tr.classList.add('opacity-50');
+    tr.innerHTML = '<td></td><td></td><td></td><td class="text-secondary"></td><td></td><td></td><td class="text-end"></td>';
+    tr.children[0].textContent = e.date;
+    tr.children[1].textContent = BAND.kindLabel(e.kind);
+    tr.children[2].textContent = e.title;
+    tr.children[3].textContent = `${e.startTime.slice(0, 5)}-${e.endTime.slice(0, 5)} ${e.location || ''}`;
+    tr.children[4].textContent = e.sectionName || '';
+    tr.children[5].innerHTML = e.status === 'CANCELED' ? '<span class="badge text-bg-secondary">已取消</span>' : '';
+    if (e.status !== 'CANCELED') {
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-outline-danger btn-sm';
+      cancelBtn.textContent = '取消';
+      cancelBtn.addEventListener('click', async () => {
+        if (!confirm(`取消「${e.title}」${e.date}？签到将关闭，统计整场排除。`)) return;
+        await BAND.must(`/api/events/${e.id}/cancel`, { method: 'POST' });
+        BAND.toast('已取消', 'success');
+        loadRows();
+      });
+      tr.children[6].appendChild(cancelBtn);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('single-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const sectionValue = document.getElementById('k-section').value;
+  const body = {
+    kind: document.getElementById('k-kind').value,
+    title: document.getElementById('k-title').value.trim(),
+    date: document.getElementById('k-date').value,
+    startTime: document.getElementById('k-start').value,
+    endTime: document.getElementById('k-end').value,
+    location: document.getElementById('k-location').value.trim() || null,
+    sectionId: sectionValue ? Number(sectionValue) : null,
+  };
+  await BAND.must('/api/events', { method: 'POST', body });
+  BAND.toast('已创建', 'success');
+  loadRows();
+});
+
+document.getElementById('batch-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const weekdays = [...document.querySelectorAll('#b-weekdays input:checked')].map((i) => Number(i.value));
+  if (weekdays.length === 0) { BAND.toast('至少选一个星期几'); return; }
+  const sectionValue = document.getElementById('b-section').value;
+  const body = {
+    kind: document.getElementById('b-kind').value,
+    title: document.getElementById('b-title').value.trim(),
+    startDate: document.getElementById('b-from').value,
+    endDate: document.getElementById('b-to').value,
+    weekdays,
+    startTime: document.getElementById('b-start').value,
+    endTime: document.getElementById('b-end').value,
+    location: document.getElementById('b-location').value.trim() || null,
+    sectionId: sectionValue ? Number(sectionValue) : null,
+  };
+  const created = await BAND.must('/api/events/batch', { method: 'POST', body });
+  BAND.toast(`已生成 ${created.length} 场`, 'success');
+  loadRows();
+});
+
+load();
+</script>
+</body>
+</html>

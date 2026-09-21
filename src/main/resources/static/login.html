@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap.min.css">
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div class="container" style="max-width: 380px;">
+  <div class="card mt-5">
+    <div class="card-body">
+      <h1 class="h4 card-title mb-4 text-center">乐团管理系统</h1>
+      <form id="login-form">
+        <div class="mb-3">
+          <label class="form-label">账号</label>
+          <input id="account" class="form-control" autocomplete="username" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">密码</label>
+          <input id="password" type="password" class="form-control" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary w-100" type="submit">登录</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const account = document.getElementById('account').value.trim();
+  const password = document.getElementById('password').value;
+  const envelope = await BAND.api('/api/auth/login', { method: 'POST', body: { account, password } });
+  if (envelope.code !== 0) {
+    BAND.toast(envelope.message || '登录失败');
+    return;
+  }
+  BAND.saveToken(envelope.data.token);
+  location.href = '/events.html';
+});
+</script>
+</body>
+</html>

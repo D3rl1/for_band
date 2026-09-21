@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名册 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 900px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">名册</h1>
+    <div class="d-flex gap-2">
+      <select id="section" class="form-select form-select-sm w-auto"></select>
+      <select id="status" class="form-select form-select-sm w-auto">
+        <option value="">全部状态</option>
+        <option value="ACTIVE">在团</option>
+        <option value="PAUSED">休团</option>
+        <option value="LEFT">退团</option>
+        <option value="GRADUATED">毕业</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover bg-white align-middle">
+      <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+async function load() {
+  const me = await BAND.renderNav('members.html');
+  if (!me) return;
+  const sections = await BAND.must('/api/sections');
+  const sel = document.getElementById('section');
+  sel.innerHTML = '<option value="">全部声部</option>' +
+    sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  sel.addEventListener('change', load);
+  document.getElementById('status').addEventListener('change', load);
+
+  const params = new URLSearchParams({ size: 100 });
+  if (sel.value) params.set('sectionId', sel.value);
+  if (document.getElementById('status').value) params.set('status', document.getElementById('status').value);
+  const d = await BAND.must('/api/members?' + params);
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const m of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td class="text-secondary"></td><td class="text-secondary"></td>';
+    tr.children[0].textContent = m.name;
+    tr.children[1].textContent = m.sectionName || '';
+    tr.children[2].textContent = m.instrument || '';
+    tr.children[3].textContent = BAND.roleLabel(m.role);
+    tr.children[4].textContent = BAND.statusLabel(m.status);
+    tr.children[5].textContent = m.account || '';
+    tr.children[6].textContent = m.phone || '';
+    tbody.appendChild(tr);
+  }
+}
+load();
+</script>
+</body>
+</html>

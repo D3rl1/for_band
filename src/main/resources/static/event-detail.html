@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>活动详情 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 760px;">
+  <div id="info" class="card mb-3"><div class="card-body">加载中…</div></div>
+  <div id="checkin-area" class="mb-3"></div>
+  <div id="banner" class="alert alert-warning py-2 d-none"></div>
+  <h2 class="h5">考勤</h2>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle bg-white">
+      <thead><tr><th>团员</th><th>声部</th><th>状态</th><th>签到时间</th><th>代签人</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div id="summary" class="text-secondary small"></div>
+</div>
+<script>
+const id = new URLSearchParams(location.search).get('id');
+const statusText = { PRESENT: '出勤', LEAVE: '请假' };
+
+async function load() {
+  const me = await BAND.renderNav('');
+  if (!me) return;
+  const e = await BAND.must(`/api/events/${id}`);
+  const canceled = e.status === 'CANCELED';
+  document.getElementById('info').innerHTML = `
+    <div class="card-body">
+      <div class="d-flex justify-content-between">
+        <h1 class="h5 mb-2 ${canceled ? 'text-decoration-line-through' : ''}"></h1>
+        <div>${canceled ? '<span class="badge text-bg-secondary">已取消</span>' : `<span class="badge text-bg-light border">${BAND.kindLabel(e.kind)}</span>`}</div>
+      </div>
+      <p class="text-secondary mb-0"></p>
+      ${e.content ? `<p class="mt-2 mb-0"></p>` : ''}
+    </div>`;
+  document.querySelector('#info h1').textContent = e.title;
+  document.querySelector('#info .text-secondary').textContent =
+    `${e.date} ${e.startTime.slice(0,5)}-${e.endTime.slice(0,5)} · ${e.location || '地点待定'}${e.sectionName ? ' · ' + e.sectionName : ''}`;
+  if (e.content) document.querySelector('#info p:last-child').textContent = e.content;
+
+  const banner = document.getElementById('banner');
+  if (e.updatedByName && e.updatedByName !== e.createdByName) {
+    banner.textContent = `已被 ${e.updatedByName} 修改于 ${e.updatedAt.replace('T', ' ').slice(0, 16)}`;
+    banner.classList.remove('d-none');
+  }
+
+  const area = document.getElementById('checkin-area');
+  if (canceled) {
+    area.innerHTML = '<div class="alert alert-secondary py-2 mb-0">活动已取消，签到关闭</div>';
+  } else if (e.myAttendanceStatus) {
+    area.innerHTML = `<div class="alert alert-success py-2 mb-0">你的状态：${statusText[e.myAttendanceStatus] || e.myAttendanceStatus}</div>`;
+  } else {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = '签到';
+    btn.addEventListener('click', async () => {
+      try {
+        await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: {} });
+        BAND.toast('签到成功', 'success');
+        load();
+      } catch (err) { /* toast 已在 must 中弹出 */ }
+    });
+    area.appendChild(btn);
+  }
+  await loadRows(me, canceled);
+}
+
+async function loadRows(me, canceled) {
+  const d = await BAND.must(`/api/events/${id}/attendance`);
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  const canChange = me.role === 'ADMIN' || me.role === 'LEADER';
+  const canMark = ['ADMIN', 'LEADER', 'SECTION_LEADER'].includes(me.role);
+  for (const r of d.rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td></td><td class="text-secondary"></td><td></td>
+      <td class="text-secondary small"></td><td class="text-secondary small"></td><td class="text-end"></td>`;
+    tr.children[0].textContent = r.name;
+    tr.children[1].textContent = r.sectionName || '';
+    tr.children[2].textContent = r.status ? statusText[r.status] : '—';
+    tr.children[3].textContent = r.markedAt ? r.markedAt.replace('T', ' ').slice(5, 16) : '';
+    tr.children[4].textContent = r.markedByName || '';
+    const action = tr.children[5];
+    if (!canceled && canMark && !r.status) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-outline-primary btn-sm';
+      btn.textContent = '代签';
+      btn.addEventListener('click', async () => {
+        await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: { memberId: r.memberId } });
+        BAND.toast(`已为 ${r.name} 签到`, 'success');
+        load();
+      });
+      action.appendChild(btn);
+    } else if (!canceled && canChange && r.status) {
+      const sel = document.createElement('select');
+      sel.className = 'form-select form-select-sm w-auto';
+      sel.innerHTML = '<option value="PRESENT">出勤</option><option value="LEAVE">请假</option>';
+      sel.value = r.status;
+      sel.addEventListener('change', async () => {
+        if (!r.recordId) return;
+        await BAND.must(`/api/attendance/${r.recordId}`, { method: 'PUT', body: { status: sel.value } });
+        BAND.toast('已更新', 'success');
+        load();
+      });
+      action.appendChild(sel);
+    }
+    tbody.appendChild(tr);
+  }
+  document.getElementById('summary').textContent =
+    `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate)}`;
+}
+
+load();
+</script>
+</body>
+</html>

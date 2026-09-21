@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>考勤统计 · 乐团管理系统</title>
+<script src="/vendor/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 760px;">
+  <h1 class="h4 mb-3" id="title">考勤统计</h1>
+  <div id="cards" class="row g-3 mb-4"></div>
+  <p class="text-secondary small mb-0">出勤率 = 出勤人次 ÷ 应到人次（含请假与缺勤）。请假日次单独列出。</p>
+</div>
+<script>
+function kindCard(label, k) {
+  return `
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 text-secondary">${label}</h2>
+          <div class="d-flex align-items-baseline gap-2">
+            <span class="fs-2 fw-bold">${BAND.ratePct(k.rate)}</span>
+            <span class="text-secondary">出勤率</span>
+          </div>
+          <p class="mb-0 small">应到 ${k.expected} · 出勤 ${k.present} · 请假 ${k.leave} · 缺勤 ${k.absent}</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function load() {
+  const me = await BAND.renderNav('stats.html');
+  if (!me) return;
+  const cards = document.getElementById('cards');
+  if (me.role === 'MEMBER') {
+    document.getElementById('title').textContent = '我的考勤';
+    const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
+    cards.innerHTML =
+      kindCard('排练', s.rehearsal) + kindCard('声部课', s.sectionClass);
+    return;
+  }
+  document.getElementById('title').textContent = '考勤统计（全部活动）';
+  const stats = await BAND.must('/api/attendance/stats');
+  cards.innerHTML = stats.kinds
+    .map((k) => kindCard(k.kind === 'SECTION_CLASS' ? '声部课' : '排练', k))
+    .join('');
+}
+load();
+</script>
+</body>
+</html>
