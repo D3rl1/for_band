@@ -10,7 +10,7 @@
 ## 当前状态
 
 **期 0 完成（2026-09-21）**：Spring Boot 3.2 本机跑通，连上本机 MySQL，
-`section` 表落库（首次启动自动写入 4 个初始声部），`/api/health` 与 `/api/sections`
+`section` 表落库（首次启动自动写入 7 个初始声部），`/api/health` 与 `/api/sections`
 验证通过，静态首页由后端托管。
 
 全部 24 个细分板块的规格已于 2026-09-21 定稿，落在 `docs/` 下。下一步从「期 1」开始
@@ -48,7 +48,7 @@
 mvn spring-boot:run
 
 # 网页端：由后端直接托管，浏览器打开 http://localhost:8080
-# 接口：GET /api/health（code=0，sectionCount=4）、GET /api/sections（4 个初始声部）
+# 接口：GET /api/health（code=0，sectionCount 与声部数一致）、GET /api/sections（声部列表）
 ```
 
 首次在新机器上跑的准备工作（建库 `band`、账号 `band_app`、执行 `sql/schema.sql`）
