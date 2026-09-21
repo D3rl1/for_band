@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>活动详情 · 乐团管理系统</title>
-<script src="/vendor/bootstrap.bundle.min.js"></script>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
 <script src="/app.js"></script>
 </head>
 <body class="bg-light">
@@ -57,6 +58,9 @@ async function load() {
   } else if (e.myAttendanceStatus) {
     area.innerHTML = `<div class="alert alert-success py-2 mb-0">你的状态：${statusText[e.myAttendanceStatus] || e.myAttendanceStatus}</div>`;
   } else {
+    const notStarted = new Date(`${e.date}T${e.startTime}`) > new Date();
+    const wrap = document.createElement('div');
+    wrap.className = 'd-flex gap-2 align-items-start flex-wrap';
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary';
     btn.textContent = '签到';
@@ -67,7 +71,15 @@ async function load() {
         load();
       } catch (err) { /* toast 已在 must 中弹出 */ }
     });
-    area.appendChild(btn);
+    wrap.appendChild(btn);
+    if (notStarted) {
+      const leaveBtn = document.createElement('button');
+      leaveBtn.className = 'btn btn-outline-warning';
+      leaveBtn.textContent = '请假';
+      leaveBtn.addEventListener('click', () => toggleLeaveForm(wrap, leaveBtn));
+      wrap.appendChild(leaveBtn);
+    }
+    area.appendChild(wrap);
   }
   await loadRows(me, canceled);
 }
@@ -116,6 +128,32 @@ async function loadRows(me, canceled) {
   }
   document.getElementById('summary').textContent =
     `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate)}`;
+}
+
+function toggleLeaveForm(wrap, leaveBtn) {
+  if (wrap.nextElementSibling && wrap.nextElementSibling.id === 'leave-form') {
+    wrap.nextElementSibling.remove();
+    return;
+  }
+  const form = document.createElement('div');
+  form.id = 'leave-form';
+  form.className = 'input-group input-group-sm mt-2';
+  const input = document.createElement('input');
+  input.className = 'form-control';
+  input.placeholder = '请假理由（可空）';
+  const submit = document.createElement('button');
+  submit.className = 'btn btn-outline-warning';
+  submit.textContent = '提交申请';
+  submit.addEventListener('click', async () => {
+    await BAND.must(`/api/events/${id}/leave-requests`, {
+      method: 'POST',
+      body: { reason: input.value.trim() || null },
+    });
+    BAND.toast('已提交，等待审批', 'success');
+    load();
+  });
+  form.append(input, submit);
+  wrap.after(form);
 }
 
 load();

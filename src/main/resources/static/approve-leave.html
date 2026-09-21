@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>请假审批 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/app.js"></script>
+</head>
+<body class="bg-light">
+<div id="navbar"></div>
+<div class="container py-4" style="max-width: 760px;">
+  <h1 class="h4 mb-1">请假审批</h1>
+  <p class="text-secondary small">只显示需要你签署的申请。整单任一方驳回即驳回；全部通过才写请假考勤。</p>
+
+  <h2 class="h5 mt-3 mb-2">待我审批</h2>
+  <div id="pending"></div>
+  <p id="pending-empty" class="text-center text-secondary py-3 d-none">没有等你审批的申请</p>
+
+  <h2 class="h5 mt-4 mb-2">全部申请（角色范围内）</h2>
+  <div id="all" class="table-responsive">
+    <table class="table table-sm table-hover bg-white align-middle">
+      <thead><tr><th>日期</th><th>活动</th><th>申请人</th><th>声部</th><th>状态</th><th>进度</th></tr></thead>
+      <tbody id="all-rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+const reqStatus = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', CANCELED: '已撤回' };
+const reqBadge = {
+  PENDING: 'text-bg-warning', APPROVED: 'text-bg-success',
+  REJECTED: 'text-bg-danger', CANCELED: 'text-bg-secondary',
+};
+
+function card(r) {
+  const el = document.createElement('div');
+  el.className = 'card mb-2' + (r.overdue ? ' border-danger' : '');
+  const body = document.createElement('div');
+  body.className = 'card-body py-2';
+  const head = document.createElement('div');
+  head.className = 'd-flex justify-content-between align-items-center';
+  const left = document.createElement('div');
+  left.innerHTML = `<span class="fw-bold"></span> <span class="text-secondary small"></span>
+    <span class="badge ${reqBadge[r.status]} ms-2"></span>` +
+    (r.overdue ? '<span class="badge text-bg-danger ms-1">逾期未批（已按缺勤计）</span>' : '');
+  left.querySelector('.fw-bold').textContent = r.memberName + ' · ' + r.eventTitle;
+  left.querySelector('.text-secondary').textContent = r.eventDate + (r.reason ? ' · ' + r.reason : '');
+  left.querySelector('.badge').textContent = reqStatus[r.status];
+  head.appendChild(left);
+  body.appendChild(head);
+
+  const progress = document.createElement('div');
+  progress.className = 'small mt-1';
+  progress.textContent = r.approvals
+    .map((a) => `${a.requiredRole === 'LEADER' ? '团长' : '声部长'}：${
+      a.decision === 'APPROVED' ? '已批' : a.decision === 'REJECTED' ? '已驳回' : '未批'
+    }${a.approverName ? '（' + a.approverName + '）' : ''}${a.note ? ' ' + a.note : ''}`)
+    .join(' · ');
+  body.appendChild(progress);
+
+  const mine = r.approvals.filter((a) => a.iCanDecide);
+  if (mine.length > 0 && r.status === 'PENDING') {
+    const note = document.createElement('input');
+    note.className = 'form-control form-control-sm mt-2';
+    note.placeholder = '审批意见（可空）';
+    const btns = document.createElement('div');
+    btns.className = 'mt-2';
+    for (const [label, cls, decision] of [['批准', 'btn-success', 'APPROVED'], ['驳回', 'btn-danger', 'REJECTED']]) {
+      const btn = document.createElement('button');
+      btn.className = `btn ${cls} btn-sm me-1`;
+      btn.textContent = label;
+      btn.addEventListener('click', async () => {
+        if (decision === 'REJECTED' && !confirm(`驳回 ${r.memberName} 的申请？整单将立即驳回。`)) return;
+        await BAND.must(`/api/leave-approvals/${mine[0].id}/decide`, {
+          method: 'POST',
+          body: { decision, note: note.value.trim() || null },
+        });
+        BAND.toast('已处理', 'success');
+        load();
+      });
+      btns.appendChild(btn);
+    }
+    body.appendChild(note);
+    body.appendChild(btns);
+  }
+  el.appendChild(body);
+  return el;
+}
+
+async function load() {
+  const me = await BAND.renderNav('approve-leave.html');
+  if (!me) return;
+  const pending = await BAND.must('/api/leave-requests?scope=needsMe&status=PENDING&size=50');
+  const host = document.getElementById('pending');
+  host.innerHTML = '';
+  document.getElementById('pending-empty').classList.toggle('d-none', pending.list.length > 0);
+  for (const r of pending.list) host.appendChild(card(r));
+
+  const all = await BAND.must('/api/leave-requests?scope=all&size=100');
+  const tbody = document.getElementById('all-rows');
+  tbody.innerHTML = '';
+  for (const r of all.list) {
+    const tr = document.createElement('tr');
+    if (r.overdue) tr.classList.add('table-danger');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td class="text-secondary small"></td>';
+    tr.children[0].textContent = r.eventDate;
+    tr.children[1].textContent = r.eventTitle;
+    tr.children[2].textContent = r.memberName;
+    tr.children[3].textContent = r.sectionName || '';
+    tr.children[4].innerHTML = `<span class="badge ${reqBadge[r.status]}"></span>`;
+    tr.children[4].querySelector('.badge').textContent = reqStatus[r.status];
+    tr.children[5].textContent = r.approvals
+      .map((a) => `${a.requiredRole === 'LEADER' ? '团长' : '声部长'} ${
+        a.decision === 'APPROVED' ? '✓' : a.decision === 'REJECTED' ? '✗' : '…'}`)
+      .join(' / ');
+    tbody.appendChild(tr);
+  }
+}
+load();
+</script>
+</body>
+</html>

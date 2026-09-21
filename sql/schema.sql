@@ -121,3 +121,31 @@ CREATE TABLE IF NOT EXISTS operation_log (
     KEY idx_target (target_type, target_id),
     KEY idx_created_at (created_at)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '操作留痕';
+
+-- ⑦ leave_request 请假申请（docs/13 §13.3⑦）。同人对同场只允许一条有效申请。
+CREATE TABLE IF NOT EXISTS leave_request (
+    id         BIGINT      NOT NULL AUTO_INCREMENT,
+    event_id   BIGINT      NOT NULL,
+    member_id  BIGINT      NOT NULL,
+    reason     VARCHAR(255) NULL COMMENT '理由',
+    status     VARCHAR(12) NOT NULL COMMENT 'PENDING/APPROVED/REJECTED/CANCELED',
+    applied_at DATETIME    NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_event_member (event_id, member_id),
+    KEY idx_status (status)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '请假申请';
+
+-- ⑧ leave_approval 请假待签记录（docs/13 §13.3⑧）。排练 2 条、声部课 1 条（DECISIONS D12）。
+CREATE TABLE IF NOT EXISTS leave_approval (
+    id               BIGINT      NOT NULL AUTO_INCREMENT,
+    leave_request_id BIGINT      NOT NULL,
+    required_role    VARCHAR(20) NOT NULL COMMENT 'SECTION_LEADER/LEADER，这一方需要谁来签',
+    approver_id      BIGINT      NULL COMMENT '实际签署人，未签时 NULL',
+    decision         VARCHAR(12) NOT NULL COMMENT 'PENDING/APPROVED/REJECTED',
+    decided_at       DATETIME    NULL,
+    note             VARCHAR(255) NULL COMMENT '审批意见',
+    PRIMARY KEY (id),
+    KEY idx_leave_request_id (leave_request_id),
+    KEY idx_approver_id (approver_id),
+    KEY idx_decision (decision)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '请假待签记录';

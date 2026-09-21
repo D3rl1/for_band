@@ -64,4 +64,38 @@ public class PermissionService {
             default -> throw new BusinessException(ErrorCode.NO_PERMISSION);
         }
     }
+
+    /**
+     * 请假待签行的签署权（docs/05 §5.5 边界情况，字面口径）：
+     * SECTION_LEADER 行 → 申请人同声部的声部长；申请人本人就是声部长 → 团长；
+     * LEADER 行 → 团长；申请人本人是团长 → 仅管理员；管理员始终可签任何行（兜底声部无长）。
+     */
+    public boolean canDecideApproval(CurrentUser decider, Role requesterRole,
+                                     Long requesterSectionId, String requiredRole) {
+        if (decider.role() == Role.ADMIN) {
+            return true;
+        }
+        if (Role.SECTION_LEADER.name().equals(requiredRole)) {
+            if (requesterRole == Role.SECTION_LEADER) {
+                return decider.role() == Role.LEADER;
+            }
+            return decider.role() == Role.SECTION_LEADER
+                    && decider.sectionId() != null
+                    && decider.sectionId().equals(requesterSectionId);
+        }
+        if (Role.LEADER.name().equals(requiredRole)) {
+            if (requesterRole == Role.LEADER) {
+                return false;
+            }
+            return decider.role() == Role.LEADER;
+        }
+        return false;
+    }
+
+    public void checkCanDecideApproval(CurrentUser decider, Role requesterRole,
+                                       Long requesterSectionId, String requiredRole) {
+        if (!canDecideApproval(decider, requesterRole, requesterSectionId, requiredRole)) {
+            throw new BusinessException(ErrorCode.NO_PERMISSION);
+        }
+    }
 }
