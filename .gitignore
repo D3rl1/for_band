@@ -1,0 +1,40 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ---- 构建与运行产物 ----
+logs/
+*.log
+
+# ---- 🔴 上传的文件（录音 / 谱子 / 照片）----
+# 这些是用户数据，体积大、且不属于代码仓库。
+# 它们随数据库一起备份（见 docs/12），但绝不该进 git。
+data/
+uploads/
+
+# ---- 🔴 配置与机密 ----
+# 数据库密码、token 密钥等一律走环境变量，不落仓库。
+application-local.yml
+application-prod.yml
+*.env
+.env
+
+# ---- 数据库备份 ----
+*.sql
+*.sql.gz
+# 建表脚本必须进仓库（表结构以 docs/13 为唯一权威）
+!sql/schema.sql
+
+# ---- 操作系统 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
