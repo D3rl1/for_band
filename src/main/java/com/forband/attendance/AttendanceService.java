@@ -21,6 +21,8 @@ import com.forband.event.EventStatus;
 import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
+import com.forband.member.MemberRoleHistory;
+import com.forband.member.MemberRoleHistoryMapper;
 import com.forband.member.MemberStatus;
 import com.forband.section.Section;
 import com.forband.section.SectionMapper;
@@ -48,18 +50,21 @@ public class AttendanceService {
     private final EventMapper eventMapper;
     private final EventService eventService;
     private final MemberMapper memberMapper;
+    private final MemberRoleHistoryMapper historyMapper;
     private final SectionMapper sectionMapper;
     private final PermissionService permissionService;
     private final OperationLogWriter opLogWriter;
 
     public AttendanceService(AttendanceMapper attendanceMapper, EventMapper eventMapper,
                              EventService eventService, MemberMapper memberMapper,
+                             MemberRoleHistoryMapper historyMapper,
                              SectionMapper sectionMapper, PermissionService permissionService,
                              OperationLogWriter opLogWriter) {
         this.attendanceMapper = attendanceMapper;
         this.eventMapper = eventMapper;
         this.eventService = eventService;
         this.memberMapper = memberMapper;
+        this.historyMapper = historyMapper;
         this.sectionMapper = sectionMapper;
         this.permissionService = permissionService;
         this.opLogWriter = opLogWriter;
@@ -253,18 +258,26 @@ public class AttendanceService {
         return new Summary(expected, (int) present, (int) leave, Math.max(absent, 0), rate);
     }
 
-    /** 应到名单（不变式 3/7）：在团、非系统账号、声部匹配、入退团日期覆盖活动当天。 */
+    /**
+     * 应到名单（不变式 3/7）：在团、非系统账号、入退团日期覆盖活动当天。
+     * <p>
+     * ⚠️ **声部匹配不能在 SQL 里按 `member.section_id` 预筛**——那只有当前值，
+     * 会把换过声部的人直接筛掉，`isExpected` 里的回溯根本没机会跑。
+     * 所以这里只按"在团 / 非系统 / 入退团日期"粗筛，声部判定全部交给
+     * {@link #sectionAt}（按 `event.date` 回溯历史）。
+     * <p>
+     * 代价：声部课要把全团 ACTIVE 成员捞出来再过滤。40 人量级可忽略（D4）。
+     */
     private List<Member> expectedMembers(Event event) {
         LambdaQueryWrapper<Member> wrapper = new LambdaQueryWrapper<Member>()
                 .eq(Member::getIsSystem, false)
-                .eq(Member::getStatus, MemberStatus.ACTIVE);
-        if (EventKind.isSectionClass(event.getKind())) {
-            wrapper.eq(Member::getSectionId, event.getSectionId());
-        }
-        wrapper.and(w -> w.isNull(Member::getJoinedAt).or().le(Member::getJoinedAt, event.getDate()))
+                .eq(Member::getStatus, MemberStatus.ACTIVE)
+                .and(w -> w.isNull(Member::getJoinedAt).or().le(Member::getJoinedAt, event.getDate()))
                 .and(w -> w.isNull(Member::getLeftAt).or().ge(Member::getLeftAt, event.getDate()))
                 .orderByAsc(Member::getId);
-        return memberMapper.selectList(wrapper);
+        return memberMapper.selectList(wrapper).stream()
+                .filter(m -> isExpected(event, m))
+                .toList();
     }
 
     private boolean isExpected(Event event, Member member) {
@@ -272,7 +285,7 @@ public class AttendanceService {
             return false;
         }
         if (EventKind.isSectionClass(event.getKind())
-                && !Objects.equals(member.getSectionId(), event.getSectionId())) {
+                && !Objects.equals(sectionAt(event.getDate(), member), event.getSectionId())) {
             return false;
         }
         LocalDate date = event.getDate();
@@ -280,6 +293,30 @@ public class AttendanceService {
             return false;
         }
         return member.getLeftAt() == null || !member.getLeftAt().isBefore(date);
+    }
+
+    /**
+     * 某人在**某一天**属于哪个声部（docs/13 不变式 7）。
+     * <p>
+     * 不能直接用 {@code member.sectionId} —— 那只有**当前值**。团员可以换声部，
+     * 若按当前声部算历史声部课，**旧声部少算一人、新声部多算一人，两边都错**。
+     * 所以按 {@code event.date} 在 {@code member_role_history} 里回溯当时那一段
+     * （不变式 8 要求变更角色时必须写历史，所以这里查得到）。
+     * <p>
+     * 查不到历史记录时退回当前声部：说明这人从没换过声部，"当时"就等于"现在"。
+     * <p>
+     * 注：这里是逐条查（40 人 × 几十场量级完全无压力，见 D4）。真到几千人再谈批量预取。
+     */
+    private Long sectionAt(LocalDate date, Member member) {
+        MemberRoleHistory h = historyMapper.selectOne(
+                new LambdaQueryWrapper<MemberRoleHistory>()
+                        .eq(MemberRoleHistory::getMemberId, member.getId())
+                        .le(MemberRoleHistory::getFromDate, date)
+                        .and(w -> w.isNull(MemberRoleHistory::getToDate)
+                                .or().ge(MemberRoleHistory::getToDate, date))
+                        .orderByDesc(MemberRoleHistory::getFromDate)
+                        .last("LIMIT 1"));
+        return h == null ? member.getSectionId() : h.getSectionId();
     }
 
     private void ensureInWindow(Event event) {

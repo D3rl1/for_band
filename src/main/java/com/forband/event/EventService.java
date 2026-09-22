@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -103,6 +104,8 @@ public class EventService {
         checkCreatePermission(operator, request.kind(), request.sectionId());
         validateKindAndSection(request.kind(), request.sectionId());
 
+        validateTimeRange(request.startTime(), request.endTime());
+
         Event event = new Event();
         applyCreate(event, request.kind(), request.title(), request.date(), request.startTime(),
                 request.endTime(), request.location(), request.sectionId(), request.content());
@@ -112,6 +115,28 @@ public class EventService {
         return get(event.getId(), operator);
     }
 
+    /**
+     * 活动时间校验（docs/13 不变式 12、docs/04「时间校验」）。
+     * <p>
+     * 两个字段都是 {@code time}（无日期），所以 {@code start < end} **同时**意味着"不跨天"——
+     * 跨午夜的活动在这里会被直接拒掉。这是有意的：签到窗口 = {@code end + 2h}，
+     * 跨天会算到第二天去，而民乐团没有跨天场景。
+     * <p>
+     * ⚠️ 三条路径都要校验：单场创建 / 单场修改 / 批量生成。
+     * 曾经只在批量里拦，单场那两条路径能直接打接口绕过去。
+     */
+    private void validateTimeRange(LocalTime start, LocalTime end) {
+        if (start == null || end == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "缺少开始或结束时间");
+        }
+        if (start.isAfter(end)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "开始时间晚于结束时间");
+        }
+        if (start.equals(end)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "开始时间与结束时间不能相同");
+        }
+    }
+
     @Transactional
     public List<EventView> batchCreate(EventBatchRequest request, CurrentUser operator) {
         checkCreatePermission(operator, request.kind(), request.sectionId());
@@ -119,9 +144,7 @@ public class EventService {
         if (request.startDate().isAfter(request.endDate())) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "开始日期晚于结束日期");
         }
-        if (request.startTime().isAfter(request.endTime())) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "开始时间晚于结束时间");
-        }
+        validateTimeRange(request.startTime(), request.endTime());
         List<DayOfWeek> weekdays = request.weekdays().stream()
                 .map(d -> DayOfWeek.of(((d - 1) % 7) + 1))
                 .distinct().toList();
@@ -160,6 +183,8 @@ public class EventService {
                 "endTime", event.getEndTime().toString(),
                 "status", event.getStatus()));
         checkEditPermission(operator, event);
+
+        validateTimeRange(request.startTime(), request.endTime());
 
         Event upd = new Event();
         upd.setId(id);

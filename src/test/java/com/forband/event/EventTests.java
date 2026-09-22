@@ -116,4 +116,31 @@ class EventTests extends IntegrationTestBase {
                 java.time.LocalTime.of(18, 0), java.time.LocalTime.of(20, 0),
                 null, section1, null), currentUserOf(secLeader2Id)));
     }
+
+    /**
+     * docs/13 不变式 12 / docs/04「时间校验」：`start &lt; end`，且单场不跨天
+     * （两个字段都是 `time`、无日期，所以"跨天"就是 `start &gt; end`）。
+     * <p>
+     * 起因（评审 A2）：原本**只有批量生成**拦了这条，**单场创建与修改能直接打接口绕过去**。
+     */
+    @Test
+    void event_time_range_validated_on_create_and_update() {
+        java.time.LocalTime t19 = java.time.LocalTime.of(19, 0);
+        java.time.LocalTime t21 = java.time.LocalTime.of(21, 0);
+        LocalDate tomorrow = LocalDate.now().plusDays(1);
+
+        // 单场创建：开始晚于结束（= 跨天）
+        assertThrows(BusinessException.class, () -> eventService.create(new EventCreateRequest(
+                "REHEARSAL", "倒着排的排练", tomorrow, t21, t19, null, null, null), admin));
+        // 单场创建：开始等于结束
+        assertThrows(BusinessException.class, () -> eventService.create(new EventCreateRequest(
+                "REHEARSAL", "零长排练", tomorrow, t19, t19, null, null, null), admin));
+
+        // 单场修改：同一条规则也要拦
+        long ok = eventService.create(new EventCreateRequest(
+                "REHEARSAL", "正常排练", tomorrow, t19, t21, null, null, null), admin).id();
+        assertThrows(BusinessException.class, () -> eventService.update(ok,
+                new com.forband.event.dto.EventUpdateRequest(
+                        "改成倒着的", tomorrow, t21, t19, null, null, null), admin));
+    }
 }

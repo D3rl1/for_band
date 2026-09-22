@@ -115,7 +115,7 @@ const BAND = {
       <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false">
         <span class="txt">概览</span></button>
       <aside class="sidebar">
-        <div class="brand">民 乐 管 弦 乐 团</div>
+        <div class="brand">山水民族管弦乐团</div>
         <nav class="menu">${links}</nav>
         <div class="foot">${me.name} · ${roleNames[me.role] || me.role}<br>
           <a href="#" id="sound-toggle">声音 ${soundOn ? '开' : '关'}</a> ·

@@ -99,7 +99,7 @@ h1 { font-size: 27px; letter-spacing: .02em; }
   transition: margin-left var(--t-base) var(--ease);
   margin-left: 0;
 }
-body.nav-collapsed .sidebar { margin-left: -236px; }
+html.nav-collapsed .sidebar { margin-left: -236px; }
 
 .sidebar .brand { color: var(--silk); font-size: 12.5px; letter-spacing: .32em; margin-bottom: 44px; }
 .sidebar .menu { display: flex; flex-direction: column; gap: 3px; }
@@ -132,7 +132,7 @@ body.nav-collapsed .sidebar { margin-left: -236px; }
   box-shadow: 3px 0 8px rgba(42, 29, 20, .22);
   transition: margin-left var(--t-base) var(--ease), background-color var(--t-fast) ease-out;
 }
-body:not(.nav-collapsed) .nav-toggle { margin-left: 236px; }
+html:not(.nav-collapsed) .nav-toggle { margin-left: 236px; }
 .nav-toggle:hover { background: #4A3527; color: var(--silk); }
 .nav-toggle:focus-visible { outline: 2px solid var(--shellhi); outline-offset: 2px; }
 
@@ -287,8 +287,10 @@ input:focus, select:focus, textarea:focus {
 /* ============ §10 手机 ============ */
 @media (max-width: 720px) {
   .layout { flex-direction: column; }
+  /* 手机上**不应用收起状态**：侧栏直接是顶部一条、常显。
+     曾经这里写过 `html.nav-collapsed .sidebar{display:none}`，而把手在手机上也是隐藏的，
+     默认又是收起 —— 结果**手机首访没有任何导航入口**。见 docs/14 §14.6.4。 */
   .sidebar { flex: none; width: 100%; padding: 18px 20px; margin-left: 0 !important; }
-  body.nav-collapsed .sidebar { display: none; }
   .sidebar .brand { margin-bottom: 14px; }
   .sidebar .menu { flex-direction: row; flex-wrap: wrap; gap: 12px; }
   .sidebar .menu a { padding: 4px 0; }

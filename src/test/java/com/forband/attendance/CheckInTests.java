@@ -52,7 +52,9 @@ class CheckInTests extends IntegrationTestBase {
     void check_in_outside_window_40003() throws Exception {
         // 入团日期回拨 3 天，否则过去的活动会先撞上 joined_at 应到边界（422）而非窗口判定
         jdbc.update("UPDATE member SET joined_at = CURDATE() - INTERVAL 3 DAY WHERE id = ?", memberAId);
-        long eventId = event(startsInMinutes(-180), 60); // 已结束超 2 小时
+        // 用 -300 而不是 -180：签到窗口关闭时间 = end + 2h，而 -180 时关闭时间**正好等于造活动那一刻**。
+        // 只要整段执行落在同一个系统时钟刻度内（Windows 约 15ms），isAfter 就为 false → 偶发假失败。
+        long eventId = event(startsInMinutes(-300), 60); // 已结束 4 小时，明确在窗口外
         api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(40003));
