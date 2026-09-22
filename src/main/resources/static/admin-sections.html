@@ -5,29 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>声部管理 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 640px;">
-  <div class="card mb-4">
-    <div class="card-body">
-      <h1 class="h5 mb-3">新增声部</h1>
-      <form id="create-form" class="row g-2">
-        <div class="col-7"><input id="s-name" class="form-control form-control-sm" placeholder="声部名*" required></div>
-        <div class="col-3"><input id="s-order" type="number" class="form-control form-control-sm" placeholder="顺序" value="0"></div>
-        <div class="col-2"><button class="btn btn-primary btn-sm w-100">添加</button></div>
-      </form>
-    </div>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-sm bg-white align-middle">
-      <thead><tr><th>顺序</th><th>声部名</th><th></th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </div>
+
+<div class="cell mb-4">
+  <div class="lab">新增声部</div>
+  <form id="create-form" class="row g-2">
+    <div class="col-7"><input id="s-name" class="w-100" placeholder="声部名*" required></div>
+    <div class="col-3"><input id="s-order" type="number" class="w-100" placeholder="顺序" value="0"></div>
+    <div class="col-2"><button class="go go-sm w-100" type="submit">添加</button></div>
+  </form>
 </div>
+<table class="tb">
+  <thead><tr><th>顺序</th><th>声部名</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
 <script>
 async function load() {
   const me = await BAND.renderNav('admin-sections.html');
@@ -37,9 +35,9 @@ async function load() {
   tbody.innerHTML = '';
   for (const s of list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><input type="number" class="form-control form-control-sm order-input" value="${s.orderNo}" style="width:80px"></td>
-      <td><input class="form-control form-control-sm name-input" value=""></td>
-      <td class="text-end"><button class="btn btn-outline-primary btn-sm save-btn">保存</button></td>`;
+    tr.innerHTML = `<td><input type="number" class="order-input" value="${s.orderNo}"></td>
+      <td><input class="name-input w-100" value=""></td>
+      <td class="act"><button class="go go-sm save-btn">保存</button></td>`;
     tr.querySelector('.name-input').value = s.name;
     tr.querySelector('.save-btn').addEventListener('click', async () => {
       await BAND.must(`/api/admin/sections/${s.id}`, {

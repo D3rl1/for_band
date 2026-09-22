@@ -5,24 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>我的请假 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 760px;">
-  <h1 class="h4 mb-3">我的请假</h1>
-  <p class="text-secondary small">在活动详情页提交申请。排练需声部长与团长都批，声部课只需声部长；
-  活动开始前可撤回。逾期未批的申请自动按缺勤计。</p>
-  <div id="list"></div>
-  <p id="empty" class="text-center text-secondary py-4 d-none">还没有请假记录</p>
-</div>
+
+<p class="chip mb-3">排练需声部长与团长都批，声部课只需声部长；活动开始前可撤回；逾期未批按缺勤计。</p>
+<div id="list"></div>
+<p id="empty" class="py-4" hidden>还没有请假记录</p>
+
 <script>
 const reqStatus = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', CANCELED: '已撤回' };
-const reqBadge = {
-  PENDING: 'text-bg-warning', APPROVED: 'text-bg-success',
-  REJECTED: 'text-bg-danger', CANCELED: 'text-bg-secondary',
-};
+
+function progressText(r) {
+  return r.approvals
+    .map((a) => `${a.requiredRole === 'LEADER' ? '团长' : '声部长'}：${
+      a.decision === 'APPROVED' ? '已批' : a.decision === 'REJECTED' ? '已驳回' : '未批'
+    }${a.approverName ? '（' + a.approverName + '）' : ''}${a.note ? ' ' + a.note : ''}`)
+    .join(' · ');
+}
 
 async function load() {
   const me = await BAND.renderNav('my-leave.html');
@@ -30,24 +34,30 @@ async function load() {
   const d = await BAND.must('/api/leave-requests?scope=mine&size=50');
   const host = document.getElementById('list');
   host.innerHTML = '';
-  document.getElementById('empty').classList.toggle('d-none', d.list.length > 0);
+  document.getElementById('empty').hidden = d.list.length > 0;
   for (const r of d.list) {
     const card = document.createElement('div');
-    card.className = 'card mb-2';
-    const body = document.createElement('div');
-    body.className = 'card-body py-2';
+    card.className = 'cell mb-3';
     const head = document.createElement('div');
     head.className = 'd-flex justify-content-between align-items-center';
-    const title = document.createElement('div');
-    title.innerHTML = `<span class="fw-bold"></span>
-      <span class="badge ${reqBadge[r.status]} ms-2"></span>` +
-      (r.overdue ? '<span class="badge text-bg-danger ms-1">逾期未批</span>' : '');
-    title.querySelector('.fw-bold').textContent = `${r.eventDate} ${r.eventTitle}`;
-    title.querySelector('.badge').textContent = reqStatus[r.status];
+    const title = document.createElement('h2');
+    title.className = 'mb-0';
+    title.textContent = `${r.eventDate} ${r.eventTitle}`;
     head.appendChild(title);
+    const state = document.createElement('span');
+    state.className = 'chip' + (r.status === 'REJECTED' || r.overdue ? ' warn' : '');
+    state.textContent = r.overdue ? '逾期未批' : reqStatus[r.status];
+    head.appendChild(state);
+    card.appendChild(head);
+
+    const detail = document.createElement('p');
+    detail.className = 'chip mb-0 mt-2';
+    detail.textContent = (r.reason ? `理由：${r.reason} · ` : '') + progressText(r);
+    card.appendChild(detail);
+
     if (r.status === 'PENDING') {
       const btn = document.createElement('button');
-      btn.className = 'btn btn-outline-secondary btn-sm';
+      btn.className = 'go go-ghost go-sm mt-2';
       btn.textContent = '撤回';
       btn.addEventListener('click', async () => {
         if (!confirm('确定撤回这条申请？')) return;
@@ -55,18 +65,8 @@ async function load() {
         BAND.toast('已撤回', 'success');
         load();
       });
-      head.appendChild(btn);
+      card.appendChild(btn);
     }
-    body.appendChild(head);
-    const detail = document.createElement('div');
-    detail.className = 'small text-secondary mt-1';
-    const approverParts = r.approvals.map((a) =>
-      `${a.requiredRole === 'LEADER' ? '团长' : '声部长'}：${
-        a.decision === 'APPROVED' ? '已批' : a.decision === 'REJECTED' ? '已驳回' : '未批'
-      }${a.approverName ? '（' + a.approverName + '）' : ''}${a.note ? ' ' + a.note : ''}`);
-    detail.textContent = (r.reason ? '理由：' + r.reason + ' · ' : '') + approverParts.join(' · ');
-    body.appendChild(detail);
-    card.appendChild(body);
     host.appendChild(card);
   }
 }

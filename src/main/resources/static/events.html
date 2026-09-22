@@ -5,57 +5,193 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>活动 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 760px;">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0">活动安排</h1>
-    <select id="kind" class="form-select form-select-sm w-auto">
-      <option value="">全部类型</option>
-      <option value="REHEARSAL">排练</option>
-      <option value="SECTION_CLASS">声部课</option>
-      <option value="DRESS_REHEARSAL">彩排</option>
-    </select>
+
+<section class="grid mb-4" id="bento">
+  <div class="cell hero">
+    <div class="lab">下一场</div>
+    <h2 id="hero-title">—</h2>
+    <p class="when" id="hero-when"></p>
+    <div class="act"><a class="go" id="hero-go" href="#">签 到</a></div>
+    <p class="last" id="hero-last"></p>
   </div>
-  <div id="list" class="list-group"></div>
-  <p id="empty" class="text-center text-secondary py-4 d-none">暂无活动</p>
+  <div class="cell wide">
+    <div class="lab">这周的谱</div>
+    <div class="score" id="score"></div>
+  </div>
+  <div class="cell s1">
+    <div class="lab">我的出勤</div>
+    <p class="big" id="att-big">—</p>
+    <p class="mb-0 text-nowrap" id="att-note" hidden></p>
+    <div class="penta mt-auto" id="penta"></div>
+  </div>
+  <div class="cell s2">
+    <div class="lab">待办</div>
+    <p class="big" id="todo-big">0</p>
+    <p class="mb-0 text-nowrap" id="todo-note" hidden></p>
+  </div>
+</section>
+
+<h2 class="mb-3">活动安排</h2>
+<div class="d-flex gap-2 mb-3">
+  <select id="kind" class="w-auto">
+    <option value="">全部类型</option>
+    <option value="REHEARSAL">排练</option>
+    <option value="SECTION_CLASS">声部课</option>
+    <option value="DRESS_REHEARSAL">彩排</option>
+  </select>
 </div>
+<table class="tb">
+  <thead><tr><th>日期</th><th>类型</th><th>标题</th><th>时间</th><th>声部</th><th>状态</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p id="empty" class="py-4" hidden>暂无活动</p>
+
 <script>
-function stateBadge(e) {
-  if (e.status === 'CANCELED') return '<span class="badge text-bg-secondary">已取消</span>';
-  return `<span class="badge text-bg-light border">${BAND.kindLabel(e.kind)}</span>`;
+const KIND_LV = { REHEARSAL: 1, SECTION_CLASS: 2, DRESS_REHEARSAL: 3 };
+const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
+
+function whenText(e) {
+  return `${e.date.slice(5).replace('-', ' 月 ')} 日 ${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}` +
+    (e.location ? ` · ${e.location}` : '');
 }
+
 async function load() {
   const me = await BAND.renderNav('events.html');
   if (!me) return;
+
   const kind = document.getElementById('kind').value;
   const d = await BAND.must(`/api/events?size=100${kind ? '&kind=' + kind : ''}`);
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-  document.getElementById('empty').classList.toggle('d-none', d.list.length > 0);
-  for (const e of d.list) {
-    const canceled = e.status === 'CANCELED';
-    const item = document.createElement('a');
-    item.className = 'list-group-item list-group-item-action' + (canceled ? ' opacity-50' : '');
-    item.href = `/event-detail.html?id=${e.id}`;
-    item.innerHTML = `
-      <div class="d-flex justify-content-between align-items-center">
-        <div>
-          <div class="fw-bold ${canceled ? 'text-decoration-line-through' : ''}"></div>
-          <small class="text-secondary"></small>
-        </div>
-        <div></div>
-      </div>`;
-    item.querySelector('.fw-bold').textContent = e.title;
-    item.querySelector('small').textContent =
-      `${e.date} ${e.startTime.slice(0,5)}-${e.endTime.slice(0,5)}${e.location ? ' · ' + e.location : ''}${e.sectionName ? ' · ' + e.sectionName : ''}`;
-    item.querySelector('.d-flex > div:last-child').innerHTML = stateBadge(e);
-    list.appendChild(item);
+  renderBento(me, d.list);
+  renderList(d.list);
+}
+
+function renderBento(me, list) {
+  // 主角格：下一场（未取消、未开始的最近一场）
+  const now = Date.now();
+  const upcoming = list
+    .filter((e) => e.status !== 'CANCELED' && new Date(`${e.date}T${e.startTime}`) > now)
+    .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  const heroTitle = document.getElementById('hero-title');
+  const heroGo = document.getElementById('hero-go');
+  if (upcoming.length > 0) {
+    const next = upcoming[0];
+    heroTitle.textContent = next.title;
+    document.getElementById('hero-when').textContent = whenText(next);
+    heroGo.href = `/event-detail.html?id=${next.id}`;
+    heroGo.hidden = false;
+  } else {
+    heroTitle.textContent = '暂无安排';
+    document.getElementById('hero-when').textContent = '';
+    heroGo.hidden = true;
+  }
+
+  // 这周的谱：本周一~周日，块高低 = 活动类型；空白日写休止符 0
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const byDay = {};
+  list.filter((e) => e.status !== 'CANCELED').forEach((e) => {
+    const diff = Math.round((new Date(`${e.date}T12:00`) - new Date(monday)) / 86400000);
+    if (diff >= 0 && diff < 7) {
+      byDay[diff] = byDay[diff] || [];
+      byDay[diff].push(e);
+    }
+  });
+  const score = document.getElementById('score');
+  score.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const dayEvents = byDay[i];
+    const blk = document.createElement('div');
+    if (!dayEvents || dayEvents.length === 0) {
+      blk.className = 'blk rest';
+      blk.style.setProperty('--d', i + 1);
+      blk.style.setProperty('--lv', 2);
+      blk.textContent = '0';
+    } else {
+      const top = dayEvents.reduce((m, e) => Math.max(m, KIND_LV[e.kind] || 1), 1);
+      blk.className = 'blk';
+      blk.style.setProperty('--d', i + 1);
+      blk.style.setProperty('--lv', top);
+      blk.textContent = BAND.kindLabel(dayEvents[0].kind).slice(0, 1);
+    }
+    score.appendChild(blk);
+  }
+  const days = document.createElement('div');
+  days.className = 'days';
+  days.innerHTML = DAY_NAMES.map((n) => `<i>${n}</i>`).join('');
+  score.appendChild(days);
+
+  // 我的出勤：五声点阵 = 出勤率 × 5 档；出勤率与请假数成对展示（docs/05 硬规则）
+  fetchSummary(me);
+  renderTodo(me);
+}
+
+async function fetchSummary(me) {
+  const penta = document.getElementById('penta');
+  const names = ['宫', '商', '角', '徵', '羽'];
+  try {
+    const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
+    const rate = s.rehearsal.rate || 0;
+    const lit = Math.round(rate * 5);
+    document.getElementById('att-big').textContent = BAND.ratePct(rate);
+    const note = document.getElementById('att-note');
+    note.hidden = false;
+    note.textContent = `排练应到 ${s.rehearsal.expected} · 出勤 ${s.rehearsal.present} · 请假 ${s.rehearsal.leave}`;
+    penta.innerHTML = names.map((n, i) =>
+      `<div class="pv ${i < lit ? 'on' : ''}"><i></i><em>${n}</em></div>`).join('');
+  } catch (e) {
+    penta.innerHTML = '';
   }
 }
+
+async function renderTodo(me) {
+  const big = document.getElementById('todo-big');
+  const note = document.getElementById('todo-note');
+  const approver = ['ADMIN', 'LEADER', 'SECTION_LEADER'].includes(me.role);
+  const scope = approver ? 'needsMe' : 'mine';
+  try {
+    const d = await BAND.must(`/api/leave-requests?scope=${scope}&status=PENDING&size=50`);
+    big.textContent = d.total;
+    note.hidden = false;
+    note.textContent = approver ? '请假待我审批' : '我的请假待审批';
+  } catch (e) {
+    big.textContent = '0';
+  }
+}
+
+function renderList(list) {
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  document.getElementById('empty').hidden = list.length > 0;
+  for (const e of list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><span class="chip"></span></td>';
+    tr.children[0].textContent = e.date;
+    tr.children[1].textContent = BAND.kindLabel(e.kind);
+    const title = tr.children[2];
+    if (e.status === 'CANCELED') {
+      const s = document.createElement('s');
+      s.textContent = e.title;
+      title.appendChild(s);
+    } else {
+      title.textContent = e.title;
+    }
+    tr.children[3].textContent = `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)} ${e.location || ''}`;
+    tr.children[4].textContent = e.sectionName || '';
+    tr.querySelector('.chip').textContent = e.status === 'CANCELED' ? '已取消' : '';
+    tr.classList.add('link');
+    tr.addEventListener('click', () => { location.href = `/event-detail.html?id=${e.id}`; });
+    tbody.appendChild(tr);
+  }
+}
+
 document.getElementById('kind').addEventListener('change', load);
 load();
 </script>

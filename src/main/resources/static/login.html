@@ -5,26 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
-<div class="container" style="max-width: 380px;">
-  <div class="card mt-5">
-    <div class="card-body">
-      <h1 class="h4 card-title mb-4 text-center">乐团管理系统</h1>
-      <form id="login-form">
-        <div class="mb-3">
-          <label class="form-label">账号</label>
-          <input id="account" class="form-control" autocomplete="username" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">密码</label>
-          <input id="password" type="password" class="form-control" autocomplete="current-password" required>
-        </div>
-        <button class="btn btn-primary w-100" type="submit">登录</button>
-      </form>
-    </div>
+<body class="nav-collapsed">
+<div class="login-wrap">
+  <div class="cell">
+    <div class="lab">民 乐 管 弦 乐 团</div>
+    <h1>乐团管理系统</h1>
+    <form id="login-form" class="mt-4">
+      <div class="mb-3">
+        <label class="lab" for="account">账号</label>
+        <input id="account" class="w-100" autocomplete="username" required>
+      </div>
+      <div class="mb-4">
+        <label class="lab" for="password">密码</label>
+        <input id="password" type="password" class="w-100" autocomplete="current-password" required>
+      </div>
+      <button class="go w-100" type="submit">登 录</button>
+    </form>
   </div>
 </div>
 <script>

@@ -82,6 +82,7 @@ const BAND = {
     return this.me;
   },
 
+  /** 深色侧栏骨架（docs/14 §14.6.4）：把手常驻，菜单按角色渲染；把页面既有内容挪进 .main。 */
   async renderNav(active) {
     const me = await this.requireUser();
     if (!me) return null;
@@ -103,28 +104,86 @@ const BAND = {
     const links = items
       .filter(([, , roles]) => roles.includes(me.role))
       .map(([href, label]) =>
-        `<li class="nav-item"><a class="nav-link ${href === active ? 'active' : ''}" href="/${href}">${label}</a></li>`)
+        `<a href="/${href}" class="${href === active ? 'on' : ''}">${label}</a>`)
       .join('');
+    const soundOn = localStorage.getItem('band_sound') !== '0';
+
     const host = document.getElementById('navbar');
-    host.innerHTML = `
-      <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
-        <div class="container">
-          <a class="navbar-brand" href="/events.html">乐团</a>
-          <button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navlist">
-            <span class="navbar-toggler-icon"></span></button>
-          <div class="collapse navbar-collapse" id="navlist">
-            <ul class="navbar-nav me-auto">${links}</ul>
-            <span class="navbar-text me-3">${me.name} · ${roleNames[me.role] || me.role}</span>
-            <button id="logout-btn" class="btn btn-outline-secondary btn-sm">退出</button>
-          </div>
-        </div>
-      </nav>`;
-    host.querySelector('#logout-btn').addEventListener('click', async () => {
+    const layout = document.createElement('div');
+    layout.className = 'layout';
+    layout.innerHTML = `
+      <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false">
+        <span class="txt">概览</span></button>
+      <aside class="sidebar">
+        <div class="brand">民 乐 管 弦 乐 团</div>
+        <nav class="menu">${links}</nav>
+        <div class="foot">${me.name} · ${roleNames[me.role] || me.role}<br>
+          <a href="#" id="sound-toggle">声音 ${soundOn ? '开' : '关'}</a> ·
+          <a href="#" id="logout-link">退出</a></div>
+      </aside>`;
+    const main = document.createElement('main');
+    main.className = 'main';
+    const head = document.createElement('div');
+    head.className = 'head';
+    const activeLabel = items.find(([href]) => href === active);
+    head.innerHTML = `<h1></h1><span class="greet"></span>`;
+    head.querySelector('h1').textContent = activeLabel ? activeLabel[1] : me.name;
+    head.querySelector('.greet').textContent =
+      `${me.name} · ${roleNames[me.role] || me.role}${me.sectionName ? ' · ' + me.sectionName : ''}`;
+    main.appendChild(head);
+    layout.appendChild(main);
+
+    // 把 #navbar 之后的页面内容全部挪进 .main（toast-host 留在 body 上）
+    const moved = [];
+    let node = host.nextSibling;
+    while (node) {
+      const next = node.nextSibling;
+      if (node.nodeType === Node.ELEMENT_NODE && node.id !== 'toast-host') moved.push(node);
+      node = next;
+    }
+    moved.forEach((n) => main.appendChild(n));
+    host.replaceWith(layout);
+
+    layout.querySelector('#logout-link').addEventListener('click', async (e) => {
+      e.preventDefault();
       await this.api('/api/auth/logout', { method: 'POST' });
       this.clearToken();
       location.href = '/login.html';
     });
+    layout.querySelector('#sound-toggle').addEventListener('click', (e) => {
+      e.preventDefault();
+      const nowOn = localStorage.getItem('band_sound') !== '0';
+      localStorage.setItem('band_sound', nowOn ? '0' : '1');
+      e.target.textContent = '声音 ' + (nowOn ? '关' : '开');
+    });
+
+    if (typeof window.bandNavInit === 'function') window.bandNavInit();
     return me;
+  },
+
+  /** 签到成功的"确认"声：现场合成，单 AudioContext，指数衰减（§14.6.6）。 */
+  chime() {
+    if (localStorage.getItem('band_sound') === '0') return;
+    try {
+      if (!this._ac) {
+        this._ac = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ac = this._ac;
+      if (ac.state === 'suspended') ac.resume();
+      const t0 = ac.currentTime;
+      [[880, 0], [1318.5, 0.09]].forEach(([freq, dt]) => {
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t0 + dt);
+        gain.gain.exponentialRampToValueAtTime(0.2, t0 + dt + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.5);
+        osc.connect(gain).connect(ac.destination);
+        osc.start(t0 + dt);
+        osc.stop(t0 + dt + 0.55);
+      });
+    } catch (e) { /* 音频不可用即静默：印章与文字是视觉等价物 */ }
   },
 
   kindLabel: (kind) => ({ REHEARSAL: '排练', SECTION_CLASS: '声部课', DRESS_REHEARSAL: '彩排' }[kind] || kind),

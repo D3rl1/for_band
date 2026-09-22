@@ -5,83 +5,129 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>活动详情 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 760px;">
-  <div id="info" class="card mb-3"><div class="card-body">加载中…</div></div>
-  <div id="checkin-area" class="mb-3"></div>
-  <div id="banner" class="alert alert-warning py-2 d-none"></div>
-  <h2 class="h5">考勤</h2>
-  <div class="table-responsive">
-    <table class="table table-sm align-middle bg-white">
-      <thead><tr><th>团员</th><th>声部</th><th>状态</th><th>签到时间</th><th>代签人</th><th></th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </div>
-  <div id="summary" class="text-secondary small"></div>
-</div>
+
+<div id="info" class="cell mb-4"><div class="lab">加载中…</div></div>
+<div id="checkin-area" class="mb-4"></div>
+<div id="banner" class="cell mb-4" hidden></div>
+
+<h2 class="mb-3">考勤</h2>
+<table class="tb">
+  <thead><tr><th>团员</th><th>声部</th><th>状态</th><th>签到时间</th><th>代签人</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="chip" id="summary"></p>
+
 <script>
 const id = new URLSearchParams(location.search).get('id');
 const statusText = { PRESENT: '出勤', LEAVE: '请假' };
 
 async function load() {
-  const me = await BAND.renderNav('');
+  const me = await BAND.renderNav('events.html');
   if (!me) return;
   const e = await BAND.must(`/api/events/${id}`);
   const canceled = e.status === 'CANCELED';
-  document.getElementById('info').innerHTML = `
-    <div class="card-body">
-      <div class="d-flex justify-content-between">
-        <h1 class="h5 mb-2 ${canceled ? 'text-decoration-line-through' : ''}"></h1>
-        <div>${canceled ? '<span class="badge text-bg-secondary">已取消</span>' : `<span class="badge text-bg-light border">${BAND.kindLabel(e.kind)}</span>`}</div>
-      </div>
-      <p class="text-secondary mb-0"></p>
-      ${e.content ? `<p class="mt-2 mb-0"></p>` : ''}
-    </div>`;
-  document.querySelector('#info h1').textContent = e.title;
-  document.querySelector('#info .text-secondary').textContent =
-    `${e.date} ${e.startTime.slice(0,5)}-${e.endTime.slice(0,5)} · ${e.location || '地点待定'}${e.sectionName ? ' · ' + e.sectionName : ''}`;
-  if (e.content) document.querySelector('#info p:last-child').textContent = e.content;
+  document.querySelector('.head h1').textContent = e.title; // 页标题 = 活动名
+
+  const info = document.getElementById('info');
+  info.innerHTML = `<div class="lab"></div><h2 id="info-title" class="mb-2"></h2>
+    <p class="mb-0" id="info-when"></p><p class="mb-0 text-secondary" id="info-content" hidden></p>`;
+  info.querySelector('.lab').textContent =
+    `${BAND.kindLabel(e.kind)}${canceled ? ' · 已取消，签到关闭' : ''}`;
+  document.getElementById('info-title').textContent = e.title;
+  document.getElementById('info-when').textContent =
+    `${e.date} ${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)} · ${e.location || '地点待定'}` +
+    (e.sectionName ? ` · ${e.sectionName}` : '');
+  if (e.content) {
+    const c = document.getElementById('info-content');
+    c.hidden = false;
+    c.textContent = e.content;
+  }
 
   const banner = document.getElementById('banner');
   if (e.updatedByName && e.updatedByName !== e.createdByName) {
-    banner.textContent = `已被 ${e.updatedByName} 修改于 ${e.updatedAt.replace('T', ' ').slice(0, 16)}`;
-    banner.classList.remove('d-none');
+    banner.hidden = false;
+    banner.innerHTML = `<div class="lab">修改痕迹</div><p class="mb-0"></p>`;
+    banner.querySelector('p').textContent =
+      `已被 ${e.updatedByName} 修改于 ${e.updatedAt.replace('T', ' ').slice(0, 16)}`;
   }
 
-  const area = document.getElementById('checkin-area');
-  if (canceled) {
-    area.innerHTML = '<div class="alert alert-secondary py-2 mb-0">活动已取消，签到关闭</div>';
-  } else if (e.myAttendanceStatus) {
-    area.innerHTML = `<div class="alert alert-success py-2 mb-0">你的状态：${statusText[e.myAttendanceStatus] || e.myAttendanceStatus}</div>`;
-  } else {
-    const notStarted = new Date(`${e.date}T${e.startTime}`) > new Date();
-    const wrap = document.createElement('div');
-    wrap.className = 'd-flex gap-2 align-items-start flex-wrap';
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-primary';
-    btn.textContent = '签到';
-    btn.addEventListener('click', async () => {
-      try {
-        await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: {} });
-        BAND.toast('签到成功', 'success');
-        load();
-      } catch (err) { /* toast 已在 must 中弹出 */ }
-    });
-    wrap.appendChild(btn);
-    if (notStarted) {
-      const leaveBtn = document.createElement('button');
-      leaveBtn.className = 'btn btn-outline-warning';
-      leaveBtn.textContent = '请假';
-      leaveBtn.addEventListener('click', () => toggleLeaveForm(wrap, leaveBtn));
-      wrap.appendChild(leaveBtn);
-    }
-    area.appendChild(wrap);
-  }
+  renderCheckin(me, e, canceled);
   await loadRows(me, canceled);
+}
+
+function renderCheckin(me, e, canceled) {
+  const area = document.getElementById('checkin-area');
+  area.innerHTML = '';
+  if (canceled) return;
+  if (e.myAttendanceStatus) {
+    const done = document.createElement('p');
+    done.className = 'chip';
+    done.textContent = `你的状态：${statusText[e.myAttendanceStatus] || e.myAttendanceStatus}`;
+    area.appendChild(done);
+    return;
+  }
+  const notStarted = new Date(`${e.date}T${e.startTime}`) > new Date();
+  const wrap = document.createElement('div');
+  wrap.className = 'stamp-wrap d-inline-block';
+  const btn = document.createElement('button');
+  btn.className = 'go';
+  btn.textContent = '签 到';
+  btn.addEventListener('click', async () => {
+    try {
+      const row = await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: {} });
+      if (row) {
+        BAND.chime(); // 确认声：只在签到成功（§14.6.6），印章是视觉等价物
+        const stamp = document.createElement('span');
+        stamp.className = 'stamp on';
+        stamp.textContent = '已 签 到';
+        wrap.appendChild(stamp);
+        setTimeout(load, 700);
+      }
+    } catch (err) { /* toast 已在 must 中弹出 */ }
+  });
+  wrap.appendChild(btn);
+  area.appendChild(wrap);
+
+  if (notStarted) {
+    const leaveBtn = document.createElement('button');
+    leaveBtn.className = 'go go-ghost go-sm ms-2 align-text-bottom';
+    leaveBtn.textContent = '请假';
+    leaveBtn.addEventListener('click', () => toggleLeaveForm(wrap));
+    area.appendChild(leaveBtn);
+  }
+}
+
+function toggleLeaveForm(wrap) {
+  if (wrap.nextElementSibling && wrap.nextElementSibling.id === 'leave-form') {
+    wrap.nextElementSibling.remove();
+    return;
+  }
+  const form = document.createElement('div');
+  form.id = 'leave-form';
+  form.className = 'd-flex gap-2 mt-2';
+  const input = document.createElement('input');
+  input.className = 'flex-grow-1';
+  input.placeholder = '请假理由（可空）';
+  const submit = document.createElement('button');
+  submit.className = 'go go-ghost go-sm';
+  submit.textContent = '提交申请';
+  submit.addEventListener('click', async () => {
+    await BAND.must(`/api/events/${id}/leave-requests`, {
+      method: 'POST',
+      body: { reason: input.value.trim() || null },
+    });
+    BAND.toast('已提交，等待审批', 'success');
+    load();
+  });
+  form.append(input, submit);
+  wrap.after(form);
 }
 
 async function loadRows(me, canceled) {
@@ -92,18 +138,19 @@ async function loadRows(me, canceled) {
   const canMark = ['ADMIN', 'LEADER', 'SECTION_LEADER'].includes(me.role);
   for (const r of d.rows) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td></td><td class="text-secondary"></td><td></td>
-      <td class="text-secondary small"></td><td class="text-secondary small"></td><td class="text-end"></td>`;
+    tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
     tr.children[0].textContent = r.name;
     tr.children[1].textContent = r.sectionName || '';
-    tr.children[2].textContent = r.status ? statusText[r.status] : '—';
+    const chip = tr.querySelector('.chip');
+    if (r.status === 'LEAVE') { chip.textContent = statusText.LEAVE; }
+    else if (r.status === 'PRESENT') { chip.textContent = statusText.PRESENT; }
+    else { chip.textContent = '缺勤'; chip.classList.add('warn'); } // 缺勤是异常态：朱砂
     tr.children[3].textContent = r.markedAt ? r.markedAt.replace('T', ' ').slice(5, 16) : '';
     tr.children[4].textContent = r.markedByName || '';
     const action = tr.children[5];
     if (!canceled && canMark && !r.status) {
       const btn = document.createElement('button');
-      btn.className = 'btn btn-outline-primary btn-sm';
+      btn.className = 'go go-ghost go-sm';
       btn.textContent = '代签';
       btn.addEventListener('click', async () => {
         await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: { memberId: r.memberId } });
@@ -113,7 +160,6 @@ async function loadRows(me, canceled) {
       action.appendChild(btn);
     } else if (!canceled && canChange && r.status) {
       const sel = document.createElement('select');
-      sel.className = 'form-select form-select-sm w-auto';
       sel.innerHTML = '<option value="PRESENT">出勤</option><option value="LEAVE">请假</option>';
       sel.value = r.status;
       sel.addEventListener('change', async () => {
@@ -126,34 +172,9 @@ async function loadRows(me, canceled) {
     }
     tbody.appendChild(tr);
   }
+  // 出勤率与请假数成对展示（docs/05 硬规则）
   document.getElementById('summary').textContent =
     `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate)}`;
-}
-
-function toggleLeaveForm(wrap, leaveBtn) {
-  if (wrap.nextElementSibling && wrap.nextElementSibling.id === 'leave-form') {
-    wrap.nextElementSibling.remove();
-    return;
-  }
-  const form = document.createElement('div');
-  form.id = 'leave-form';
-  form.className = 'input-group input-group-sm mt-2';
-  const input = document.createElement('input');
-  input.className = 'form-control';
-  input.placeholder = '请假理由（可空）';
-  const submit = document.createElement('button');
-  submit.className = 'btn btn-outline-warning';
-  submit.textContent = '提交申请';
-  submit.addEventListener('click', async () => {
-    await BAND.must(`/api/events/${id}/leave-requests`, {
-      method: 'POST',
-      body: { reason: input.value.trim() || null },
-    });
-    BAND.toast('已提交，等待审批', 'success');
-    load();
-  });
-  form.append(input, submit);
-  wrap.after(form);
 }
 
 load();

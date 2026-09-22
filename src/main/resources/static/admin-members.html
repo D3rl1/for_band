@@ -5,54 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>团员管理 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 960px;">
-  <div class="card mb-4">
-    <div class="card-body">
-      <h1 class="h5 mb-3">新建账号</h1>
-      <form id="create-form" class="row g-2">
-        <div class="col-6 col-md-2"><input id="c-name" class="form-control form-control-sm" placeholder="姓名*" required></div>
-        <div class="col-6 col-md-2"><input id="c-account" class="form-control form-control-sm" placeholder="账号*" required></div>
-        <div class="col-6 col-md-2"><select id="c-section" class="form-select form-select-sm"></select></div>
-        <div class="col-6 col-md-2">
-          <select id="c-role" class="form-select form-select-sm">
-            <option value="MEMBER">团员</option>
-            <option value="SECTION_LEADER">声部长</option>
-            <option value="CONDUCTOR">指挥</option>
-            <option value="LEADER">团长</option>
-          </select>
-        </div>
-        <div class="col-6 col-md-2"><input id="c-instrument" class="form-control form-control-sm" placeholder="乐器"></div>
-        <div class="col-6 col-md-2"><input id="c-phone" class="form-control form-control-sm" placeholder="手机号"></div>
-        <div class="col-12"><button class="btn btn-primary btn-sm">创建并生成初始密码</button></div>
-      </form>
-    </div>
-  </div>
 
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <h2 class="h5 mb-0">成员列表</h2>
-    <a class="btn btn-outline-secondary btn-sm" href="/api/admin/accounts/export">导出账号表 CSV</a>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover bg-white align-middle">
-      <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th></th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </div>
+<div class="cell mb-4">
+  <div class="lab">新建账号</div>
+  <form id="create-form" class="row g-2">
+    <div class="col-6 col-md-2"><input id="c-name" class="w-100" placeholder="姓名*" required></div>
+    <div class="col-6 col-md-2"><input id="c-account" class="w-100" placeholder="账号*" required></div>
+    <div class="col-6 col-md-2"><select id="c-section" class="w-100"></select></div>
+    <div class="col-6 col-md-2">
+      <select id="c-role" class="w-100">
+        <option value="MEMBER">团员</option>
+        <option value="SECTION_LEADER">声部长</option>
+        <option value="CONDUCTOR">指挥</option>
+        <option value="LEADER">团长</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2"><input id="c-instrument" class="w-100" placeholder="乐器"></div>
+    <div class="col-6 col-md-2"><input id="c-phone" class="w-100" placeholder="手机号"></div>
+    <div class="col-12"><button class="go go-sm" type="submit">创建并生成初始密码</button></div>
+  </form>
 </div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">成员列表</h2>
+  <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
+</div>
+<table class="tb">
+  <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
 
 <div class="modal fade" id="pw-modal">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-body text-center">
-        <p id="pw-text" class="fs-4 fw-bold my-2"></p>
-        <p class="small text-secondary">初始密码只显示这一次，请立即发给本人</p>
+        <p id="pw-text" class="big my-2"></p>
+        <p class="chip">初始密码只显示这一次，请立即发给本人</p>
       </div>
-      <div class="modal-footer py-1"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">我已保存</button></div>
+      <div class="modal-footer py-1"><button class="go go-sm" data-bs-dismiss="modal">我已保存</button></div>
     </div>
   </div>
 </div>
@@ -74,17 +71,18 @@ async function loadRows() {
   tbody.innerHTML = '';
   for (const m of d.list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td class="text-secondary"></td><td></td><td class="text-end"></td>';
+    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
     tr.children[0].textContent = m.name;
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent = BAND.roleLabel(m.role);
-    tr.children[3].textContent = BAND.statusLabel(m.status);
+    const chip = tr.querySelector('.chip');
+    chip.textContent = BAND.statusLabel(m.status);
+    if (m.status !== 'ACTIVE') chip.classList.add('warn');
     tr.children[4].textContent = m.account || '';
-    tr.children[5].innerHTML = m.activated ? '<span class="badge text-bg-light border">已激活</span>'
-                                            : '<span class="badge text-bg-warning">未激活</span>';
+    tr.children[5].textContent = m.activated ? '已激活' : '未激活';
     const action = tr.children[6];
     const resetBtn = document.createElement('button');
-    resetBtn.className = 'btn btn-outline-secondary btn-sm me-1';
+    resetBtn.className = 'go go-ghost go-sm me-1';
     resetBtn.textContent = '重置密码';
     resetBtn.addEventListener('click', async () => {
       if (!confirm(`确定重置 ${m.name} 的密码？原密码与登录态立即失效。`)) return;
@@ -92,7 +90,7 @@ async function loadRows() {
       showPassword(pw);
     });
     const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'btn btn-outline-warning btn-sm';
+    toggleBtn.className = 'go go-ghost go-sm';
     toggleBtn.textContent = m.status === 'ACTIVE' ? '停用' : '恢复在团';
     toggleBtn.addEventListener('click', async () => {
       const status = m.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
@@ -110,6 +108,25 @@ function showPassword(pw) {
   document.getElementById('pw-text').textContent = pw;
   new bootstrap.Modal(document.getElementById('pw-modal')).show();
 }
+
+// 导出走 fetch 而不是 <a href>：裸链接不带 Authorization 头，永远是 401
+document.getElementById('export-btn').addEventListener('click', async () => {
+  const res = await fetch('/api/admin/accounts/export', {
+    headers: { Authorization: 'Bearer ' + BAND.token() },
+  });
+  if (!res.ok) {
+    BAND.toast('导出失败（HTTP ' + res.status + '）');
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'accounts.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  BAND.toast('已导出', 'success');
+});
 
 document.getElementById('create-form').addEventListener('submit', async (e) => {
   e.preventDefault();

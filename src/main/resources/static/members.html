@@ -5,32 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>名册 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
 </head>
-<body class="bg-light">
+<body class="nav-collapsed">
 <div id="navbar"></div>
-<div class="container py-4" style="max-width: 900px;">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0">名册</h1>
-    <div class="d-flex gap-2">
-      <select id="section" class="form-select form-select-sm w-auto"></select>
-      <select id="status" class="form-select form-select-sm w-auto">
-        <option value="">全部状态</option>
-        <option value="ACTIVE">在团</option>
-        <option value="PAUSED">休团</option>
-        <option value="LEFT">退团</option>
-        <option value="GRADUATED">毕业</option>
-      </select>
-    </div>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover bg-white align-middle">
-      <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </div>
+
+<div class="d-flex gap-2 mb-3">
+  <select id="section" class="w-auto"></select>
+  <select id="status" class="w-auto">
+    <option value="">全部状态</option>
+    <option value="ACTIVE">在团</option>
+    <option value="PAUSED">休团</option>
+    <option value="LEFT">退团</option>
+    <option value="GRADUATED">毕业</option>
+  </select>
 </div>
+<table class="tb">
+  <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
 <script>
 async function load() {
   const me = await BAND.renderNav('members.html');
@@ -50,12 +47,14 @@ async function load() {
   tbody.innerHTML = '';
   for (const m of d.list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td class="text-secondary"></td><td class="text-secondary"></td>';
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td>';
     tr.children[0].textContent = m.name;
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent = m.instrument || '';
     tr.children[3].textContent = BAND.roleLabel(m.role);
-    tr.children[4].textContent = BAND.statusLabel(m.status);
+    const chip = tr.querySelector('.chip');
+    chip.textContent = BAND.statusLabel(m.status);
+    if (m.status !== 'ACTIVE') chip.classList.add('warn'); // 休团/退团/毕业才用朱砂（§14.6.2 铁律 2）
     tr.children[5].textContent = m.account || '';
     tr.children[6].textContent = m.phone || '';
     tbody.appendChild(tr);
