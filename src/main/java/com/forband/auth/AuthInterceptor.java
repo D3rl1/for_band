@@ -4,7 +4,6 @@ import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
-import com.forband.member.MemberStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
@@ -34,18 +33,22 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (!(handler instanceof HandlerMethod handlerMethod)) {
             return true;
         }
-        Long memberId = tokenService.resolveMemberId(extractBearer(request));
-        if (memberId == null) {
+        String rawToken = extractBearer(request);
+        UserToken token = tokenService.resolveToken(rawToken);
+        if (token == null) {
             throw new BusinessException(ErrorCode.TOKEN_INVALID);
         }
+        long memberId = token.getMemberId();
         Member member = memberMapper.selectById(memberId);
         if (member == null) {
             throw new BusinessException(ErrorCode.TOKEN_INVALID);
         }
-        if (!MemberStatus.ACTIVE.equals(member.getStatus())) {
+        if (!permissionService.canLogin(member)) {
             tokenService.revokeAllFor(memberId);
             throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
         }
+        // 鉴权通过后写最后活跃（docs/01 §1.4：NULL 立即写，此后 >1 小时才写一次）
+        tokenService.touchLastSeen(token);
         CurrentUser user = new CurrentUser(member.getId(), member.getName(),
                 Role.valueOf(member.getRole()), member.getSectionId(),
                 Boolean.TRUE.equals(member.getIsSystem()));

@@ -59,7 +59,13 @@ public abstract class IntegrationTestBase {
 
     private static final String[] TABLES_IN_DELETE_ORDER = {
             "leave_approval", "leave_request", "attendance", "event",
-            "member_role_history", "user_token", "operation_log", "member", "section",
+            "member_role_history", "user_token", "operation_log",
+            "feedback", "release_note",   // 期 1.5：两表都依赖 member，必须排在它前面
+            "file",                       // 文件表：owner_id 指向 member，也必须排在它前面
+            "event_piece", "piece_attachment", "piece",   // 期 3：曲目相关三张表
+            "concert_photo", "concert_piece", "concert_cast", "concert",   // 期 4：演出四张表
+            "recording_comment", "recording",   // 期 5：录音与点评
+            "member", "section",
     };
 
     protected void cleanTables() {
@@ -103,7 +109,8 @@ public abstract class IntegrationTestBase {
     protected void setMemberStatus(CurrentUser admin, long memberId, String status) {
         memberService.update(memberId,
                 new com.forband.member.dto.MemberUpdateRequest(
-                        null, null, null, status, null, null, null, null), admin);
+                        null, null, null, status, null, null, null, null, null, null,
+                        null, null, null, null), admin);
     }
 
     protected CurrentUser currentUserOf(long memberId) {
@@ -117,7 +124,7 @@ public abstract class IntegrationTestBase {
     }
 
     protected String loginToken(String account, String password) {
-        return authService.login(new LoginRequest(account, password), "127.0.0.1").token();
+        return authService.login(new LoginRequest(account, password), "127.0.0.1", null).token();
     }
 
     // ---------- MockMvc 便捷 ----------

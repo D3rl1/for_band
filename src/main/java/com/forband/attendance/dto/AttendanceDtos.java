@@ -16,9 +16,14 @@ public final class AttendanceDtos {
     public record AttendanceMarkRequest(String status) {
     }
 
+    /**
+     * 考勤明细的一行。{@code status} 只来自 attendance 表（**区分不出"申请中"**），所以额外带
+     * {@code leaveStatus} = 该人在本场的请假状态（`PENDING` / `APPROVED` / `REJECTED` /
+     * `CANCELED` / null）——界面靠它决定要不要出现「代签」（docs/05 §5.4 / §5.6）。
+     */
     public record AttendanceRow(Long recordId, long memberId, String name, String sectionName,
                                 String status, LocalDateTime markedAt,
-                                Long markedBy, String markedByName) {
+                                Long markedBy, String markedByName, String leaveStatus) {
     }
 
     public record EventAttendance(long eventId, String eventTitle, LocalDate eventDate,

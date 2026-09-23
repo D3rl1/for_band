@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,6 +13,9 @@
 <body>
 <div id="navbar"></div>
 
+<!-- 存储用量（docs/08 §8.3/§8.5：后台显示用量、到阈值提醒）。**仅管理员渲染**；超阈值整行变朱砂。 -->
+<p id="storage" class="chip" hidden></p>
+
 <table class="tb">
   <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
   <tbody id="rows"></tbody>
@@ -20,12 +23,19 @@
 <nav class="mt-3"><ul class="pagination pagination-sm" id="pager"></ul></nav>
 
 <script>
+// ⚠️ 新增 action 串时**记得在这里加中文名**，否则日志页会显示英文裸串（本次就补了一批）
 const actionLabels = {
   ACCOUNT_CREATE: '建号', ACCOUNT_UPDATE: '修改账号', ACCOUNT_RESET_PASSWORD: '重置密码',
-  ACCOUNT_EXPORT: '导出账号表', SECTION_CREATE: '新建声部', SECTION_UPDATE: '修改声部',
+  ACCOUNT_REVOKE_SESSIONS: '踢下线', ACCOUNT_EXPORT: '导出账号表',
+  SECTION_CREATE: '新建声部', SECTION_UPDATE: '修改声部',
   EVENT_CREATE: '创建活动', EVENT_BATCH_CREATE: '批量生成活动', EVENT_UPDATE: '修改活动',
-  EVENT_CANCEL: '取消活动', ATTENDANCE_MARK_FOR: '代签', ATTENDANCE_SET_STATUS: '修改考勤状态',
+  EVENT_CANCEL: '取消活动', EVENT_SET_PIECES: '设置活动曲目单',
+  ATTENDANCE_MARK_FOR: '代签', ATTENDANCE_SET_STATUS: '修改考勤状态',
+  ATTENDANCE_OVERRIDE_BY_LEAVE: '请假批准覆盖已有签到',
   LEAVE_APPLY: '提交请假', LEAVE_DECIDE: '审批请假', LEAVE_CANCEL: '撤回请假',
+  PIECE_UPDATE: '修改曲目', PIECE_ATTACHMENT_DELETE: '删除曲目附件',
+  CONCERT_UPDATE: '修改演出档案', CONCERT_PHOTO_DELETE: '删除演出照片',
+  RECORDING_DELETE: '删除录音',
 };
 let page = 1;
 
@@ -42,9 +52,31 @@ function compact(json) {
   }
 }
 
+/** 存储用量：**只有管理员**会渲染这一行；超阈值时标成醒目色（这就是"到阈值时提醒管理员"）。 */
+async function showStorage() {
+  const el = document.getElementById('storage');
+  const s = await BAND.api('/api/admin/storage');
+  if (s.code !== 0) {
+    return;   // 非管理员（403）→ 静默不显示：这是系统维护数据，不是人人都该看的
+  }
+  const d = s.data;
+  const kinds = d.byKind
+    .filter((k) => k.count > 0)
+    .map((k) => `${k.label} ${BAND.sizeText(k.bytes)}（${k.count}）`)
+    .join(' · ');
+  el.hidden = false;
+  el.textContent = `文件存储：已用 ${BAND.sizeText(d.totalBytes)} / 警戒线 ${BAND.sizeText(d.thresholdBytes)}`
+    + `（共 ${d.totalCount} 个文件${kinds ? '：' + kinds : ''}）`
+    + (d.overThreshold ? ' —— 已超过警戒线，该清理一下了（系统不会自动删任何东西）' : '');
+  if (d.overThreshold) {
+    el.classList.add('warn');
+  }
+}
+
 async function load() {
   const me = await BAND.renderNav('logs.html');
   if (!me) return;
+  showStorage();
   const d = await BAND.must(`/api/operation-logs?page=${page}&size=20`);
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';

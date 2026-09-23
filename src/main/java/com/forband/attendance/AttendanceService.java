@@ -18,6 +18,9 @@ import com.forband.event.EventKind;
 import com.forband.event.EventMapper;
 import com.forband.event.EventService;
 import com.forband.event.EventStatus;
+import com.forband.leave.LeaveRequest;
+import com.forband.leave.LeaveRequestMapper;
+import com.forband.leave.LeaveStatus;
 import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
@@ -54,12 +57,13 @@ public class AttendanceService {
     private final SectionMapper sectionMapper;
     private final PermissionService permissionService;
     private final OperationLogWriter opLogWriter;
+    private final LeaveRequestMapper leaveRequestMapper;
 
     public AttendanceService(AttendanceMapper attendanceMapper, EventMapper eventMapper,
                              EventService eventService, MemberMapper memberMapper,
                              MemberRoleHistoryMapper historyMapper,
                              SectionMapper sectionMapper, PermissionService permissionService,
-                             OperationLogWriter opLogWriter) {
+                             OperationLogWriter opLogWriter, LeaveRequestMapper leaveRequestMapper) {
         this.attendanceMapper = attendanceMapper;
         this.eventMapper = eventMapper;
         this.eventService = eventService;
@@ -68,6 +72,7 @@ public class AttendanceService {
         this.sectionMapper = sectionMapper;
         this.permissionService = permissionService;
         this.opLogWriter = opLogWriter;
+        this.leaveRequestMapper = leaveRequestMapper;
     }
 
     // ---------- 签到 / 代签 ----------
@@ -84,14 +89,20 @@ public class AttendanceService {
                 && request.memberId() != requester.memberId();
         if (markingForOther) {
             target = requireMember(request.memberId());
-            permissionService.checkCanMarkFor(requester, target);
+            permissionService.checkCanMarkFor(requester);
+            // 有生效中请假的人不出现代签（docs/05 §5.4）——前端藏按钮只是体验，这里是闸门
+            ensureNoActiveLeave(eventId, target.getId());
         } else {
             target = requireMember(requester.memberId());
         }
         if (!isExpected(event, target)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "该团员不在此活动的应到名单中");
         }
-        ensureInWindow(event);
+        if (!markingForOther) {
+            // 窗口只约束"本人签到"：代签不受限（docs/05 §5.4），否则补录历史场次会被 40003 挡死。
+            // ⚠️ 位置不能挪到 isExpected 之前——那会改变错误码优先级（不在应到名单的人也是 40003）。
+            ensureInWindow(event);
+        }
 
         Attendance attendance = new Attendance();
         attendance.setEventId(eventId);
@@ -110,7 +121,7 @@ public class AttendanceService {
                     null, Map.of("eventId", eventId, "memberId", target.getId(),
                             "memberName", target.getName()));
         }
-        return toRow(attendance, target, requester.memberId());
+        return toRow(attendance, target, requester.memberId(), null);
     }
 
     @Transactional
@@ -124,13 +135,15 @@ public class AttendanceService {
         if (attendance == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "考勤记录不存在");
         }
+        String beforeStatus = attendance.getStatus();   // 留痕要"改前 → 改后"两个都给（docs/11 §11.2）
         attendance.setStatus(request.status());
         attendanceMapper.updateById(attendance);
         opLogWriter.write(operator, "ATTENDANCE_SET_STATUS", "attendance", attendanceId,
-                null, Map.of("eventId", attendance.getEventId(),
+                Map.of("status", beforeStatus),
+                Map.of("eventId", attendance.getEventId(),
                         "memberId", attendance.getMemberId(), "status", request.status()));
         Member member = memberMapper.selectById(attendance.getMemberId());
-        return toRow(attendance, member, null);
+        return toRow(attendance, member, null, null);
     }
 
     // ---------- 单场考勤（角色收窄） ----------
@@ -145,7 +158,9 @@ public class AttendanceService {
                 .collect(Collectors.toMap(Attendance::getMemberId, Function.identity()));
 
         List<Member> expected = expectedMembers(event);
-        boolean canSeeAll = viewer.role() != Role.MEMBER;
+        Map<Long, String> leaveStatuses = leaveStatusesOf(eventId);
+        // 荣誉团员与普通团员同样只看本人行（docs/02 §2.3：他人考勤不可见）
+        boolean canSeeAll = viewer.role() != Role.MEMBER && viewer.role() != Role.HONORARY;
         List<AttendanceRow> rows = expected.stream()
                 .filter(m -> canSeeAll || m.getId() == viewer.memberId()
                         || (viewer.role() == Role.SECTION_LEADER
@@ -155,9 +170,9 @@ public class AttendanceService {
                     Attendance record = byMember.get(m.getId());
                     if (record == null) {
                         return new AttendanceRow(null, m.getId(), m.getName(), sectionNameOf(m.getSectionId()),
-                                null, null, null, null);
+                                null, null, null, null, leaveStatuses.get(m.getId()));
                     }
-                    return toRow(record, m, null);
+                    return toRow(record, m, null, leaveStatuses.get(m.getId()));
                 })
                 .toList();
 
@@ -172,17 +187,16 @@ public class AttendanceService {
     // ---------- 个人汇总 / 聚合 ----------
 
     public MemberSummary memberSummary(long memberId, LocalDate from, LocalDate to, CurrentUser viewer) {
-        if (viewer.role() != Role.MEMBER) {
-            if (viewer.role() == Role.SECTION_LEADER) {
-                Member targetMember = requireMember(memberId);
-                if (!Objects.equals(viewer.sectionId(), targetMember.getSectionId())) {
-                    throw new BusinessException(ErrorCode.NOT_YOUR_SECTION);
-                }
-            } else {
-                permissionService.checkRole(viewer, Role.ADMIN, Role.LEADER, Role.CONDUCTOR);
+        // 荣誉团员可看自己的历史出勤汇总（docs/02 §2.3），他人不可
+        if (viewer.role() == Role.MEMBER || viewer.role() == Role.HONORARY) {
+            permissionService.checkSelf(viewer, memberId);
+        } else if (viewer.role() == Role.SECTION_LEADER) {
+            Member targetMember = requireMember(memberId);
+            if (!Objects.equals(viewer.sectionId(), targetMember.getSectionId())) {
+                throw new BusinessException(ErrorCode.NOT_YOUR_SECTION);
             }
         } else {
-            permissionService.checkSelf(viewer, memberId);
+            permissionService.checkRole(viewer, Role.ADMIN, Role.LEADER, Role.CONDUCTOR);
         }
         Member member = requireMember(memberId);
         KindSummary rehearsal = personalKindSummary(member, EventKind.REHEARSAL, from, to);
@@ -259,7 +273,8 @@ public class AttendanceService {
     }
 
     /**
-     * 应到名单（不变式 3/7）：在团、非系统账号、入退团日期覆盖活动当天。
+     * 应到名单（不变式 3/7/14）：在团、非系统账号、**非指挥**、入退团日期覆盖活动当天。
+     * 指挥不参与考勤统计（不进应到名单 ⇒ 不能签到、不进分母），但查看权照旧（docs/02 §2.3）。
      * <p>
      * ⚠️ **声部匹配不能在 SQL 里按 `member.section_id` 预筛**——那只有当前值，
      * 会把换过声部的人直接筛掉，`isExpected` 里的回溯根本没机会跑。
@@ -272,6 +287,7 @@ public class AttendanceService {
         LambdaQueryWrapper<Member> wrapper = new LambdaQueryWrapper<Member>()
                 .eq(Member::getIsSystem, false)
                 .eq(Member::getStatus, MemberStatus.ACTIVE)
+                .ne(Member::getRole, Role.CONDUCTOR.name())
                 .and(w -> w.isNull(Member::getJoinedAt).or().le(Member::getJoinedAt, event.getDate()))
                 .and(w -> w.isNull(Member::getLeftAt).or().ge(Member::getLeftAt, event.getDate()))
                 .orderByAsc(Member::getId);
@@ -281,7 +297,8 @@ public class AttendanceService {
     }
 
     private boolean isExpected(Event event, Member member) {
-        if (!MemberStatus.ACTIVE.equals(member.getStatus()) || Boolean.TRUE.equals(member.getIsSystem())) {
+        if (!MemberStatus.ACTIVE.equals(member.getStatus()) || Boolean.TRUE.equals(member.getIsSystem())
+                || Role.CONDUCTOR.name().equals(member.getRole())) {
             return false;
         }
         if (EventKind.isSectionClass(event.getKind())
@@ -326,6 +343,33 @@ public class AttendanceService {
         if (now.isBefore(start.minus(OPEN_BEFORE)) || now.isAfter(end.plus(CLOSE_AFTER))) {
             throw new BusinessException(ErrorCode.NOT_IN_WINDOW);
         }
+    }
+
+    /**
+     * "生效中的请假" = PENDING / APPROVED（与 `LeaveService.create` 的重复申请判定同一口径）。
+     * 已驳回 / 已撤回不算——他该来，要能补签（docs/05 §5.4）。
+     */
+    private void ensureNoActiveLeave(long eventId, long memberId) {
+        Long active = leaveRequestMapper.selectCount(new LambdaQueryWrapper<LeaveRequest>()
+                .eq(LeaveRequest::getEventId, eventId)
+                .eq(LeaveRequest::getMemberId, memberId)
+                .in(LeaveRequest::getStatus, LeaveStatus.PENDING, LeaveStatus.APPROVED));
+        if (active != null && active > 0) {
+            throw new BusinessException(ErrorCode.ALREADY_ON_LEAVE);
+        }
+    }
+
+    /**
+     * 一场活动里每个人的请假状态（docs/05 §5.6：出参必须区分得出"申请中"）。
+     * 按 id 升序取、后者覆盖 → 落到**最新那条**：同一人同一场最多只有一条生效中的申请
+     * （`create` 在已有生效中申请时会拦），所以"最新"就是"当下有效"的那个状态。
+     */
+    private Map<Long, String> leaveStatusesOf(long eventId) {
+        return leaveRequestMapper.selectList(new LambdaQueryWrapper<LeaveRequest>()
+                        .eq(LeaveRequest::getEventId, eventId)
+                        .orderByAsc(LeaveRequest::getId))
+                .stream()
+                .collect(Collectors.toMap(LeaveRequest::getMemberId, LeaveRequest::getStatus, (a, b) -> b));
     }
 
     private KindSummary personalKindSummary(Member member, String kind, LocalDate from, LocalDate to) {
@@ -376,7 +420,7 @@ public class AttendanceService {
                 summary.leave, summary.absent, summary.rate);
     }
 
-    private AttendanceRow toRow(Attendance record, Member member, Long selfId) {
+    private AttendanceRow toRow(Attendance record, Member member, Long selfId, String leaveStatus) {
         String markedByName = null;
         if (record.getMarkedBy() != null && !record.getMarkedBy().equals(member.getId())) {
             Member marker = memberMapper.selectById(record.getMarkedBy());
@@ -384,7 +428,7 @@ public class AttendanceService {
         }
         return new AttendanceRow(record.getId(), member.getId(), member.getName(),
                 sectionNameOf(member.getSectionId()),
-                record.getStatus(), record.getMarkedAt(), record.getMarkedBy(), markedByName);
+                record.getStatus(), record.getMarkedAt(), record.getMarkedBy(), markedByName, leaveStatus);
     }
 
     private Event requireEvent(long id) {

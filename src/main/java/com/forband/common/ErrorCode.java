@@ -29,7 +29,8 @@ public enum ErrorCode {
     LEAVE_DUPLICATE(40004, HttpStatus.CONFLICT, "该活动已有请假申请"),
     EVENT_STARTED(40005, HttpStatus.CONFLICT, "活动已开始，无法撤回"),
     ALREADY_DECIDED(40006, HttpStatus.CONFLICT, "该申请已审批"),
-    SECTION_LEADER_EXISTS(40007, HttpStatus.UNPROCESSABLE_ENTITY, "该声部已有声部长");
+    SECTION_LEADER_EXISTS(40007, HttpStatus.UNPROCESSABLE_ENTITY, "该声部已有声部长"),
+    ALREADY_ON_LEAVE(40008, HttpStatus.UNPROCESSABLE_ENTITY, "该团员此场已请假，或已提交请假申请");
 
     private final int code;
     private final HttpStatus httpStatus;

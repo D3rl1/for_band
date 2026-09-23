@@ -70,6 +70,37 @@ else
   echo
   echo "✗ 不一致：服务端还在发旧文件。" >&2
   echo "  说明这个实例把资源缓存住了，需要重启后端：" >&2
-  echo "    停掉占用 $PORT 的进程 → mvn spring-boot:run" >&2
+  echo "    ./restart.sh（或：停掉占用 $PORT 的进程 → mvn spring-boot:run）" >&2
   exit 1
+fi
+
+# ---- [4/4] 页面可达性体检：每个 static/*.html 都得在**别处**被引用过，否则界面上够不着 ----
+# 为什么查这个：新建了页面却忘了挂入口时，**没有任何东西会报错**——页面能直接打开、接口也通，
+# 就是没人点得到（2026-09-23 真发生过一次：recordings.html 忘了进 navItems）。
+#
+# 判据：这个文件名要出现在 **app.js**（navItems / offMenuTitles / href）或**别的 html**（页面里的链接）里。
+# 详情页（event-detail / piece-detail / concert-detail）就是靠"从列表页链过去"过关的，不必进导航。
+# 只警告、不中断：个别页面"故意不做入口"是合法的。
+echo
+echo "[4/4] 检查页面有没有入口（能否从别处点到）…"
+STATIC_DIR="$ROOT/src/main/resources/static"
+MISSING=""
+COUNT=0
+for f in "$STATIC_DIR"/*.html; do
+  name="$(basename "$f")"
+  case "$name" in
+    index.html|login.html) continue ;;   # index 是纯跳转壳、login 是登录页，都不进导航
+  esac
+  COUNT=$((COUNT + 1))
+  # 在除自己以外的 static 文件里找引用（-r + 排除自身）
+  refs="$(grep -rl --include='*.html' --include='*.js' -- "$name" "$STATIC_DIR" 2>/dev/null | grep -v "/$name\$" | head -1)"
+  [ -z "$refs" ] && MISSING="$MISSING $name"
+done
+
+if [ -n "$MISSING" ]; then
+  echo "  ⚠ 这些页面在别处没有任何引用，界面上点不到：" >&2
+  for name in $MISSING; do echo "      $name" >&2; done
+  echo "    要么进 app.js 的 navItems（主导航）/ offMenuTitles，要么从某个页面链过去" >&2
+else
+  echo "      ✓ $COUNT 个页面都有入口"
 fi

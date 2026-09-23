@@ -22,11 +22,16 @@ public final class LeaveDtos {
                                boolean iCanDecide) {
     }
 
-    /** overdue = 活动已结束仍 PENDING（docs/05：后台标红提醒审批人）。 */
+    /**
+     * overdue = 活动已结束仍 PENDING（docs/05：后台标红提醒审批人）。
+     * {@code attendanceOverridden} = 这一次批准**覆盖了一条已有签到**（PRESENT → LEAVE）——
+     * 界面据此当场提示（docs/05 §5.5：留痕 + 当场提示缺一不可，绝不许静默）。
+     */
     public record RequestView(long id, long eventId, String eventTitle, String eventKind,
                               String eventDate, String eventStartTime, String eventStatus,
                               long memberId, String memberName, String sectionName,
                               String reason, String status, LocalDateTime appliedAt,
-                              boolean overdue, List<ApprovalView> approvals) {
+                              boolean overdue, List<ApprovalView> approvals,
+                              boolean attendanceOverridden) {
     }
 }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -67,11 +67,14 @@ function card(r) {
       btn.textContent = label;
       btn.addEventListener('click', async () => {
         if (decision === 'REJECTED' && !confirm(`驳回 ${r.memberName} 的申请？整单将立即驳回。`)) return;
-        await BAND.must(`/api/leave-approvals/${mine[0].id}/decide`, {
+        const res = await BAND.must(`/api/leave-approvals/${mine[0].id}/decide`, {
           method: 'POST',
           body: { decision, note: note.value.trim() || null },
         });
-        BAND.toast('已处理', 'success');
+        // 覆盖了一条已有签到必须当场说清（docs/05 §5.5：留痕 + 当场提示，缺一不可，不许静默）
+        BAND.toast(res && res.attendanceOverridden
+          ? `${r.memberName} 已签到，其考勤已改为请假`
+          : '已处理', 'success');
         load();
       });
       btns.appendChild(btn);

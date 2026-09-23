@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -29,6 +29,11 @@
     </div>
     <div class="col-6 col-md-2"><input id="c-instrument" class="w-100" placeholder="乐器"></div>
     <div class="col-6 col-md-2"><input id="c-phone" class="w-100" placeholder="手机号"></div>
+    <!-- 入团日期（docs/03 §3.4 上线迁移）：默认当天，可改成更早。它门控考勤，别乱填 -->
+    <div class="col-6 col-md-2">
+      <label class="chip mb-0" for="c-joined">入团日期</label>
+      <input type="date" id="c-joined" class="w-100">
+    </div>
     <div class="col-12"><button class="go go-sm" type="submit">创建并生成初始密码</button></div>
   </form>
 </div>
@@ -38,7 +43,7 @@
   <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
 </div>
 <table class="tb">
-  <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th class="act"></th></tr></thead>
+  <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 
@@ -54,6 +59,22 @@
   </div>
 </div>
 
+<div class="modal fade" id="hon-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body">
+        <p id="hon-title" class="big my-2"></p>
+        <p class="chip">登录有效期，必填（默认毕业后 2 年，可改；过期后无法登录）</p>
+        <input type="date" id="hon-until" class="w-100" required>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
+        <button class="go go-sm" id="hon-save">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 let sections = [];
 async function load() {
@@ -62,7 +83,14 @@ async function load() {
   sections = await BAND.must('/api/sections');
   document.getElementById('c-section').innerHTML =
     '<option value="">无声部</option>' + sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('c-joined').value = todayLocal();
   await loadRows();
+}
+
+/** 本地时区的今天（不能用 toISOString——它是 UTC，早上 8 点前会差一天）。 */
+function todayLocal() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 async function loadRows() {
@@ -71,16 +99,34 @@ async function loadRows() {
   tbody.innerHTML = '';
   for (const m of d.list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
+    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td></td><td class="act"></td>';
     tr.children[0].textContent = m.name;
     tr.children[1].textContent = m.sectionName || '';
-    tr.children[2].textContent = BAND.roleLabel(m.role);
+    tr.children[2].textContent =
+      BAND.roleLabel(m.role) + (m.role === 'HONORARY' && m.honoraryUntil ? ` · 至 ${m.honoraryUntil}` : '');
     const chip = tr.querySelector('.chip');
     chip.textContent = BAND.statusLabel(m.status);
     if (m.status !== 'ACTIVE') chip.classList.add('warn');
     tr.children[4].textContent = m.account || '';
     tr.children[5].textContent = m.activated ? '已激活' : '未激活';
-    const action = tr.children[6];
+    // 入团日期：就地可改（docs/03 §3.4「必须能改」）。改它会动出勤率分母，所以先确认
+    const joinedInput = document.createElement('input');
+    joinedInput.type = 'date';
+    joinedInput.value = m.joinedAt || '';
+    joinedInput.addEventListener('change', async () => {
+      const next = joinedInput.value || null;
+      if (next === (m.joinedAt || null)) return;
+      if (!confirm(`把 ${m.name} 的入团日期改为 ${next || '（清空）'}？\n`
+          + '它会动出勤率分母——应到名单按入团日期算。')) {
+        joinedInput.value = m.joinedAt || '';
+        return;
+      }
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { joinedAt: next } });
+      BAND.toast('已更新入团日期', 'success');
+      loadRows();
+    });
+    tr.children[6].appendChild(joinedInput);
+    const action = tr.children[7];
     const resetBtn = document.createElement('button');
     resetBtn.className = 'go go-ghost go-sm me-1';
     resetBtn.textContent = '重置密码';
@@ -88,6 +134,14 @@ async function loadRows() {
       if (!confirm(`确定重置 ${m.name} 的密码？原密码与登录态立即失效。`)) return;
       const pw = await BAND.must(`/api/admin/members/${m.id}/reset-password`, { method: 'POST' });
       showPassword(pw);
+    });
+    const kickBtn = document.createElement('button');
+    kickBtn.className = 'go go-ghost go-sm me-1';
+    kickBtn.textContent = '踢下线';
+    kickBtn.addEventListener('click', async () => {
+      if (!confirm(`确定把 ${m.name} 踢下线？其全部登录态立即失效，但账号状态不变、可重新登录。`)) return;
+      await BAND.must(`/api/admin/members/${m.id}/revoke-sessions`, { method: 'POST' });
+      BAND.toast('已踢下线', 'success');
     });
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'go go-ghost go-sm';
@@ -99,7 +153,21 @@ async function loadRows() {
       BAND.toast('已更新', 'success');
       loadRows();
     });
-    action.append(resetBtn, toggleBtn);
+    action.append(resetBtn, kickBtn, toggleBtn);
+    // 荣誉团员（docs/03 §3.4）：仅已毕业可授予；有效期必填，默认毕业后 2 年；续期走同一入口
+    if (m.status === 'GRADUATED' && m.role !== 'HONORARY') {
+      const grantBtn = document.createElement('button');
+      grantBtn.className = 'go go-ghost go-sm';
+      grantBtn.textContent = '授予荣誉团员';
+      grantBtn.addEventListener('click', () => openHonModal(m, plusTwoYears(m.leftAt)));
+      action.append(grantBtn);
+    } else if (m.role === 'HONORARY') {
+      const renewBtn = document.createElement('button');
+      renewBtn.className = 'go go-ghost go-sm';
+      renewBtn.textContent = '续期';
+      renewBtn.addEventListener('click', () => openHonModal(m, m.honoraryUntil || plusTwoYears(m.leftAt)));
+      action.append(renewBtn);
+    }
     tbody.appendChild(tr);
   }
 }
@@ -108,6 +176,35 @@ function showPassword(pw) {
   document.getElementById('pw-text').textContent = pw;
   new bootstrap.Modal(document.getElementById('pw-modal')).show();
 }
+
+let honTarget = null;
+function openHonModal(m, until) {
+  honTarget = m.id;
+  document.getElementById('hon-title').textContent = `${m.name} · ${m.role === 'HONORARY' ? '续期' : '授予荣誉团员'}`;
+  document.getElementById('hon-until').value = until || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('hon-modal')).show();
+}
+
+function plusTwoYears(dateStr) {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  d.setFullYear(d.getFullYear() + 2);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+document.getElementById('hon-save').addEventListener('click', async () => {
+  const until = document.getElementById('hon-until').value;
+  if (!until) {
+    BAND.toast('必须填写登录有效期');
+    return;
+  }
+  await BAND.must(`/api/admin/members/${honTarget}`, {
+    method: 'PUT',
+    body: { role: 'HONORARY', honoraryUntil: until },
+  });
+  bootstrap.Modal.getInstance(document.getElementById('hon-modal')).hide();
+  BAND.toast('已保存', 'success');
+  loadRows();
+});
 
 // 导出走 fetch 而不是 <a href>：裸链接不带 Authorization 头，永远是 401
 document.getElementById('export-btn').addEventListener('click', async () => {
@@ -137,10 +234,12 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
     role: document.getElementById('c-role').value,
     instrument: document.getElementById('c-instrument').value.trim() || null,
     phone: document.getElementById('c-phone').value.trim() || null,
+    joinedAt: document.getElementById('c-joined').value || null,
   };
   const created = await BAND.must('/api/admin/members', { method: 'POST', body });
   showPassword(created.initialPassword);
   e.target.reset();
+  document.getElementById('c-joined').value = todayLocal();   // reset 会清空日期，补回默认当天
   loadRows();
 });
 

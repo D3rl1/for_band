@@ -8,12 +8,16 @@ import com.forband.leave.dto.LeaveDtos.CreateRequest;
 import com.forband.leave.dto.LeaveDtos.DecideRequest;
 import com.forband.leave.dto.LeaveDtos.RequestView;
 import com.forband.member.dto.MemberCreateResponse;
+import com.forband.member.dto.MemberUpdateRequest;
 import com.forband.support.IntegrationTestBase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -173,6 +177,90 @@ class LeaveFlowTests extends IntegrationTestBase {
         api(otherToken, "POST", "/api/leave-requests/" + requestId + "/cancel", null)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(30002));
+    }
+
+    // ---------- 批准覆盖已有签到：留痕 + 当场提示，绝不许静默（docs/05 §5.5） ----------
+
+    @Test
+    void approval_over_existing_checkin_is_trailed_and_flagged() throws Exception {
+        // 先代签（此刻还没有请假申请，所以不会撞上"有请假不代签"的闸门）
+        api(adminToken(), "POST", "/api/events/" + futureEventId + "/attendance",
+                "{\"memberId\":" + memberAId + "}").andExpect(status().isOk());
+
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("临时有事"), memberA);
+        leaveService.decide(request.approvals().get(0).id(), new DecideRequest("APPROVED", null), secLeader);
+        RequestView finalView = leaveService.decide(request.approvals().get(1).id(),
+                new DecideRequest("APPROVED", null), tuanzhang);
+
+        // ② 当场提示：出参要能区分出"这次覆盖了一条已有签到"（字段名由实现方定，docs/05 §5.6）
+        assertTrue(finalView.attendanceOverridden());
+        // ① 留痕：谁批的 + 改前 PRESENT → 改后 LEAVE，两个都得写全
+        Map<String, Object> log = jdbc.queryForMap(
+                "SELECT operator_id, `before`, `after` FROM operation_log"
+                        + " WHERE action = 'ATTENDANCE_OVERRIDE_BY_LEAVE'");
+        assertEquals(tuanzhang.memberId(), ((Number) log.get("operator_id")).longValue(), "要记下是谁批的");
+        assertTrue(log.get("before").toString().contains("PRESENT"), "改前值缺失");
+        assertTrue(log.get("after").toString().contains("LEAVE"), "改后值缺失");
+        assertEquals("LEAVE", jdbc.queryForObject(
+                "SELECT status FROM attendance WHERE event_id = ? AND member_id = ?",
+                String.class, futureEventId, memberAId));
+    }
+
+    @Test
+    void approval_without_prior_checkin_is_not_flagged() {
+        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        leaveService.decide(request.approvals().get(0).id(), new DecideRequest("APPROVED", null), secLeader);
+        RequestView finalView = leaveService.decide(request.approvals().get(1).id(),
+                new DecideRequest("APPROVED", null), tuanzhang);
+
+        // 没覆盖任何人，就不能无条件标 true（防"永远为 true"的假实现）
+        assertFalse(finalView.attendanceOverridden());
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM operation_log WHERE action = 'ATTENDANCE_OVERRIDE_BY_LEAVE'",
+                Integer.class));
+    }
+
+    // ---------- 可见范围：默认拒绝 + 白名单（docs/05 §5.6） ----------
+
+    @Test
+    void non_whitelist_roles_only_see_their_own_requests() {
+        leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
+        CurrentUser honorary = honoraryOf(section1);
+
+        // 荣誉团员：scope 传什么都不该看到别人的请假单（自己没提过 → 空）
+        for (String scope : List.of("all", "needsMe", "乱值")) {
+            PageResult<RequestView> r = leaveService.list(scope, null, null, 1, 20, honorary);
+            assertTrue(r.list().isEmpty(), "scope=" + scope + " 不该看到别人的请假单");
+        }
+        // 团员传 all：只能看到自己那条
+        PageResult<RequestView> asMember = leaveService.list("all", null, null, 1, 20, memberA);
+        assertFalse(asMember.list().isEmpty());
+        assertTrue(asMember.list().stream().allMatch(v -> v.memberId() == memberAId));
+        // 白名单内的团长照旧看得到（改口径不能把管理侧改坏）
+        PageResult<RequestView> asLeader = leaveService.list("all", null, null, 1, 20, tuanzhang);
+        assertTrue(asLeader.list().stream().anyMatch(v -> v.memberId() == memberAId));
+    }
+
+    @Test
+    void conductor_and_system_admin_cannot_apply_leave_30001() throws Exception {
+        MemberCreateResponse c = createMember(admin, "指挥", "conductor", section1, "CONDUCTOR");
+        String conductorToken = loginToken("conductor", c.initialPassword());
+        // 不参与考勤的人也不参与请假（docs/13 不变式 14）
+        api(conductorToken, "POST", "/api/events/" + futureEventId + "/leave-requests", "{\"reason\":\"x\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
+        api(adminToken(), "POST", "/api/events/" + futureEventId + "/leave-requests", "{\"reason\":\"x\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    private CurrentUser honoraryOf(long sectionId) {
+        MemberCreateResponse h = createMember(admin, "荣誉团员", "honorary", sectionId, "MEMBER");
+        setMemberStatus(admin, h.id(), "GRADUATED");
+        memberService.update(h.id(), new MemberUpdateRequest(
+                null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
+                null, null, null, null), admin);
+        return currentUserOf(h.id());
     }
 
     private RequestView ownRequest() {

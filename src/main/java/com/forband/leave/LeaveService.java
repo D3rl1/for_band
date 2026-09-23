@@ -20,6 +20,7 @@ import com.forband.leave.dto.LeaveDtos.ApprovalView;
 import com.forband.leave.dto.LeaveDtos.CreateRequest;
 import com.forband.leave.dto.LeaveDtos.DecideRequest;
 import com.forband.leave.dto.LeaveDtos.RequestView;
+import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
 import com.forband.section.Section;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,11 +47,12 @@ public class LeaveService {
     private final SectionMapper sectionMapper;
     private final AttendanceMapper attendanceMapper;
     private final PermissionService permissionService;
+    private final OperationLogWriter opLogWriter;
 
     public LeaveService(LeaveRequestMapper requestMapper, LeaveApprovalMapper approvalMapper,
                         EventMapper eventMapper, MemberMapper memberMapper,
                         SectionMapper sectionMapper, AttendanceMapper attendanceMapper,
-                        PermissionService permissionService) {
+                        PermissionService permissionService, OperationLogWriter opLogWriter) {
         this.requestMapper = requestMapper;
         this.approvalMapper = approvalMapper;
         this.eventMapper = eventMapper;
@@ -57,12 +60,14 @@ public class LeaveService {
         this.sectionMapper = sectionMapper;
         this.attendanceMapper = attendanceMapper;
         this.permissionService = permissionService;
+        this.opLogWriter = opLogWriter;
     }
 
     // ---------- 申请 ----------
 
     @Transactional
     public RequestView create(long eventId, CreateRequest request, CurrentUser applicant) {
+        permissionService.checkAttendeeAction(applicant);
         Event event = requireEvent(eventId);
         if (EventStatus.CANCELED.equals(event.getStatus())) {
             throw new BusinessException(ErrorCode.EVENT_CANCELED);
@@ -132,19 +137,26 @@ public class LeaveService {
         boolean allApproved = all.stream()
                 .allMatch(a -> LeaveStatus.APPROVED.equals(a.getDecision()));
 
+        boolean overridden = false;
         if (anyRejected) {
             leaveRequest.setStatus(LeaveStatus.REJECTED);
             requestMapper.updateById(leaveRequest);
         } else if (allApproved) {
             leaveRequest.setStatus(LeaveStatus.APPROVED);
             requestMapper.updateById(leaveRequest);
-            writeLeaveAttendance(leaveRequest, decider);
+            overridden = writeLeaveAttendance(leaveRequest, decider);
         }
-        return toView(leaveRequest, requireEvent(leaveRequest.getEventId()), decider);
+        return toView(leaveRequest, requireEvent(leaveRequest.getEventId()), decider, overridden);
     }
 
-    /** 通过后的动作（docs/05）：写 attendance(LEAVE, marked_by=最终审批人)，统计只读一张表。 */
-    private void writeLeaveAttendance(LeaveRequest leaveRequest, CurrentUser finalApprover) {
+    /**
+     * 通过后的动作（docs/05）：写 attendance(LEAVE, marked_by=最终审批人)，统计只读一张表。
+     *
+     * @return 这次是否**覆盖**了一条已有签到（PRESENT → LEAVE）。覆盖必须**留痕 + 当场提示**
+     *     （docs/05 §5.5：用户原话"要留痕，不能说直接静默了"），所以这里既写操作日志、也把标记
+     *     带回去给前端弹提示——只做留痕不够，因为操作日志只有管理员/团长能看，而声部长也能审批。
+     */
+    private boolean writeLeaveAttendance(LeaveRequest leaveRequest, CurrentUser finalApprover) {
         Attendance existing = attendanceMapper.selectOne(new LambdaQueryWrapper<Attendance>()
                 .eq(Attendance::getEventId, leaveRequest.getEventId())
                 .eq(Attendance::getMemberId, leaveRequest.getMemberId()));
@@ -165,17 +177,39 @@ public class LeaveService {
                         .set(Attendance::getStatus, AttendanceStatus.LEAVE)
                         .set(Attendance::getMarkedBy, finalApprover.memberId()));
             }
-        } else {
-            existing.setStatus(AttendanceStatus.LEAVE);
-            existing.setMarkedBy(finalApprover.memberId());
-            attendanceMapper.updateById(existing);
+            return false;
         }
+        // 改前值要在覆盖之前取下来——留痕要求的正是"改前 → 改后"（docs/11 §11.2）
+        String beforeStatus = existing.getStatus();
+        Long beforeMarkedBy = existing.getMarkedBy();
+        LocalDateTime beforeMarkedAt = existing.getMarkedAt();
+        existing.setStatus(AttendanceStatus.LEAVE);
+        existing.setMarkedBy(finalApprover.memberId());
+        attendanceMapper.updateById(existing);
+        if (AttendanceStatus.LEAVE.equals(beforeStatus)) {
+            return false;   // 本来就是 LEAVE，没有覆盖任何签到
+        }
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("status", beforeStatus);
+        before.put("eventId", existing.getEventId());
+        before.put("memberId", existing.getMemberId());
+        before.put("markedBy", beforeMarkedBy);
+        before.put("markedAt", beforeMarkedAt == null ? null : beforeMarkedAt.toString());
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("status", AttendanceStatus.LEAVE);
+        after.put("eventId", existing.getEventId());
+        after.put("memberId", existing.getMemberId());
+        after.put("markedBy", finalApprover.memberId());
+        opLogWriter.write(finalApprover, "ATTENDANCE_OVERRIDE_BY_LEAVE", "attendance",
+                existing.getId(), before, after);
+        return true;
     }
 
     // ---------- 撤回 ----------
 
     @Transactional
     public RequestView cancel(long requestId, CurrentUser applicant) {
+        permissionService.checkAttendeeAction(applicant);
         LeaveRequest leaveRequest = requireRequest(requestId);
         permissionService.checkSelf(applicant, leaveRequest.getMemberId());
         if (!LeaveStatus.PENDING.equals(leaveRequest.getStatus())) {
@@ -190,7 +224,10 @@ public class LeaveService {
 
     // ---------- 列表 ----------
 
-    /** scope=mine 我的申请；needsMe 有我能签的待签行；all 角色范围内全部（docs/05：待我审批的 / 我提交的）。 */
+    /**
+     * scope=mine 我的申请；needsMe 有我能签的待签行；all 角色范围内全部（docs/05 §5.6）。
+     * 可见性是"默认拒绝 + 白名单"：只有管理员 / 团长 / 声部长看得到别人的申请。
+     */
     public PageResult<RequestView> list(String scope, String status, Long eventId,
                                         int page, int size, CurrentUser viewer) {
         LambdaQueryWrapper<LeaveRequest> wrapper = new LambdaQueryWrapper<LeaveRequest>()
@@ -198,9 +235,12 @@ public class LeaveService {
                 .eq(eventId != null, LeaveRequest::getEventId, eventId)
                 .orderByDesc(LeaveRequest::getId);
 
-        boolean forceMine = viewer.role() == Role.MEMBER || viewer.role() == Role.CONDUCTOR;
-        if (forceMine || "mine".equals(scope)) {
+        // 可见范围白名单（docs/05 §5.6，默认拒绝 + 白名单）：只列举"谁能看到别人的"，
+        // 其余角色（团员 / 指挥 / 荣誉团员 / 以后新增的任何角色）一律只能看自己，无论 scope 传什么。
+        if ("mine".equals(scope)) {
             wrapper.eq(LeaveRequest::getMemberId, viewer.memberId());
+        } else if (viewer.role() == Role.ADMIN || viewer.role() == Role.LEADER) {
+            // 全部：不加过滤
         } else if (viewer.role() == Role.SECTION_LEADER) {
             // 本声部成员的申请 + 自己的
             List<Long> visibleMemberIds = memberMapper.selectList(new LambdaQueryWrapper<Member>()
@@ -209,6 +249,8 @@ public class LeaveService {
                                     .or().eq(Member::getId, viewer.memberId())))
                     .stream().map(Member::getId).toList();
             wrapper.in(LeaveRequest::getMemberId, visibleMemberIds);
+        } else {
+            wrapper.eq(LeaveRequest::getMemberId, viewer.memberId());
         }
 
         Page<LeaveRequest> result = requestMapper.selectPage(Page.of(page, size), wrapper);
@@ -216,7 +258,10 @@ public class LeaveService {
                 .map(r -> toView(r, eventMapper.selectById(r.getEventId()), viewer))
                 .toList();
         long total = result.getTotal();
-        if ("needsMe".equals(scope) && !forceMine) {
+        boolean canDecideForOthers = viewer.role() == Role.ADMIN
+                || viewer.role() == Role.LEADER
+                || viewer.role() == Role.SECTION_LEADER;
+        if ("needsMe".equals(scope) && canDecideForOthers) {
             views = views.stream().filter(v ->
                     v.overdue() || v.approvals().stream().anyMatch(ApprovalView::iCanDecide)).toList();
             total = views.size();
@@ -234,6 +279,12 @@ public class LeaveService {
     }
 
     private RequestView toView(LeaveRequest leaveRequest, Event event, CurrentUser viewer) {
+        return toView(leaveRequest, event, viewer, false);
+    }
+
+    /** 只有审批（decide）会传 attendanceOverridden=true——其余入口不存在"覆盖签到"这回事。 */
+    private RequestView toView(LeaveRequest leaveRequest, Event event, CurrentUser viewer,
+                               boolean attendanceOverridden) {
         Member requester = memberMapper.selectById(leaveRequest.getMemberId());
         List<LeaveApproval> approvals = approvalsOf(leaveRequest.getId());
         Map<Long, Member> approvers = loadMembers(approvals.stream()
@@ -267,7 +318,7 @@ public class LeaveService {
                 requester == null ? null : requester.getName(),
                 requester == null ? null : sectionNameOf(requester.getSectionId()),
                 leaveRequest.getReason(), leaveRequest.getStatus(), leaveRequest.getAppliedAt(),
-                overdue, approvalViews);
+                overdue, approvalViews, attendanceOverridden);
     }
 
     private List<LeaveApproval> approvalsOf(long requestId) {

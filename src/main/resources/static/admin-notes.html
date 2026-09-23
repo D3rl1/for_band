@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>更新公告 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="cell mb-4">
+  <div class="lab">发布一条更新公告</div>
+  <p class="chip">一次手写一条 = 一次发布。发布后不可改、不可删——要改就再发一条（团员读过的历史要稳定）。</p>
+  <div class="row g-2">
+    <div class="col-12">
+      <input id="n-title" class="w-100" maxlength="64" placeholder="标题（≤64 字，如：签到加了确认，不会再手滑点错）">
+    </div>
+    <div class="col-12">
+      <textarea id="n-content" class="w-100" rows="8"
+        placeholder="正文（纯文本，换行会原样保留；不用写 markdown，写了也不解析）"></textarea>
+    </div>
+    <div class="col-12">
+      <button id="publish" class="go go-sm" type="button">发布</button>
+    </div>
+  </div>
+</div>
+
+<h2 class="mt-4 mb-3">已发布的</h2>
+<div id="list"></div>
+<p id="empty" class="py-4" hidden>还没发布过公告</p>
+
+<script>
+'use strict';
+
+function row(n) {
+  const el = document.createElement('div');
+  el.className = 'cell mb-2';
+  const title = document.createElement('b');
+  title.textContent = n.title;
+  const when = document.createElement('span');
+  when.className = 'chip ms-2 mb-0';
+  when.textContent = (n.publishedAt || '').replace('T', ' ').slice(0, 16);
+  const body = document.createElement('p');
+  body.className = 'ann-body mt-2 mb-0';
+  body.textContent = n.content;
+  el.append(title, when, body);
+  return el;
+}
+
+async function load() {
+  const me = await BAND.renderNav('admin-notes.html');
+  if (!me) return;
+  const d = await BAND.must('/api/release-notes?size=50');
+  const host = document.getElementById('list');
+  host.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const n of d.list) host.appendChild(row(n));
+}
+
+document.getElementById('publish').addEventListener('click', async () => {
+  const title = document.getElementById('n-title').value.trim();
+  const content = document.getElementById('n-content').value.trim();
+  if (!title || !content) {
+    BAND.toast('标题与正文都要填');
+    return;
+  }
+  // 发布是"发出去就收不回"的动作，先确认
+  if (!await BAND.confirm({
+    title: '发布这条公告？',
+    body: `「${title}」——发布后不可改、不可删，团员下次登录会看到它。`,
+    ok: '发 布',
+  })) return;
+  await BAND.must('/api/admin/release-notes', { method: 'POST', body: { title, content } });
+  document.getElementById('n-title').value = '';
+  document.getElementById('n-content').value = '';
+  BAND.toast('已发布', 'success');
+  load();
+});
+
+load();
+</script>
+</body>
+</html>

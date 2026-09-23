@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,6 +11,15 @@
 <script src="/app.js"></script>
 </head>
 <body>
+
+<!-- 欢迎过渡黑幕（docs/14 §14.6.4）：**必须内联在 body 最前**，登录成功那次首帧就铺黑。
+     平时由 <html> 上的 wel-armed 类（band-nav.js 首帧前决定）保持 display:none，不闪黑。
+     内容由 app.js playWelcome 填充。 -->
+<div class="wel" id="wel" aria-hidden="true">
+  <div class="wel-av"></div>
+  <div class="wel-tx">欢迎回来，<span class="wname"></span></div>
+</div>
+
 <div id="navbar"></div>
 
 <section class="grid mb-4" id="bento">
@@ -137,9 +146,10 @@ async function fetchSummary(me) {
   const names = ['宫', '商', '角', '徵', '羽'];
   try {
     const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
+    const expected = s.rehearsal.expected;
     const rate = s.rehearsal.rate || 0;
-    const lit = Math.round(rate * 5);
-    document.getElementById('att-big').textContent = BAND.ratePct(rate);
+    const lit = expected === 0 ? 0 : Math.round(rate * 5);
+    document.getElementById('att-big').textContent = BAND.ratePct(rate, expected);
     const note = document.getElementById('att-note');
     note.hidden = false;
     note.textContent = `排练应到 ${s.rehearsal.expected} · 出勤 ${s.rehearsal.present} · 请假 ${s.rehearsal.leave}`;

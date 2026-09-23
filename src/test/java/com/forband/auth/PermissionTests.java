@@ -61,12 +61,23 @@ class PermissionTests extends IntegrationTestBase {
     }
 
     @Test
-    void section_leader_cannot_mark_other_section_403_30003() throws Exception {
+    void section_leader_cannot_mark_for_others_403_30001() throws Exception {
+        // 代签收窄到管理员 + 团长（docs/02 §2.3）：声部长**根本不能代签**了——
+        // 所以这里是 30001（没有权限），不再是过去那条"跨声部"的 30003
         long eventId = openRehearsal();
         api(leaderOfSec2Token, "POST", "/api/events/" + eventId + "/attendance",
                 "{\"memberId\":" + memberAId + "}")
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(30003));
+                .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    @Test
+    void member_cannot_mark_for_others_403_30001() throws Exception {
+        long eventId = openRehearsal();
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance",
+                "{\"memberId\":" + leaderOfSec2Id + "}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
     }
 
     @Test

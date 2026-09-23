@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录设备 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<table class="tb">
+  <thead><tr><th>设备</th><th>IP</th><th>登录时间</th><th>最后活跃</th><th class="act">当前</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="chip mt-2">登出不影响其他设备；改密码会让所有设备退出。过期与已踢的会话不在此列，但服务端保留为登录流水。</p>
+
+<div class="mt-3">
+  <button class="go go-ghost go-sm" id="revoke-others">踢掉其他所有设备</button>
+</div>
+
+<script>
+const fmt = (iso) => iso ? iso.replace('T', ' ').slice(0, 16) : '—';
+
+async function load() {
+  const me = await BAND.renderNav('sessions.html');
+  if (!me) return;
+  const list = await BAND.must('/api/auth/sessions');
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const s of list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td></td><td class="act"></td><td class="act"></td>';
+    tr.children[0].textContent = s.device;
+    tr.children[1].textContent = s.ip || '—';
+    tr.children[2].textContent = fmt(s.issuedAt);
+    tr.children[3].textContent = fmt(s.lastSeenAt);
+    const cur = tr.children[4];
+    const action = tr.children[5];
+    if (s.current) {
+      // 当前设备行：带徽标、**不给「踢」按钮**——踢自己等于登出，用「退出」就够了（docs/14 §14.6.4）
+      const badge = document.createElement('span');
+      badge.className = 'chip';
+      badge.textContent = '当前设备';
+      cur.appendChild(badge);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'go go-ghost go-sm';
+      btn.textContent = '踢';
+      btn.addEventListener('click', async () => {
+        if (!confirm(`确定踢掉「${s.device}」？该设备会立即退出登录。`)) return;
+        await BAND.must(`/api/auth/sessions/${s.id}/revoke`, { method: 'POST' });
+        BAND.toast('已踢掉', 'success');
+        load();
+      });
+      action.appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+// 「踢掉其他所有设备」放列表下方——它跟"某一台"不是一档操作，别混在同一列按钮里（docs/14 §14.6.4）
+document.getElementById('revoke-others').addEventListener('click', async () => {
+  if (!confirm('确定踢掉其他所有设备？当前这台会保留。')) return;
+  await BAND.must('/api/auth/sessions/revoke-others', { method: 'POST' });
+  BAND.toast('已踢掉其他所有设备', 'success');
+  load();
+});
+
+load();
+</script>
+</body>
+</html>

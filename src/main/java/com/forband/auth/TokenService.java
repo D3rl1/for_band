@@ -32,7 +32,8 @@ public class TokenService {
     public record IssuedToken(String raw, LocalDateTime expiresAt) {
     }
 
-    public IssuedToken issue(long memberId) {
+    /** 签发会话行：随 token 落库登录时的 UA 与 IP（docs/01 §1.4，采集来源=这一次登录请求）。 */
+    public IssuedToken issue(long memberId, String ip, String userAgent) {
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -44,20 +45,69 @@ public class TokenService {
         token.setMemberId(memberId);
         token.setIssuedAt(now);
         token.setExpiresAt(expiresAt);
+        if (userAgent != null) {
+            token.setUserAgent(userAgent.length() > 255 ? userAgent.substring(0, 255) : userAgent);
+        }
+        token.setIp(ip);
         tokenMapper.insert(token);
         return new IssuedToken(raw, expiresAt);
     }
 
-    /** 返回会员 id；token 无效/过期/已吊销返回 null。 */
-    public Long resolveMemberId(String rawToken) {
+    /** 取整行有效会话（docs/01 §1.4：当前设备按"本次请求携带的那条 token"判定，就靠它）。 */
+    public UserToken resolveToken(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             return null;
         }
-        UserToken token = tokenMapper.selectOne(new LambdaQueryWrapper<UserToken>()
+        return tokenMapper.selectOne(new LambdaQueryWrapper<UserToken>()
                 .eq(UserToken::getTokenHash, sha256Hex(rawToken))
                 .isNull(UserToken::getRevokedAt)
                 .gt(UserToken::getExpiresAt, LocalDateTime.now()));
-        return token == null ? null : token.getMemberId();
+    }
+
+    /** 本人有效会话，新签发的在前（docs/10 §10.4 默认排序；不分页——一个账号设备数是个位数）。 */
+    public java.util.List<UserToken> listActive(long memberId) {
+        return tokenMapper.selectList(new LambdaQueryWrapper<UserToken>()
+                .eq(UserToken::getMemberId, memberId)
+                .isNull(UserToken::getRevokedAt)
+                .gt(UserToken::getExpiresAt, LocalDateTime.now())
+                .orderByDesc(UserToken::getId));
+    }
+
+    /** 按 id 取行（任意状态）——踢单条前判断"存在但非本人"要用，别的不许用。 */
+    public UserToken findById(long id) {
+        return tokenMapper.selectById(id);
+    }
+
+    /** 踢单条（带归属条件）；行不存在/已失效/非本人 → 无匹配行，天然幂等（docs/10 §10.4）。 */
+    public void revokeById(long id, long memberId) {
+        tokenMapper.update(null, new LambdaUpdateWrapper<UserToken>()
+                .eq(UserToken::getId, id)
+                .eq(UserToken::getMemberId, memberId)
+                .isNull(UserToken::getRevokedAt)
+                .set(UserToken::getRevokedAt, LocalDateTime.now()));
+    }
+
+    /** 踢掉其他所有设备，保留 keepId 那条（docs/10 §10.4：当前这条始终保留）。 */
+    public void revokeOthers(long memberId, long keepId) {
+        tokenMapper.update(null, new LambdaUpdateWrapper<UserToken>()
+                .eq(UserToken::getMemberId, memberId)
+                .ne(UserToken::getId, keepId)
+                .isNull(UserToken::getRevokedAt)
+                .set(UserToken::getRevokedAt, LocalDateTime.now()));
+    }
+
+    /**
+     * last_seen_at 节流写（docs/13 §13.3④）：NULL 立即写（登录后第一个 API 请求就会填上），
+     * 此后距上次超过 1 小时才写一次，避免每个请求多一次 UPDATE。
+     */
+    public void touchLastSeen(UserToken token) {
+        LocalDateTime now = LocalDateTime.now();
+        if (token.getLastSeenAt() != null && token.getLastSeenAt().isAfter(now.minusHours(1))) {
+            return;
+        }
+        tokenMapper.update(null, new LambdaUpdateWrapper<UserToken>()
+                .eq(UserToken::getId, token.getId())
+                .set(UserToken::getLastSeenAt, now));
     }
 
     public void revoke(String rawToken) {

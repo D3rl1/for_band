@@ -22,6 +22,12 @@ public class UserToken {
 
     private LocalDateTime revokedAt;
 
+    private String userAgent;
+
+    private String ip;
+
+    private LocalDateTime lastSeenAt;
+
     public Long getId() {
         return id;
     }
@@ -68,5 +74,29 @@ public class UserToken {
 
     public void setRevokedAt(LocalDateTime revokedAt) {
         this.revokedAt = revokedAt;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
+    }
+
+    public String getIp() {
+        return ip;
+    }
+
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
+
+    public LocalDateTime getLastSeenAt() {
+        return lastSeenAt;
+    }
+
+    public void setLastSeenAt(LocalDateTime lastSeenAt) {
+        this.lastSeenAt = lastSeenAt;
     }
 }

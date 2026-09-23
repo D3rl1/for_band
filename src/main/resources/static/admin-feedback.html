@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>反馈管理 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">反馈</h2>
+  <div>
+    <button id="tab-open" class="go go-sm" type="button">待处理</button>
+    <button id="tab-handled" class="go go-ghost go-sm" type="button">已处理</button>
+  </div>
+</div>
+<div id="list"></div>
+<p id="empty" class="py-4" hidden>没有待处理的反馈——处理过的可以点右上「已处理」回看</p>
+
+<script>
+'use strict';
+
+let status = 'OPEN';
+let page = 1;
+const SIZE = 20;
+
+function card(f) {
+  const el = document.createElement('div');
+  el.className = 'cell mb-3';
+
+  const head = document.createElement('div');
+  head.className = 'd-flex justify-content-between align-items-center';
+  const who = document.createElement('b');
+  who.textContent = f.memberName || '（已离团）';
+  const when = document.createElement('span');
+  when.className = 'chip mb-0';
+  when.textContent = (f.createdAt || '').replace('T', ' ').slice(0, 16);
+  head.append(who, when);
+
+  const meta = document.createElement('p');
+  meta.className = 'chip mb-2';
+  // 页面路径 + 设备：定位问题的两个第一线索（pages 是前端自动带的，设备由服务端从 UA 解析）
+  meta.textContent = [f.sectionName, f.pagePath, f.device].filter(Boolean).join(' · ');
+
+  const body = document.createElement('p');
+  body.className = 'mb-2';
+  body.textContent = f.content;
+
+  el.append(head, meta, body);
+
+  if (f.status === 'OPEN') {
+    const note = document.createElement('input');
+    note.className = 'w-100 mb-2';
+    note.placeholder = '处理备注（可空，只留给你自己看）';
+    const btn = document.createElement('button');
+    btn.className = 'go go-sm';
+    btn.type = 'button';
+    btn.textContent = '标记已处理';
+    btn.addEventListener('click', async () => {
+      await BAND.must(`/api/admin/feedback/${f.id}`, {
+        method: 'PUT',
+        body: { status: 'HANDLED', adminNote: note.value.trim() || null },
+      });
+      BAND.toast('已标记', 'success');
+      load();
+    });
+    el.append(note, btn);
+  } else {
+    const done = document.createElement('p');
+    done.className = 'chip mb-0';
+    done.textContent = `已处理${f.handledByName ? ' · ' + f.handledByName : ''}`
+      + (f.handledAt ? ' · ' + f.handledAt.replace('T', ' ').slice(0, 16) : '')
+      + (f.adminNote ? ' · ' + f.adminNote : '');
+    el.appendChild(done);
+  }
+  return el;
+}
+
+async function load() {
+  const me = await BAND.renderNav('admin-feedback.html');
+  if (!me) return;
+  const d = await BAND.must(`/api/admin/feedback?status=${status}&page=${page}&size=${SIZE}`);
+  const host = document.getElementById('list');
+  host.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const f of d.list) host.appendChild(card(f));
+  document.getElementById('tab-open').className = status === 'OPEN' ? 'go go-sm' : 'go go-ghost go-sm';
+  document.getElementById('tab-handled').className = status === 'HANDLED' ? 'go go-sm' : 'go go-ghost go-sm';
+}
+
+document.getElementById('tab-open').addEventListener('click', () => { status = 'OPEN'; page = 1; load(); });
+document.getElementById('tab-handled').addEventListener('click', () => { status = 'HANDLED'; page = 1; load(); });
+load();
+</script>
+</body>
+</html>

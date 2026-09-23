@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>曲目详情 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="cell mb-4">
+  <h2 id="p-title" class="mb-1"></h2>
+  <p id="p-meta" class="chip mb-2"></p>
+  <p id="p-note" class="mb-0"></p>
+</div>
+
+<!-- 荣誉团员看不到附件区：不是藏按钮，是**整块不渲染**（docs/14 §14.6.4「曲目页不显示附件区」） -->
+<div class="cell mb-4" id="attach-box">
+  <div class="lab">谱子与音频</div>
+  <p class="chip">谱子与音频对全团公开（登录即可取）；荣誉团员看不到这一块。</p>
+  <div id="attachments"></div>
+  <p id="att-empty" class="py-3" hidden>还没有附件——先把谱子或音频传上来</p>
+  <div class="row g-2 mt-1" id="upload-box" hidden>
+    <div class="col-12 col-md-3">
+      <select id="u-kind" class="w-100">
+        <option value="SCORE">谱子（pdf / 图片）</option>
+        <option value="AUDIO">音频（m4a / mp3 / wav）</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-5"><input id="u-file" type="file" class="w-100"></div>
+    <div class="col-12 col-md-4"><button id="u-send" class="go go-sm" type="button">上传并挂上</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const id = new URLSearchParams(location.search).get('id');
+let me = null;
+let canEdit = false;
+
+async function load() {
+  me = await BAND.renderNav('pieces.html');
+  if (!me) return;
+  canEdit = ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
+  // 荣誉团员：曲名看得到、附件区整块不给（服务端也会 403，这里只是不做无用的界面）
+  const honorary = me.role === 'HONORARY';
+  document.getElementById('attach-box').hidden = honorary;
+
+  const d = await BAND.must(`/api/pieces/${id}`);
+  const p = d.piece;
+  document.getElementById('p-title').textContent = p.title;
+  document.getElementById('p-meta').textContent = [
+    p.composer ? `作曲 ${p.composer}` : null,
+    p.arranger ? `编曲 ${p.arranger}` : null,
+    p.category, p.difficulty ? `难度 ${p.difficulty}` : null, p.statusLabel,
+  ].filter(Boolean).join(' · ');
+  document.getElementById('p-note').textContent = p.note || '';
+
+  if (honorary) return;
+  const host = document.getElementById('attachments');
+  host.innerHTML = '';
+  document.getElementById('att-empty').hidden = d.attachments.length > 0;
+  document.getElementById('upload-box').hidden = !canEdit;
+  for (const a of d.attachments) {
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center gap-2 mb-2';
+    const label = document.createElement('span');
+    label.className = 'chip mb-0';
+    label.textContent = (a.kind === 'SCORE' ? '谱子' : '音频') + ' · ' + BAND.sizeText(a.sizeBytes);
+    const name = document.createElement('b');
+    name.textContent = a.originalName || '';
+    const open = document.createElement('button');
+    open.className = 'go go-ghost go-sm';
+    open.type = 'button';
+    open.textContent = a.kind === 'SCORE' ? '查看' : '试听';
+    open.addEventListener('click', () => BAND.openFile(a.fileId));
+    row.append(label, name, open);
+    if (canEdit) {
+      const del = document.createElement('button');
+      del.className = 'go go-ghost go-sm';
+      del.type = 'button';
+      del.textContent = '删除';
+      del.addEventListener('click', async () => {
+        if (!await BAND.confirm({ title: '删掉这个附件？', body: `${a.originalName}（文件本体不会被删，只解除关联）` })) return;
+        await BAND.must(`/api/pieces/${id}/attachments/${a.id}`, { method: 'DELETE' });
+        BAND.toast('已删除', 'success');
+        load();
+      });
+      row.appendChild(del);
+    }
+    host.appendChild(row);
+  }
+}
+
+document.getElementById('u-send').addEventListener('click', async () => {
+  const input = document.getElementById('u-file');
+  if (!input.files.length) {
+    BAND.toast('先选一个文件');
+    return;
+  }
+  const uploaded = await BAND.uploadFile(input.files[0]);
+  await BAND.must(`/api/pieces/${id}/attachments`, {
+    method: 'POST',
+    body: { fileId: uploaded.id, kind: document.getElementById('u-kind').value },
+  });
+  input.value = '';
+  BAND.toast('已上传', 'success');
+  load();
+});
+
+load();
+</script>
+</body>
+</html>

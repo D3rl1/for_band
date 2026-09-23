@@ -1,63 +1,51 @@
 /* ============================================================
-   band-nav.js —— 深色侧栏的**按键收起/展开**
-   决策记录（docs/14 §14.6）：导航 = 深色侧栏；收起方式 = **按键**，
-   不用"鼠标靠近自动弹出"（有实测代价：NN/g 测出隐藏导航在桌面端被漏掉的
-   几率几乎翻倍；Vivaldi 7.9 上线同类功能后踩了"边缘空隙""与滚动条打架"）。
+   band-nav.js —— 导航的前置状态处理（docs/14 §14.6.4，2026-09-23 定稿）
+   导航本身是**纯 CSS**：常驻 92px 图标轨 + 悬停/Tab 展开到 320px，
+   DOM 由 app.js 的 renderNav 注入。本文件只剩一件事：
+   清掉旧「按键收起」方案残留的 localStorage 键（band_nav_collapsed）。
+   旧值若不清，老用户的首访表现会被它带偏；removeItem 一次即可。
 
-   ⚠️ 状态类放在 **<html>** 上，不是 <body>：
-   本文件在 <head> 里加载，那时 **document.body 还是 null**，
-   碰它就会抛 `Cannot read properties of null`，把整个 IIFE 打断，
-   `window.bandNavInit` 永远不会被赋值 → 把手点了没反应、侧栏出不来。
-   <html>（documentElement）在 <head> 阶段就已存在，所以状态放它身上既不会崩，
-   也能在首次绘制前就把状态应用好（不闪）。
+   决策变更留痕：旧方案"默认收起 + 常驻把手按键展开"（当时明确拒绝
+   悬停自动弹出，引 NN/g 隐藏导航漏检率翻倍、Vivaldi 7.9 的"边缘空隙/
+   与滚动条打架"）被 2026-09-23 定稿推翻，改为悬停展开。当年那两个坑
+   属于"浮层式侧栏"；现在的"预留位"方案不遮正文、不与滚动条打架，
+   且配了两条缓解：@media (hover:hover) and (pointer:fine) 才自动展开、
+   :focus-within 保证键盘可达。
+   老规矩仍然有效：状态类放 <html> 不放 <body>——本文件在 <head> 加载，
+   那时 document.body 还是 null，碰它会抛错打断整个脚本。
    ============================================================ */
 'use strict';
 
 (function () {
-  const KEY = 'band_nav_collapsed';
-  const root = document.documentElement;          // <head> 阶段就存在
-  const collapsed = () => root.classList.contains('nav-collapsed');
+  try { localStorage.removeItem('band_nav_collapsed'); } catch (e) { /* 无痕模式忽略 */ }
 
-  function setCollapsed(v) {
-    root.classList.toggle('nav-collapsed', v);
-    try { localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) { /* 无痕模式忽略 */ }
-    const btn = document.getElementById('navToggle');
-    if (btn) {
-      btn.setAttribute('aria-expanded', String(!v));
-      btn.setAttribute('aria-label', v ? '展开导航' : '收起导航');
-    }
-  }
-
-  // 解析阶段就把上次的选择应用上（此时 <html> 已在，且首次绘制尚未发生）
+  // 欢迎过渡的开关必须**首帧前**就位：本文件在 <head> 里跑，此时什么都还没画。
+  // 有 band_welcome 标记 → 给 <html> 加 wel-armed，黑幕从第一帧就是黑的（不闪白）；
+  // 没有 → 黑幕保持 display:none，直接打开目标页也不会闪黑（docs/14 §14.6.4）。
   try {
-    const saved = localStorage.getItem(KEY);
-    if (saved !== null) root.classList.toggle('nav-collapsed', saved !== '0');
-  } catch (e) { /* 忽略 */ }
+    if (sessionStorage.getItem('band_welcome') === '1') {
+      document.documentElement.classList.add('wel-armed');
+      // 登录那一次**不参与**跨页过渡（band.css: html.no-xvt → view-transition-name: none）：
+      // 这一页首帧就是全黑幕，再叠一层文档级过渡必然与欢迎过渡互相盖住。
+      // 本文件在 <head> 里同步跑，正好赶在这次过渡建立之前。
+      document.documentElement.classList.add('no-xvt');
+    }
+  } catch (e) { /* 隐私模式：跳过过渡 */ }
 
-  /* 侧栏骨架由 app.js 异步注入，所以这里暴露 initNav 给它调用；
-     静态页面（骨架已在 HTML 里）则靠下面的 DOMContentLoaded 自动绑。 */
-  function initNav() {
-    const btn = document.getElementById('navToggle');
-    if (!btn || btn.dataset.bound === '1') return;
-    btn.dataset.bound = '1';
-
-    setCollapsed(collapsed());                    // 同步一次 aria
-    btn.addEventListener('click', () => setCollapsed(!collapsed()));
-
-    // 把手上的文字 = 当前所在的页
-    const cur = document.querySelector('.sidebar .menu a.on');
-    const label = btn.querySelector('.txt');
-    if (cur && label) label.textContent = cur.textContent.trim();
-  }
-  window.bandNavInit = initNav;
-
-  document.addEventListener('DOMContentLoaded', () => {
-    setCollapsed(collapsed());
-    initNav();
-  });
-
-  // Esc 收起
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !collapsed()) setCollapsed(true);
-  });
+  // 点过菜单项后"保持展开"（docs/14 §14.6.4）：类同样必须**首帧前**挂上，
+  // 否则会先看到收起态再"拉开"一次。
+  // 标记是**给下一页用一次**的意图（上一页在菜单项 mousedown 时写下一个时间戳）——
+  // 读到就**立刻消费掉**：这样"从正文里点的普通链接"跳过来不会又展开，只有"点过菜单项"那一次会。
+  // 用与 CSS 同一个门控圈住：手机/窄屏根本没有展开/收起这回事，别把类挂上去。
+  try {
+    const fine = window.matchMedia
+      && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const armedAt = Number(sessionStorage.getItem('band_nav_keep')) || 0;
+    if (fine && Date.now() - armedAt < 5000) {
+      document.documentElement.classList.add('rail-keep');
+    }
+    if (armedAt) {
+      sessionStorage.removeItem('band_nav_keep');   // 消费掉：旧页不清，只有新页清
+    }
+  } catch (e) { /* 隐私模式：跳过 */ }
 })();

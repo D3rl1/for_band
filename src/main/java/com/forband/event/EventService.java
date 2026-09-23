@@ -54,14 +54,25 @@ public class EventService {
 
     // ---------- 查询 ----------
 
-    /** 可见性在查询层过滤（docs/04）：团员只看非声部课 + 本声部声部课。 */
+    /**
+     * 可见性白名单（docs/04 §4.4）：**默认按团员口径，管理层角色显式列出**。
+     * 不能写成 {@code role != MEMBER}——那样等于"除团员外都当管理层"，新角色会默认落进宽松分支。
+     */
+    private static boolean seesAllEvents(CurrentUser viewer) {
+        return switch (viewer.role()) {
+            case ADMIN, LEADER, CONDUCTOR, SECTION_LEADER -> true;
+            default -> false;   // MEMBER / HONORARY / 未来新增角色
+        };
+    }
+
+    /** 可见性在查询层过滤（docs/04）：团员与荣誉团员只看非声部课 + 本声部声部课。 */
     public PageResult<EventView> list(String kind, LocalDate from, LocalDate to,
                                       int page, int size, CurrentUser viewer) {
         LambdaQueryWrapper<Event> wrapper = new LambdaQueryWrapper<Event>()
                 .eq(kind != null && !kind.isBlank(), Event::getKind, kind)
                 .ge(from != null, Event::getDate, from)
                 .le(to != null, Event::getDate, to);
-        if (viewer.role() == Role.MEMBER) {
+        if (!seesAllEvents(viewer)) {
             wrapper.and(w -> w.ne(Event::getKind, EventKind.SECTION_CLASS)
                     .or(o -> o.eq(Event::getKind, EventKind.SECTION_CLASS)
                             .eq(Event::getSectionId, viewer.sectionId())));
@@ -238,7 +249,8 @@ public class EventService {
     }
 
     /** 声部课可由声部长（本声部）/ 团长 / 管理员编辑；其余活动仅管理员/团长/指挥（docs/02）。 */
-    private void checkEditPermission(CurrentUser operator, Event event) {
+    /** 「谁能改这场活动」——公开给别的模块复用（如曲目单：能改活动的人就能改它练什么曲）。 */
+    public void checkEditPermission(CurrentUser operator, Event event) {
         if (EventKind.isSectionClass(event.getKind())) {
             permissionService.checkRole(operator, Role.ADMIN, Role.LEADER, Role.SECTION_LEADER);
             if (operator.role() == Role.SECTION_LEADER) {
@@ -275,9 +287,9 @@ public class EventService {
         event.setContent(content);
     }
 
-    /** 团员只能看到非声部课 + 本声部声部课；签到等场景复用此判定。 */
+    /** 团员与荣誉团员只能看到非声部课 + 本声部声部课；签到等场景复用此判定。 */
     public void ensureVisible(Event event, CurrentUser viewer) {
-        if (viewer.role() != Role.MEMBER) {
+        if (seesAllEvents(viewer)) {
             return;
         }
         boolean ownSectionClass = EventKind.isSectionClass(event.getKind())

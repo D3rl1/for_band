@@ -9,6 +9,8 @@ import com.forband.event.dto.EventCreateRequest;
 import com.forband.event.dto.EventUpdateRequest;
 import com.forband.event.dto.EventView;
 import com.forband.log.OpLog;
+import com.forband.piece.PieceService;
+import com.forband.piece.dto.PieceDtos;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,9 +30,11 @@ import java.util.List;
 public class EventController {
 
     private final EventService eventService;
+    private final PieceService pieceService;
 
-    public EventController(EventService eventService) {
+    public EventController(EventService eventService, PieceService pieceService) {
         this.eventService = eventService;
+        this.pieceService = pieceService;
     }
 
     @GetMapping
@@ -75,5 +79,26 @@ public class EventController {
     @OpLog(action = "EVENT_CANCEL", targetType = "event")
     public ApiResponse<EventView> cancel(@PathVariable long id, CurrentUser operator) {
         return ApiResponse.ok(eventService.cancel(id, operator));
+    }
+
+    /**
+     * 这场活动练哪些曲（docs/04 §4.5，期 3 起）——**整体替换**子列表，
+     * 与演出曲目单（`PUT /api/concerts/{id}/program`）同一套做法。
+     */
+    @PutMapping("/{id}/pieces")
+    @OpLog(action = "EVENT_SET_PIECES", targetType = "event")
+    public ApiResponse<List<PieceDtos.EventPieceView>> setPieces(
+            @PathVariable long id,
+            @RequestBody PieceDtos.EventPiecesRequest request,
+            CurrentUser operator) {
+        return ApiResponse.ok(pieceService.setEventPieces(id, request.pieceIds(), operator));
+    }
+
+    /** 看这场活动练了哪些曲（登录即可，可见性跟活动本身走）。 */
+    @GetMapping("/{id}/pieces")
+    public ApiResponse<List<PieceDtos.EventPieceView>> pieces(@PathVariable long id, CurrentUser viewer) {
+        // 复用活动的可见性判定：团员看不到别声部的声部课，它的曲目单自然也看不到
+        eventService.get(id, viewer);
+        return ApiResponse.ok(pieceService.piecesOfEvent(id));
     }
 }

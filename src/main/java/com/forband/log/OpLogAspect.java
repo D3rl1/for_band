@@ -34,8 +34,12 @@ public class OpLogAspect {
                 break;
             }
         }
-        Object before = OpLogRecorder.drain();
-        Object after = joinPoint.getArgs().length > 0 ? joinPoint.getArgs()[0] : null;
+        Object before = OpLogRecorder.drainBefore();
+        // 服务层给了准确的"改后"就用它；没给才退回第一个入参（对 update(id, body) 会记成 id）
+        Object after = OpLogRecorder.drainAfter();
+        if (after == null) {
+            after = joinPoint.getArgs().length > 0 ? joinPoint.getArgs()[0] : null;
+        }
         writer.write(operator, opLog.action(),
                 opLog.targetType().isEmpty() ? null : opLog.targetType(),
                 targetId, before, after);

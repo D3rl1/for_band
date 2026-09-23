@@ -3,7 +3,10 @@ package com.forband.auth;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import com.forband.member.Member;
+import com.forband.member.MemberStatus;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
 
 /**
  * 全部权限判定的唯一入口（DECISIONS D16）。绝不散落 if(role==ADMIN)——
@@ -25,6 +28,19 @@ public class PermissionService {
         return false;
     }
 
+    /**
+     * 登录资格（docs/01，2026-09-23 改写）：status = ACTIVE，或（role = HONORARY
+     * 且 honorary_until 未过期；为空 = 不可登录，fail-closed）。过期只挡登录，数据照留。
+     */
+    public boolean canLogin(Member member) {
+        if (MemberStatus.ACTIVE.equals(member.getStatus())) {
+            return true;
+        }
+        return Role.HONORARY.name().equals(member.getRole())
+                && member.getHonoraryUntil() != null
+                && !member.getHonoraryUntil().isBefore(LocalDate.now());
+    }
+
     public void checkRole(CurrentUser user, Role... roles) {
         if (!hasAnyRole(user, roles)) {
             throw new BusinessException(ErrorCode.NO_PERMISSION);
@@ -34,6 +50,28 @@ public class PermissionService {
     public void checkSelf(CurrentUser user, long memberId) {
         if (user.memberId() != memberId) {
             throw new BusinessException(ErrorCode.NOT_SELF);
+        }
+    }
+
+    /**
+     * 在团成员专属动作（申请 / 撤回请假等，docs/02 §2.3 + docs/13 不变式 14）：
+     * **不参与考勤的人不参与请假**——荣誉团员（只读）、指挥（不进应到名单）、
+     * 系统管理员账号（is_system）都不能提/撤请假。
+     */
+    public void checkAttendeeAction(CurrentUser user) {
+        if (user.role() == Role.HONORARY || user.role() == Role.CONDUCTOR || user.system()) {
+            throw new BusinessException(ErrorCode.NO_PERMISSION);
+        }
+    }
+
+    /**
+     * 排除荣誉团员（docs/02 §2.3 末尾的防腐条款"新功能默认不给荣誉团员"）。
+     * 用在"所有登录角色都能做、唯独荣誉团员不行"的动作上（如提反馈）——
+     * ⚠️ `@RequireRole` **表达不了"排除某个角色"**（它只能列举允许的角色），所以必须在这里判。
+     */
+    public void checkNotHonorary(CurrentUser user) {
+        if (user.role() == Role.HONORARY) {
+            throw new BusinessException(ErrorCode.NO_PERMISSION);
         }
     }
 
@@ -53,14 +91,14 @@ public class PermissionService {
     }
 
     /**
-     * 代签资格（docs/05）：管理员/团长可代全团；声部长仅限本声部；
-     * 指挥与团员不可代签。目标团员 must 非 null。
+     * 代签资格（docs/02 §2.3 + docs/05 §5.4）：**只有管理员与团长**可代签任意团员，其余角色一律拒绝。
+     * 声部长原本可代签本声部，2026-09-23 收窄——代签的真实用途是**修正数据**（补录、改错），
+     * 没有正常场景需要"声部长替团员按一下"。
      */
-    public void checkCanMarkFor(CurrentUser marker, Member target) {
+    public void checkCanMarkFor(CurrentUser marker) {
         switch (marker.role()) {
             case ADMIN, LEADER -> {
             }
-            case SECTION_LEADER -> checkSameSection(marker, target.getSectionId());
             default -> throw new BusinessException(ErrorCode.NO_PERMISSION);
         }
     }

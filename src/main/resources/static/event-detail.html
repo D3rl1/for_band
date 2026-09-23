@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,6 +16,12 @@
 <div id="info" class="cell mb-4"><div class="lab">加载中…</div></div>
 <div id="checkin-area" class="mb-4"></div>
 <div id="banner" class="cell mb-4" hidden></div>
+
+<!-- 这场活动练了哪些曲（docs/04 §4.5，期 3 起）：只读，所有角色都能看；没关联曲目时整块不出现 -->
+<div id="pieces" class="cell mb-4" hidden>
+  <div class="lab">练了哪些曲</div>
+  <div id="pieces-list"></div>
+</div>
 
 <h2 class="mb-3">考勤</h2>
 <table class="tb">
@@ -50,6 +56,29 @@ async function load() {
     c.textContent = e.content;
   }
 
+  // 练了哪些曲：只读展示（能不能改由活动管理页负责，服务端把权限收在 PUT /api/events/{id}/pieces）
+  const links = await BAND.must(`/api/events/${id}/pieces`);
+  if (links.length) {
+    const box = document.getElementById('pieces');
+    const host = document.getElementById('pieces-list');
+    box.hidden = false;
+    host.innerHTML = '';
+    for (const p of links) {
+      const row = document.createElement('p');
+      row.className = 'mb-1';
+      const a = document.createElement('a');
+      a.href = `/piece-detail.html?id=${p.pieceId}`;
+      a.textContent = `${p.orderNo ? p.orderNo + '. ' : ''}${p.title || '（曲目已删除）'}`;
+      row.appendChild(a);
+      const meta = document.createElement('span');
+      meta.className = 'chip ms-2 mb-0';
+      meta.textContent = [p.composer ? `作曲 ${p.composer}` : null, p.statusLabel]
+        .filter(Boolean).join(' · ');
+      row.appendChild(meta);
+      host.appendChild(row);
+    }
+  }
+
   const banner = document.getElementById('banner');
   if (e.updatedByName && e.updatedByName !== e.createdByName) {
     banner.hidden = false;
@@ -65,6 +94,8 @@ async function load() {
 function renderCheckin(me, e, canceled) {
   const area = document.getElementById('checkin-area');
   area.innerHTML = '';
+  // 荣誉团员只读（docs/02 §2.3）：不显示签到按钮，也不显示请假入口
+  if (me.role === 'HONORARY') return;
   if (canceled) return;
   if (e.myAttendanceStatus) {
     const done = document.createElement('p');
@@ -80,6 +111,8 @@ function renderCheckin(me, e, canceled) {
   btn.className = 'go';
   btn.textContent = '签 到';
   btn.addEventListener('click', async () => {
+    // 签到一按就落库、自己撤不掉 → 先确认（docs/05 §5.3 留痕块）；取消则**不发请求**
+    if (!await BAND.confirm({ title: '确认签到？', ok: '签 到' })) return;
     try {
       const row = await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: {} });
       if (row) {
@@ -135,7 +168,7 @@ async function loadRows(me, canceled) {
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
   const canChange = me.role === 'ADMIN' || me.role === 'LEADER';
-  const canMark = ['ADMIN', 'LEADER', 'SECTION_LEADER'].includes(me.role);
+  const canMark = ['ADMIN', 'LEADER'].includes(me.role);   // 代签收窄到管理员 + 团长（docs/02 §2.3）
   for (const r of d.rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
@@ -148,11 +181,15 @@ async function loadRows(me, canceled) {
     tr.children[3].textContent = r.markedAt ? r.markedAt.replace('T', ' ').slice(5, 16) : '';
     tr.children[4].textContent = r.markedByName || '';
     const action = tr.children[5];
-    if (!canceled && canMark && !r.status) {
+    // 有生效中请假的人不出现「代签」（docs/05 §5.4）：已驳回 / 已撤回不算——他该来，要能补签
+    const onLeave = r.leaveStatus === 'PENDING' || r.leaveStatus === 'APPROVED';
+    if (!canceled && canMark && !r.status && !onLeave) {
       const btn = document.createElement('button');
       btn.className = 'go go-ghost go-sm';
       btn.textContent = '代签';
       btn.addEventListener('click', async () => {
+        // 确认层里**写明为谁签**——一行一个按钮，点错行的代价是改别人的考勤
+        if (!await BAND.confirm({ title: `为 ${r.name} 签到？`, ok: '代 签' })) return;
         await BAND.must(`/api/events/${id}/attendance`, { method: 'POST', body: { memberId: r.memberId } });
         BAND.toast(`已为 ${r.name} 签到`, 'success');
         load();
@@ -164,6 +201,11 @@ async function loadRows(me, canceled) {
       sel.value = r.status;
       sel.addEventListener('change', async () => {
         if (!r.recordId) return;
+        // 开下拉手滑点到「请假」就直接写库 → 必须先确认，且写明"对谁、从什么改成什么"
+        const ok = await BAND.confirm({
+          title: `把 ${r.name} 的考勤从「${statusText[r.status]}」改成「${statusText[sel.value]}」？`,
+        });
+        if (!ok) { sel.value = r.status; return; }   // 取消：回滚下拉，且不发请求
         await BAND.must(`/api/attendance/${r.recordId}`, { method: 'PUT', body: { status: sel.value } });
         BAND.toast('已更新', 'success');
         load();
@@ -174,7 +216,7 @@ async function loadRows(me, canceled) {
   }
   // 出勤率与请假数成对展示（docs/05 硬规则）
   document.getElementById('summary').textContent =
-    `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate)}`;
+    `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate, d.expected)}`;
 }
 
 load();

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>个人资料 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="cell mb-4">
+  <div class="p-id">
+    <span class="p-av" id="big-av"></span>
+    <div class="p-who">
+      <div class="p-name" id="big-name"></div>
+      <div class="p-tags" id="big-tags"></div>
+    </div>
+  </div>
+  <!-- ⚠️ 只读说明行**必须有**：这就是"不能改名"的落地方式，免得用户以为页面坏了（docs/14 §14.6.4） -->
+  <p class="chip mb-0">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
+</div>
+
+<div class="cell mb-4">
+  <div class="lab">头像</div>
+  <div id="av-grid" class="av-grid"></div>
+</div>
+
+<div class="cell mb-4">
+  <div class="lab">简介 · 联系方式 · 生日</div>
+  <div class="row g-2">
+    <div class="col-12 col-md-8">
+      <input id="f-intro" class="w-100" maxlength="100" placeholder="个人简介 / 签名（≤100 字）">
+    </div>
+    <div class="col-12 col-md-4">
+      <input id="f-birthday" type="date" class="w-100">
+    </div>
+    <div class="col-12">
+      <input id="f-contact" class="w-100" maxlength="128" placeholder="联系方式（自由填写，如 微信 xxx / QQ xxx）">
+    </div>
+    <div class="col-12 d-flex gap-2 align-items-center mt-1">
+      <button id="save" class="go go-sm" type="button">保存</button>
+      <button id="clear-bd" class="go go-ghost go-sm" type="button">清空生日</button>
+      <span id="saved" class="chip mb-0" hidden>已保存</span>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let me = null;      // /api/auth/me 的响应
+let profile = null; // GET /api/me/profile 的响应
+let picked = null;  // 当前选中的头像标识符（null = 不用头像）
+
+function renderIdentity() {
+  BAND.paintAvatar(document.getElementById('big-av'), { name: profile.name, avatar: picked });
+  document.getElementById('big-name').textContent = profile.name;
+  // 身份行与个人栏浮层**共用同一个函数**（docs/14 §14.6.4：两处同源，别各写一份）
+  document.getElementById('big-tags').textContent = BAND.identityTags(profile);
+}
+
+/** 预置头像网格：清单与素材一起放在 vendor/fluent-emoji/（**服务端读的是同一份**）。 */
+async function renderGrid() {
+  const host = document.getElementById('av-grid');
+  let avatars = [];
+  try {
+    const res = await fetch('/vendor/fluent-emoji/manifest.json');
+    avatars = (await res.json()).avatars || [];
+  } catch (e) {
+    avatars = [];   // 素材没入库：只给「不用头像」，界面照常可用
+  }
+  host.innerHTML = '';
+  const items = [{ id: null, name: '不用头像' }].concat(avatars);
+  for (const item of items) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'av-cell' + (item.id === picked ? ' on' : '');
+    cell.title = item.name;
+    cell.setAttribute('aria-pressed', String(item.id === picked));
+    if (item.id) {
+      const img = document.createElement('img');
+      img.className = 'av-img';
+      img.alt = item.name;
+      img.src = '/vendor/fluent-emoji/' + encodeURIComponent(item.id) + '.svg';
+      cell.appendChild(img);
+    } else {
+      const span = document.createElement('span');
+      span.className = 'av-none';
+      span.textContent = '首字';
+      cell.appendChild(span);
+    }
+    cell.addEventListener('click', () => {
+      picked = item.id;
+      host.querySelectorAll('.av-cell').forEach((c) => {
+        c.classList.remove('on');
+        c.setAttribute('aria-pressed', 'false');
+      });
+      cell.classList.add('on');
+      cell.setAttribute('aria-pressed', 'true');
+      renderIdentity();
+    });
+    host.appendChild(cell);
+  }
+}
+
+async function load() {
+  me = await BAND.renderNav('profile.html');
+  if (!me) return;
+  profile = await BAND.must('/api/me/profile');   // must 已解包，拿到的就是 data
+  picked = profile.avatar || null;
+  document.getElementById('f-intro').value = profile.intro || '';
+  document.getElementById('f-contact').value = profile.contact || '';
+  document.getElementById('f-birthday').value = profile.birthday || '';
+  renderIdentity();
+  await renderGrid();
+}
+
+/** 保存：**只提交改动过的字段**（docs/14 §14.6.4 第 5 条）。 */
+document.getElementById('save').addEventListener('click', async () => {
+  const body = {};
+  const intro = document.getElementById('f-intro').value.trim();
+  const contact = document.getElementById('f-contact').value.trim();
+  const birthday = document.getElementById('f-birthday').value || null;
+  if ((profile.avatar || null) !== picked) body.avatar = picked;
+  if ((profile.intro || '') !== intro) body.intro = intro;
+  if ((profile.contact || '') !== contact) body.contact = contact;
+  if ((profile.birthday || null) !== birthday && birthday) body.birthday = birthday;
+  if (!Object.keys(body).length) {
+    BAND.toast('没有改动', 'success');
+    return;
+  }
+  profile = await BAND.must('/api/me/profile', { method: 'PUT', body });
+  picked = profile.avatar || null;
+  renderIdentity();
+  await renderGrid();
+  const saved = document.getElementById('saved');
+  saved.hidden = false;
+  setTimeout(() => { saved.hidden = true; }, 2000);
+});
+
+// 生日清空：null 已经表示"这次不改"，所以清空要走显式开关
+document.getElementById('clear-bd').addEventListener('click', async () => {
+  if (!profile.birthday) {
+    BAND.toast('本来就没填生日', 'success');
+    return;
+  }
+  profile = await BAND.must('/api/me/profile', { method: 'PUT', body: { clearBirthday: true } });
+  document.getElementById('f-birthday').value = '';
+  BAND.toast('已清空生日', 'success');
+});
+
+load();
+</script>
+</body>
+</html>

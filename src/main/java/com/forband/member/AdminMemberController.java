@@ -3,6 +3,7 @@ package com.forband.member;
 import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.auth.Role;
+import com.forband.auth.TokenService;
 import com.forband.common.ApiResponse;
 import com.forband.log.OpLog;
 import com.forband.member.dto.MemberCreateRequest;
@@ -28,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminMemberController {
 
     private final MemberService memberService;
+    private final TokenService tokenService;
 
-    public AdminMemberController(MemberService memberService) {
+    public AdminMemberController(MemberService memberService, TokenService tokenService) {
         this.memberService = memberService;
+        this.tokenService = tokenService;
     }
 
     @PostMapping("/members")
@@ -52,6 +55,14 @@ public class AdminMemberController {
     @OpLog(action = "ACCOUNT_RESET_PASSWORD", targetType = "member")
     public ApiResponse<String> resetPassword(@PathVariable long id) {
         return ApiResponse.ok(memberService.resetPassword(id));
+    }
+
+    /** 踢某人下线：作废其全部 token，但不动账号状态（docs/01 §1.3；可重新登录）。 */
+    @PostMapping("/members/{id}/revoke-sessions")
+    @OpLog(action = "ACCOUNT_REVOKE_SESSIONS", targetType = "member")
+    public ApiResponse<Void> revokeSessions(@PathVariable long id) {
+        tokenService.revokeAllFor(id);
+        return ApiResponse.ok();
     }
 
     @GetMapping("/accounts/export")

@@ -1,46 +1,423 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>登录 · 乐团管理系统</title>
+<title>登录 · 山水民族管弦乐团</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
-<script src="/band-nav.js"></script>
 <script src="/app.js"></script>
+<style>
+/* ============================================================
+   登录页（docs/14 §14.6.4「登录页」定稿）：左栏表单 + 右栏定音鼓手插画。
+   本页 <style> 是 §14.6.8 明示的例外（登录页结构归页面自己），颜色一律取 band.css 令牌。
+   插画 SVG 与状态机照抄定稿附录（= design-samples/login-v2.html）。
+   ============================================================ */
+body { margin: 0; background: var(--shell); }
+
+.frame { padding: 22px; }
+.panel {
+  display: grid; grid-template-columns: 1fr 1fr;
+  min-height: calc(100vh - 44px);
+  border: 1.5px solid var(--edge); border-radius: 32px;
+  overflow: hidden;
+}
+
+/* ---------- 左：浅底 ---------- */
+.auth-left { background: var(--silk); color: var(--deep); padding: 46px clamp(26px, 5vw, 70px); display: flex; flex-direction: column; }
+.auth-brand { font-size: 15px; letter-spacing: .3em; color: var(--mid); }
+.auth-h1 { font-size: clamp(28px, 3.1vw, 40px); font-weight: 600; line-height: 1.32; margin: 22px 0 8px; }
+.auth-sub { color: var(--mid); margin: 0 0 30px; font-size: 15px; }
+.jianpu { display: flex; align-items: center; gap: 13px; margin: 0 0 24px; color: var(--pale); font-size: 17px; letter-spacing: .18em; }
+.jianpu .rest { color: var(--edge); }
+.jianpu .beat { font-size: 12px; letter-spacing: .12em; color: var(--mid); }
+.auth-form { max-width: 360px; }
+.auth-form .fd { margin-bottom: 18px; }
+.auth-form label { display: block; font-size: 12px; letter-spacing: .16em; color: var(--mid); margin-bottom: 8px; }
+.auth-form input { width: 100%; font-size: 16px; padding: 12px 14px; }
+.seal-btn {
+  width: 100%; margin-top: 4px; padding: 15px 0; font: inherit; font-size: 17px; letter-spacing: .32em;
+  color: var(--onwood); background: var(--cinna); border: 0; border-radius: 12px; cursor: pointer;
+  box-shadow: inset 0 0 0 2px rgba(251, 248, 242, .5);
+}
+.seal-btn:active { animation: sealDown 260ms cubic-bezier(.4, 0, .2, 1); }
+@keyframes sealDown {
+  0% { transform: scale(1) }
+  35% { transform: scale(1.05) rotate(-1deg) }
+  100% { transform: scale(1) }
+}
+.auth-msg { min-height: 23px; margin-top: 13px; font-size: 13.5px; color: var(--cinna); }
+.auth-foot { margin-top: auto; padding-top: 30px; font-size: 12.5px; color: var(--mid); }
+
+/* ---------- 右：深底 + 插画 ---------- */
+.auth-art { background: var(--shell); display: flex; align-items: center; justify-content: center; padding: 22px; overflow: hidden; }
+.art-wrap { width: min(660px, 98%); }
+.art-svg { width: 100%; height: auto; display: block; }
+.art-svg .ln  { fill: none; stroke: var(--shellhi); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.art-svg .ln2 { fill: none; stroke: var(--shellmid); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.art-svg .eye-ball { fill: var(--shellhi); }
+
+/* 关节：绝对坐标当旋转轴（transform-box: view-box 才认用户单位） */
+#armA    { transition: transform 320ms cubic-bezier(.4, 0, .2, 1); transform-origin: 280px 208px; }
+#armA-fa { transition: transform 320ms cubic-bezier(.4, 0, .2, 1); transform-origin: 254px 246px; }
+#armB    { transition: transform 320ms cubic-bezier(.4, 0, .2, 1); transform-origin: 322px 206px; }
+#armB-fa { transition: transform 320ms cubic-bezier(.4, 0, .2, 1); transform-origin: 350px 244px; }
+#head, #torso { transition: transform 340ms cubic-bezier(.4, 0, .2, 1); transform-origin: 300px 300px; }
+.stick { transition: opacity 240ms linear; }
+
+/* 眼睛：眨 / 眯 / 闭 都靠 scaleY（只动 transform） */
+.eye { transform-box: fill-box; transform-origin: center; transition: transform 110ms ease-out; }
+.blink .eye { transform: scaleY(.08); }
+.focus .eye { transform: scaleY(.55); }
+.think .eye { transform: scaleY(.08); }
+
+/* 击打：抬臂 → 击下（快）→ 收势（慢）；前臂滞后 = 关节联动 */
+.armA-hit #armA    { animation: strikeA 420ms cubic-bezier(.32, 0, .35, 1); }
+.armA-hit #armA-fa { animation: strikeA-fa 420ms cubic-bezier(.32, 0, .35, 1); }
+.armB-hit #armB    { animation: strikeB 360ms cubic-bezier(.32, 0, .35, 1); }
+.armB-hit #armB-fa { animation: strikeB-fa 360ms cubic-bezier(.32, 0, .35, 1); }
+@keyframes strikeA    { 0% { transform: rotate(0) } 22% { transform: rotate(-18deg) } 46% { transform: rotate(6deg) } 100% { transform: rotate(0) } }
+@keyframes strikeA-fa { 0% { transform: rotate(0) } 34% { transform: rotate(-9deg) } 52% { transform: rotate(7deg) } 100% { transform: rotate(0) } }
+@keyframes strikeB    { 0% { transform: rotate(0) } 22% { transform: rotate(-16deg) } 46% { transform: rotate(5deg) } 100% { transform: rotate(0) } }
+@keyframes strikeB-fa { 0% { transform: rotate(0) } 34% { transform: rotate(-8deg) } 52% { transform: rotate(6deg) } 100% { transform: rotate(0) } }
+
+/* 发声（全无文字）：圆环扩散 + 短震动刻线 + 鼓面下陷 */
+.drum .ring, .drum .ticks { opacity: 0; }
+.drum .ring, .drum .ticks, .drum .drum-body { transform-box: fill-box; transform-origin: center; }
+.drum .wave { vector-effect: non-scaling-stroke; }
+.drum-hit .drum-body { animation: thump 300ms cubic-bezier(.3, 0, .4, 1); }
+.drum-hit .ring      { animation: ping 700ms cubic-bezier(.2, .7, .3, 1); }
+.drum-hit .ticks     { animation: tick 430ms ease-out; }
+@keyframes thump { 0% { transform: translateY(0) } 38% { transform: translateY(3px) } 100% { transform: translateY(0) } }
+@keyframes ping  { 0% { opacity: .8; transform: scale(.72) } 100% { opacity: 0; transform: scale(1.12) } }
+@keyframes tick  { 0% { opacity: 0; transform: scaleY(.25) } 25% { opacity: 1; transform: scaleY(1.15) } 100% { opacity: 0; transform: scaleY(1) } }
+
+/* 沉思：手托腮 + 垂头 + 放槌 + 思考气泡 */
+.think #armB    { transform: rotate(-118deg); }
+.think #armB-fa { transform: rotate(-56deg); }
+.think #armA    { transform: rotate(4deg); }
+.think #armA-fa { transform: rotate(-16deg); }
+.think #head    { transform: rotate(9deg); }
+.think #torso   { transform: rotate(2deg); }
+.think .stick   { opacity: 0; }
+#bubble {
+  opacity: 0; transform-box: view-box; transform-origin: 300px 60px;
+  transition: opacity 260ms ease-out, transform 300ms cubic-bezier(.3, 1.25, .5, 1);
+  transform: translateY(8px) scale(.9);
+}
+.think #bubble { opacity: 1; transform: none; }
+.dot { fill: var(--shellhi); }   /* 气泡里的省略号（三个点，插画里不出现文字） */
+
+/* 止损一（规格硬要求）：reduced-motion 全部转静态，不是放慢；止损二：离屏/切后台暂停 */
+@media (prefers-reduced-motion: reduce) { .art-svg * { animation: none !important; } }
+.auth-art.paused .art-svg * { animation-play-state: paused; }
+
+/* ---------- 窄屏：竖排，表单在上、插画在下收窄 ---------- */
+@media (max-width: 720px) {
+  .frame { padding: 10px; }
+  .panel { grid-template-columns: 1fr; border-radius: 20px; min-height: calc(100vh - 20px); }
+  .auth-left { padding: 30px 20px 22px; }
+  .auth-h1 { font-size: 26px; margin: 16px 0 6px; }
+  .auth-sub { margin-bottom: 20px; }
+  .jianpu { margin-bottom: 18px; font-size: 15px; }
+  .auth-foot { padding-top: 20px; }
+  .auth-art { padding: 14px 16px 24px; }
+  .art-wrap { width: min(430px, 98%); }
+}
+</style>
 </head>
 <body>
-<div class="login-wrap">
-  <div class="cell">
-    <div class="lab">山水民族管弦乐团</div>
-    <h1>乐团管理系统</h1>
-    <form id="login-form" class="mt-4">
-      <div class="mb-3">
-        <label class="lab" for="account">账号</label>
-        <input id="account" class="w-100" autocomplete="username" required>
+
+<div class="frame">
+  <div class="panel">
+
+    <!-- 左：登录 -->
+    <section class="auth-left">
+      <div class="auth-brand">山水民族管弦乐团</div>
+      <h1 class="auth-h1">排练安排、签到、请假，<br>都在这里。</h1>
+      <p class="auth-sub">用管理员发给你的账号登录。第一次登录不用改密码。</p>
+
+      <div class="jianpu" aria-hidden="true">
+        <span>1</span><span>2</span><span>3</span><span>5</span><span class="rest">0</span>
+        <span class="beat">4 / 4</span>
       </div>
-      <div class="mb-4">
-        <label class="lab" for="password">密码</label>
-        <input id="password" type="password" class="w-100" autocomplete="current-password" required>
+
+      <form class="auth-form" id="loginForm" autocomplete="on">
+        <div class="fd">
+          <label for="account">账号 / ACCOUNT</label>
+          <input id="account" name="account" autocomplete="username" required>
+        </div>
+        <div class="fd">
+          <label for="password">密码 / PASSWORD</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="seal-btn" type="submit">登 录</button>
+        <div class="auth-msg" id="msg" role="alert"></div>
+      </form>
+
+      <div class="auth-foot">忘记密码请联系管理员重置 · 建议把本页加到手机桌面，签到时直接点开</div>
+    </section>
+
+    <!-- 右：定音鼓手 -->
+    <section class="auth-art" id="art">
+      <div class="art-wrap">
+        <svg class="art-svg" viewBox="0 0 620 470" role="img"
+             aria-label="一个站着的定音鼓手，五个定音鼓沿半圆环绕着他（装饰插画）">
+
+          <!-- 远处的鼓先画 -->
+          <g class="drum" data-drum="1"><!-- 最左后 -->
+            <g class="drum-body">
+              <ellipse class="ln2" cx="104" cy="300" rx="44" ry="13"/>
+              <ellipse class="ln2" cx="104" cy="301" rx="35" ry="10"/>
+              <path class="ln2" d="M60 300 A44 38 0 0 0 148 300"/>
+              <line class="ln2" x1="79" y1="330" x2="66" y2="410"/>
+              <line class="ln2" x1="129" y1="330" x2="142" y2="410"/>
+              <line class="ln2" x1="74" y1="372" x2="134" y2="372"/>
+            </g>
+            <g class="ticks">
+              <line class="ln wave" x1="84" y1="272" x2="84" y2="258"/>
+              <line class="ln wave" x1="104" y1="266" x2="104" y2="250"/>
+              <line class="ln wave" x1="124" y1="272" x2="124" y2="258"/>
+            </g>
+            <g class="ring"><ellipse class="ln wave" cx="104" cy="300" rx="44" ry="13"/></g>
+          </g>
+          <g class="drum" data-drum="2"><!-- 左中 -->
+            <g class="drum-body">
+              <ellipse class="ln2" cx="192" cy="316" rx="52" ry="15"/>
+              <ellipse class="ln2" cx="192" cy="317" rx="41" ry="12"/>
+              <path class="ln2" d="M140 316 A52 45 0 0 0 244 316"/>
+              <line class="ln2" x1="163" y1="352" x2="148" y2="440"/>
+              <line class="ln2" x1="221" y1="352" x2="236" y2="440"/>
+              <line class="ln2" x1="157" y1="400" x2="227" y2="400"/>
+            </g>
+            <g class="ticks">
+              <line class="ln wave" x1="169" y1="284" x2="169" y2="268"/>
+              <line class="ln wave" x1="192" y1="277" x2="192" y2="259"/>
+              <line class="ln wave" x1="215" y1="284" x2="215" y2="268"/>
+            </g>
+            <g class="ring"><ellipse class="ln wave" cx="192" cy="316" rx="52" ry="15"/></g>
+          </g>
+          <g class="drum" data-drum="4"><!-- 右中 -->
+            <g class="drum-body">
+              <ellipse class="ln2" cx="428" cy="316" rx="52" ry="15"/>
+              <ellipse class="ln2" cx="428" cy="317" rx="41" ry="12"/>
+              <path class="ln2" d="M376 316 A52 45 0 0 0 480 316"/>
+              <line class="ln2" x1="399" y1="352" x2="384" y2="440"/>
+              <line class="ln2" x1="457" y1="352" x2="472" y2="440"/>
+              <line class="ln2" x1="393" y1="400" x2="463" y2="400"/>
+            </g>
+            <g class="ticks">
+              <line class="ln wave" x1="405" y1="284" x2="405" y2="268"/>
+              <line class="ln wave" x1="428" y1="277" x2="428" y2="259"/>
+              <line class="ln wave" x1="451" y1="284" x2="451" y2="268"/>
+            </g>
+            <g class="ring"><ellipse class="ln wave" cx="428" cy="316" rx="52" ry="15"/></g>
+          </g>
+          <g class="drum" data-drum="5"><!-- 最右后 -->
+            <g class="drum-body">
+              <ellipse class="ln2" cx="516" cy="300" rx="44" ry="13"/>
+              <ellipse class="ln2" cx="516" cy="301" rx="35" ry="10"/>
+              <path class="ln2" d="M472 300 A44 38 0 0 0 560 300"/>
+              <line class="ln2" x1="491" y1="330" x2="478" y2="410"/>
+              <line class="ln2" x1="541" y1="330" x2="554" y2="410"/>
+              <line class="ln2" x1="486" y1="372" x2="546" y2="372"/>
+            </g>
+            <g class="ticks">
+              <line class="ln wave" x1="496" y1="272" x2="496" y2="258"/>
+              <line class="ln wave" x1="516" y1="266" x2="516" y2="250"/>
+              <line class="ln wave" x1="536" y1="272" x2="536" y2="258"/>
+            </g>
+            <g class="ring"><ellipse class="ln wave" cx="516" cy="300" rx="44" ry="13"/></g>
+          </g>
+
+          <!-- 人物：站立、微微侧身（脸不画侧轮廓）、画大 -->
+          <g id="torso">
+            <path class="ln" d="M286 300 C280 340 276 380 274 424"/>
+            <path class="ln" d="M314 300 C320 340 324 380 326 424"/>
+            <path class="ln" d="M274 424 L250 428"/>
+            <path class="ln" d="M326 424 L350 428"/>
+            <path class="ln" d="M300 190 C279 194 269 222 270 258 C271 286 277 300 282 308 L318 308 C323 300 329 286 330 258 C331 222 321 194 300 190 Z"/>
+          </g>
+          <g id="head">
+            <path class="ln" d="M300 190 L300 178"/>
+            <circle class="ln" cx="300" cy="148" r="31"/>
+            <g class="eye"><ellipse class="eye-ball" cx="288" cy="145" rx="5.6" ry="4.4"/></g>
+            <g class="eye"><ellipse class="eye-ball" cx="313" cy="143" rx="5.6" ry="4.4"/></g>
+          </g>
+
+          <g id="armA">
+            <path class="ln" d="M280 208 L254 246"/>
+            <g id="armA-fa">
+              <path class="ln" d="M254 246 L230 274"/>
+              <line class="ln stick" x1="230" y1="274" x2="214" y2="306"/>
+            </g>
+          </g>
+          <g id="armB">
+            <path class="ln" d="M322 206 L350 244"/>
+            <g id="armB-fa">
+              <path class="ln" d="M350 244 L374 272"/>
+              <line class="ln stick" x1="374" y1="272" x2="388" y2="304"/>
+            </g>
+          </g>
+
+          <!-- 正前方那面鼓：最近、最后画（会自然挡住小腿） -->
+          <g class="drum" data-drum="3">
+            <g class="drum-body">
+              <ellipse class="ln2" cx="300" cy="344" rx="60" ry="17"/>
+              <ellipse class="ln2" cx="300" cy="345" rx="47" ry="13"/>
+              <path class="ln2" d="M240 344 A60 51 0 0 0 360 344"/>
+              <line class="ln2" x1="267" y1="382" x2="250" y2="452"/>
+              <line class="ln2" x1="333" y1="382" x2="350" y2="452"/>
+              <line class="ln2" x1="261" y1="418" x2="339" y2="418"/>
+            </g>
+            <g class="ticks">
+              <line class="ln wave" x1="274" y1="306" x2="274" y2="288"/>
+              <line class="ln wave" x1="300" y1="298" x2="300" y2="278"/>
+              <line class="ln wave" x1="326" y1="306" x2="326" y2="288"/>
+            </g>
+            <g class="ring"><ellipse class="ln wave" cx="300" cy="344" rx="60" ry="17"/></g>
+          </g>
+
+          <!-- 思考气泡（默认隐藏） -->
+          <g id="bubble">
+            <path class="ln2" d="M252 66 C244 36 272 18 304 20 C338 22 358 42 354 66 C350 88 322 98 300 94 C292 102 286 110 284 120 C278 108 272 98 264 92 C254 84 252 76 252 66 Z"/>
+            <circle class="ln2" cx="276" cy="110" r="5"/>
+            <circle class="ln2" cx="264" cy="126" r="3"/>
+            <circle class="dot" cx="286" cy="80" r="3.6"/>
+            <circle class="dot" cx="300" cy="80" r="3.6"/>
+            <circle class="dot" cx="314" cy="80" r="3.6"/>
+          </g>
+
+        </svg>
       </div>
-      <button class="go w-100" type="submit">登 录</button>
-    </form>
+    </section>
+
   </div>
 </div>
+
 <script>
-document.getElementById('login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const account = document.getElementById('account').value.trim();
-  const password = document.getElementById('password').value;
-  const envelope = await BAND.api('/api/auth/login', { method: 'POST', body: { account, password } });
-  if (envelope.code !== 0) {
-    BAND.toast(envelope.message || '登录失败');
-    return;
+(function () {
+  'use strict';
+  var art = document.getElementById('art');
+  var form = document.getElementById('loginForm');
+  var msg = document.getElementById('msg');
+  var acc = document.getElementById('account');
+  var pw = document.getElementById('password');
+  var byId = {};
+  Array.prototype.forEach.call(art.querySelectorAll('.drum'), function (d) {
+    byId[d.getAttribute('data-drum')] = d;
+  });
+  var IDLE_MS = 9000;
+  var state = 'idle', idleTimer = null, rollTimer = null, idleBack = null, blinkTimer = null;
+
+  function strike(arm, drumId) {
+    var drum = byId[drumId];
+    if (!drum) return;
+    var cls = arm === 'a' ? 'armA-hit' : 'armB-hit';
+    art.classList.add(cls);
+    drum.classList.add('drum-hit');
+    setTimeout(function () { art.classList.remove(cls); }, 460);
+    setTimeout(function () { drum.classList.remove('drum-hit'); }, 950);
   }
-  BAND.saveToken(envelope.data.token);
-  location.href = '/events.html';
-});
+
+  /* 待机：随机挑一面鼓（正前方那面 3 挨得最多），随机间隔 —— 不规律才不像机器 */
+  var POOL = ['3', '3', '2', '4', '3', '1', '5', '2', '4'];
+  function scheduleIdle() {
+    clearTimeout(idleTimer);
+    if (state !== 'idle') return;
+    idleTimer = setTimeout(function () {
+      if (state === 'idle' && !art.classList.contains('paused')) {
+        strike(Math.random() < 0.5 ? 'a' : 'b', POOL[Math.floor(Math.random() * POOL.length)]);
+      }
+      scheduleIdle();
+    }, 620 + Math.random() * 1500);
+  }
+
+  /* 滚奏：左右相邻两面鼓快速交替 */
+  function startRoll() {
+    clearInterval(rollTimer);
+    var i = 0;
+    rollTimer = setInterval(function () {
+      if (art.classList.contains('paused')) return;
+      strike(i % 2 === 0 ? 'a' : 'b', i % 2 === 0 ? '2' : '3');
+      i++;
+    }, 105);
+  }
+  function stopRoll() { clearInterval(rollTimer); rollTimer = null; }
+
+  function setState(s) {
+    clearTimeout(idleTimer); stopRoll(); clearTimeout(idleBack);
+    art.classList.remove('armA-hit', 'armB-hit');
+    state = s;
+    art.classList.toggle('think', s === 'think');
+    art.classList.toggle('focus', s === 'roll');
+    if (s === 'idle') scheduleIdle();
+    if (s === 'roll') startRoll();
+    idleBack = setTimeout(function () { setState('idle'); }, IDLE_MS);
+  }
+
+  /* 眨眼：待机时偶尔眨一下 */
+  function scheduleBlink() {
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(function () {
+      if (state !== 'think' && !art.classList.contains('paused')) {
+        art.classList.add('blink');
+        setTimeout(function () { art.classList.remove('blink'); }, 120);
+      }
+      scheduleBlink();
+    }, 2400 + Math.random() * 3200);
+  }
+
+  function typing() { if (state !== 'roll') setState('roll'); }
+  function notTyping() { if (state === 'roll') setState('idle'); }
+  [acc, pw].forEach(function (el) {
+    el.addEventListener('focus', typing);
+    el.addEventListener('input', typing);
+    el.addEventListener('blur', notTyping);
+  });
+
+  /* 登录：接真实接口（docs/01 §1.4 失败文案）；成功 → 落 band_welcome 标记 → 目标页播欢迎过渡 */
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    setState('think');
+    msg.textContent = '';
+    var t0 = Date.now();
+    var envelope = await BAND.api('/api/auth/login', {
+      method: 'POST',
+      body: { account: acc.value.trim(), password: pw.value },
+    });
+    if (envelope.code !== 0) {
+      if (envelope.code === 20003) {
+        msg.textContent = '账号已停用，请联系管理员';
+      } else if (envelope.code === 20001 && Date.now() - t0 > 2500) {
+        // 服务端对连续输错做了约 3 秒延迟（不是锁号）；响应明显变慢时如实说明
+        msg.textContent = '连续输错会稍微等几秒才能再试（不是把账号锁了）';
+      } else {
+        msg.textContent = '账号或密码错误';
+      }
+      return;
+    }
+    BAND.saveToken(envelope.data.token);
+    try { sessionStorage.setItem('band_welcome', '1'); } catch (err) { /* 隐私模式跳过过渡 */ }
+    location.href = '/events.html';
+  });
+
+  /* 止损二：切后台暂停 */
+  document.addEventListener('visibilitychange', function () {
+    art.classList.toggle('paused', document.hidden);
+    if (!document.hidden && state === 'idle') scheduleIdle();
+  });
+  /* 止损三：离屏暂停 */
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (ens) {
+      ens.forEach(function (en) { art.classList.toggle('paused', !en.isIntersecting); });
+    }, { threshold: 0.05 }).observe(art);
+  }
+
+  setState('idle');
+  scheduleBlink();
+})();
 </script>
 </body>
 </html>

@@ -43,9 +43,21 @@ public class Member {
 
     private LocalDate leftAt;
 
+    private LocalDate honoraryUntil;
+
     private String alumniMessage;
 
     private String note;
+
+    /** 预置头像的**受控标识符**（如 fluent-frog），不是 URL；为空 → 界面回退姓名首字（docs/13 §13.3②）。 */
+    private String avatar;
+
+    private String intro;
+
+    private String contact;
+
+    /** 生日：默认只本人 + 管理员可见，对外只到「月-日」（docs/13 §13.3② + 暂定项 T17）。 */
+    private LocalDate birthday;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -173,6 +185,14 @@ public class Member {
         this.leftAt = leftAt;
     }
 
+    public LocalDate getHonoraryUntil() {
+        return honoraryUntil;
+    }
+
+    public void setHonoraryUntil(LocalDate honoraryUntil) {
+        this.honoraryUntil = honoraryUntil;
+    }
+
     public String getAlumniMessage() {
         return alumniMessage;
     }
@@ -187,6 +207,38 @@ public class Member {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
+    }
+
+    public String getIntro() {
+        return intro;
+    }
+
+    public void setIntro(String intro) {
+        this.intro = intro;
+    }
+
+    public String getContact() {
+        return contact;
+    }
+
+    public void setContact(String contact) {
+        this.contact = contact;
+    }
+
+    public LocalDate getBirthday() {
+        return birthday;
+    }
+
+    public void setBirthday(LocalDate birthday) {
+        this.birthday = birthday;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>录音 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 上传（荣誉团员看不到这一块：他们只读，服务端也会 403） -->
+<div class="cell mb-4" id="upload-box" hidden>
+  <div class="lab">传一段练习录音</div>
+  <p class="chip" id="rec-hint">手机上可以直接录（3 分钟以内），也可以选本地文件。传上来之后声部长可以点评。</p>
+  <div class="row g-2">
+    <div class="col-12 col-md-3"><input id="u-title" class="w-100" maxlength="64" placeholder="标题（如：快板那一段）"></div>
+    <div class="col-12 col-md-3"><select id="u-piece" class="w-100"><option value="">不关联曲目</option></select></div>
+    <div class="col-6 col-md-2"><button id="u-record" class="go go-sm w-100" type="button">开始录音</button></div>
+    <div class="col-6 col-md-2"><input id="u-file" type="file" accept="audio/*" class="w-100"></div>
+    <div class="col-12 col-md-2"><button id="u-send" class="go go-sm w-100" type="button">上传</button></div>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">录音</h2>
+  <select id="q-scope" class="w-auto">
+    <option value="mine">只看我的</option>
+    <option value="">我能听到的全部</option>
+  </select>
+</div>
+<div id="list"></div>
+<p id="empty" class="py-4" hidden>还没有录音——手机对着吹一段传上来，让声部长听听</p>
+
+<script>
+'use strict';
+
+let me = null;
+let recorder = null;
+let chunks = [];
+const MAX_SECONDS = 180;   // 时长上限 3 分钟（T5 暂定）：**只能在前端拦**，服务端不解析音频
+
+async function load() {
+  me = await BAND.renderNav('recordings.html');
+  if (!me) return;
+  // 荣誉团员只读：他们不能上传（docs/02 防腐条款），服务端也会 403——这里只是不显示无用的按钮
+  document.getElementById('upload-box').hidden = me.role === 'HONORARY';
+  if (me.role !== 'HONORARY') {
+    const pieces = await BAND.must('/api/pieces?size=100');
+    document.getElementById('u-piece').innerHTML = '<option value="">不关联曲目</option>'
+      + pieces.list.map((p) => `<option value="${p.id}">${p.title}</option>`).join('');
+    setupRecorder();
+  }
+
+  const scope = document.getElementById('q-scope').value;
+  const query = scope === 'mine' ? `?memberId=${me.id}&size=50` : '?size=50';
+  const d = await BAND.must('/api/recordings' + query);
+  const host = document.getElementById('list');
+  host.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const r of d.list) host.appendChild(card(r));
+}
+
+function card(r) {
+  const el = document.createElement('div');
+  el.className = 'cell mb-3';
+  const head = document.createElement('div');
+  head.className = 'd-flex justify-content-between align-items-center';
+  const who = document.createElement('b');
+  who.textContent = r.title || '（未命名）';
+  const meta = document.createElement('span');
+  meta.className = 'chip mb-0';
+  meta.textContent = [r.memberName, r.sectionName, r.pieceTitle,
+    r.durationSec ? Math.round(r.durationSec) + ' 秒' : null,
+    BAND.sizeText(r.sizeBytes), (r.uploadedAt || '').slice(0, 16).replace('T', ' ')]
+    .filter(Boolean).join(' · ');
+  head.append(who, meta);
+  el.appendChild(head);
+
+  // 播放：**必须走 blob**（裸 <audio src="/api/files/id"> 不带 Authorization 头，永远 401）
+  const audio = document.createElement('audio');
+  audio.controls = true;
+  audio.className = 'w-100 mt-2';
+  el.appendChild(audio);
+  BAND.fileBlobUrl(r.fileId).then((url) => { audio.src = url; }).catch(() => {});
+
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 mt-2';
+  const toggle = document.createElement('button');
+  toggle.className = 'go go-ghost go-sm';
+  toggle.type = 'button';
+  toggle.textContent = `点评（${r.commentCount}）`;
+  const del = document.createElement('button');
+  del.className = 'go go-ghost go-sm';
+  del.type = 'button';
+  del.textContent = '删除';
+  del.hidden = true;   // 由服务端的删除权限决定（本人 / 本声部长 / 管理角色）——先试一次再说
+  row.append(toggle, del);
+  el.appendChild(row);
+
+  const box = document.createElement('div');
+  box.hidden = true;
+  el.appendChild(box);
+
+  toggle.addEventListener('click', async () => {
+    box.hidden = !box.hidden;
+    if (!box.hidden) await drawComments(r, box);
+  });
+  del.addEventListener('click', async () => {
+    if (!await BAND.confirm({ title: '删掉这段录音？', body: r.title || '' })) return;
+    await BAND.must(`/api/recordings/${r.id}`, { method: 'DELETE' });
+    BAND.toast('已删除', 'success');
+    load();
+  });
+  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）
+  del.hidden = !(r.memberId === me.id || ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER'].includes(me.role));
+  return el;
+}
+
+async function drawComments(r, box) {
+  const d = await BAND.must(`/api/recordings/${r.id}`);
+  box.innerHTML = '';
+  for (const c of d.comments) {
+    const p = document.createElement('p');
+    p.className = 'mb-1';
+    const who = document.createElement('b');
+    who.textContent = c.authorName + '：';
+    const text = document.createElement('span');
+    text.textContent = c.content;
+    p.append(who, text);
+    box.appendChild(p);
+  }
+  if (!d.comments.length) {
+    const p = document.createElement('p');
+    p.className = 'chip mb-1';
+    p.textContent = '还没有点评';
+    box.appendChild(p);
+  }
+  const input = document.createElement('input');
+  input.className = 'w-100 mt-1';
+  input.placeholder = '说点什么（能听到这段录音的人都能说）';
+  const send = document.createElement('button');
+  send.className = 'go go-sm mt-1';
+  send.type = 'button';
+  send.textContent = '发送';
+  send.addEventListener('click', async () => {
+    if (!input.value.trim()) return;
+    await BAND.must(`/api/recordings/${r.id}/comments`, {
+      method: 'POST',
+      body: { content: input.value.trim() },
+    });
+    input.value = '';
+    drawComments(r, box);
+  });
+  box.append(input, send);
+}
+
+/**
+ * 录音：**先试 audio/mp4**——规格的音频白名单是 m4a/mp3/wav，而 Chrome 的 MediaRecorder
+ * 默认产出 webm（不在白名单）。不支持就直接退回"选本地文件"，并**明说一句**，不许静默失败。
+ */
+function setupRecorder() {
+  const btn = document.getElementById('u-record');
+  const hint = document.getElementById('rec-hint');
+  const supported = window.MediaRecorder
+    && MediaRecorder.isTypeSupported('audio/mp4');
+  if (!supported) {
+    btn.disabled = true;
+    btn.textContent = '本浏览器不支持';
+    hint.textContent = '这个浏览器不能直接录音（它录出来的格式系统不收）——请用手机录音机录好，再选本地文件上传。';
+    return;
+  }
+  btn.addEventListener('click', async () => {
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      recorder = new MediaRecorder(stream, { mimeType: 'audio/mp4' });
+      const startedAt = Date.now();
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        btn.textContent = '开始录音';
+        const seconds = Math.round((Date.now() - startedAt) / 1000);
+        if (seconds > MAX_SECONDS) {
+          BAND.toast(`录了 ${seconds} 秒，超过 3 分钟上限——重录一段吧`);
+          return;
+        }
+        const blob = new Blob(chunks, { type: 'audio/mp4' });
+        await sendRecording(new File([blob], `take-${Date.now()}.m4a`, { type: 'audio/mp4' }), seconds);
+      };
+      recorder.start();
+      btn.textContent = '停止';
+      setTimeout(() => {   // 到 3 分钟自动停，别录出超长的东西
+        if (recorder && recorder.state === 'recording') recorder.stop();
+      }, MAX_SECONDS * 1000);
+    } catch (e) {
+      BAND.toast('拿不到麦克风权限');
+    }
+  });
+}
+
+document.getElementById('u-send').addEventListener('click', async () => {
+  const input = document.getElementById('u-file');
+  if (!input.files.length) {
+    BAND.toast('先选一个音频文件');
+    return;
+  }
+  const file = input.files[0];
+  await sendRecording(file, null);
+  input.value = '';
+});
+
+async function sendRecording(file, seconds) {
+  const uploaded = await BAND.uploadFile(file);
+  const pieceValue = document.getElementById('u-piece').value;
+  await BAND.must('/api/recordings', {
+    method: 'POST',
+    body: {
+      fileId: uploaded.id,
+      pieceId: pieceValue ? Number(pieceValue) : null,
+      title: document.getElementById('u-title').value.trim() || null,
+      durationSec: seconds,
+    },
+  });
+  document.getElementById('u-title').value = '';
+  BAND.toast('已上传', 'success');
+  load();
+}
+
+document.getElementById('q-scope').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>

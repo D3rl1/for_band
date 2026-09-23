@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS member (
     section_id       BIGINT       NULL COMMENT '所属声部，管理员系统账号为 NULL',
     instrument       VARCHAR(32)  NULL COMMENT '乐器',
     phone            VARCHAR(20)  NULL COMMENT '手机号，仅管理员/团长/指挥可见',
-    role             VARCHAR(20)  NOT NULL COMMENT 'ADMIN/LEADER/CONDUCTOR/SECTION_LEADER/MEMBER',
+    role             VARCHAR(20)  NOT NULL COMMENT 'ADMIN/LEADER/CONDUCTOR/SECTION_LEADER/MEMBER/HONORARY',
     status           VARCHAR(12)  NOT NULL COMMENT 'ACTIVE/PAUSED/LEFT/GRADUATED',
     account          VARCHAR(32)  NULL COMMENT '登录名',
     password_hash    VARCHAR(72)  NULL COMMENT 'BCrypt',
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS member (
     is_system        TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '管理员系统账号标记',
     joined_at        DATE         NULL COMMENT '入团日期',
     left_at          DATE         NULL COMMENT '离团日期，退团/毕业时写',
+    honorary_until   DATE         NULL COMMENT '荣誉团员登录有效期；为空或已过期→不可登录，非荣誉团员恒为 NULL',
     alumni_message   TEXT         NULL COMMENT '毕业寄语（期 6 历届成员页用）',
     note             VARCHAR(255) NULL COMMENT '备注',
     created_at       DATETIME     NOT NULL,
@@ -56,12 +57,15 @@ CREATE TABLE IF NOT EXISTS member_role_history (
 
 -- ④ user_token 登录令牌（docs/13 §13.3④）。只存哈希，不存原文。
 CREATE TABLE IF NOT EXISTS user_token (
-    id         BIGINT   NOT NULL AUTO_INCREMENT,
-    token_hash VARCHAR(64) NOT NULL COMMENT 'SHA-256 hex',
-    member_id  BIGINT   NOT NULL,
-    issued_at  DATETIME NOT NULL,
-    expires_at DATETIME NOT NULL COMMENT '签发 + 30 天',
-    revoked_at DATETIME NULL COMMENT '非空即失效',
+    id           BIGINT   NOT NULL AUTO_INCREMENT,
+    token_hash   VARCHAR(64) NOT NULL COMMENT 'SHA-256 hex',
+    member_id    BIGINT   NOT NULL,
+    issued_at    DATETIME NOT NULL,
+    expires_at   DATETIME NOT NULL COMMENT '签发 + 30 天',
+    revoked_at   DATETIME NULL COMMENT '非空即失效',
+    user_agent   VARCHAR(255) NULL COMMENT '登录时的 UA，存原文（展示时粗解析成"设备"，规则见 docs/01 §1.4）',
+    ip           VARCHAR(45)  NULL COMMENT '登录 IP（IPv6 最长 45）。存完整值（审计用），只有展示时打码（SECURITY.md B9）',
+    last_seen_at DATETIME     NULL COMMENT '最后活跃时间，用于"我在哪儿登录过"',
     PRIMARY KEY (id),
     UNIQUE KEY uk_token_hash (token_hash),
     KEY idx_member_id (member_id)
@@ -149,3 +153,283 @@ CREATE TABLE IF NOT EXISTS leave_approval (
     KEY idx_approver_id (approver_id),
     KEY idx_decision (decision)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '请假待签记录';
+
+-- ㉑ feedback 反馈（docs/13 §13.3㉑，期 1.5）。连点两次就是两条，**不设幂等**。
+CREATE TABLE IF NOT EXISTS feedback (
+    id         BIGINT        NOT NULL AUTO_INCREMENT,
+    member_id  BIGINT        NOT NULL COMMENT '提交人（FK→member）',
+    content    VARCHAR(1000) NOT NULL COMMENT '反馈正文，必填',
+    page_path  VARCHAR(255)  NULL COMMENT '提交时所在页，前端自动带（定位问题的第一线索）',
+    user_agent VARCHAR(255)  NULL COMMENT '提交时的 UA 原文；展示时粗解析成"设备"（docs/01 §1.4）',
+    status     VARCHAR(12)   NOT NULL COMMENT 'OPEN/HANDLED',
+    handled_by BIGINT        NULL COMMENT '处理人（FK→member）。与 handled_at 一起就是留痕，故不进操作日志',
+    handled_at DATETIME      NULL,
+    admin_note VARCHAR(255)  NULL COMMENT '处理备注',
+    created_at DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_status (status),
+    KEY idx_created_at (created_at)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '反馈';
+
+-- ㉒ release_note 更新公告（docs/13 §13.3㉒，期 1.5）。正文纯文本 + 换行，不渲染 HTML/markdown；
+-- 发布后不可改不可删（要改就再发一条），所以没有 updated_at。
+CREATE TABLE IF NOT EXISTS release_note (
+    id           BIGINT      NOT NULL AUTO_INCREMENT,
+    title        VARCHAR(64) NOT NULL,
+    content      TEXT        NOT NULL COMMENT '正文，纯文本 + 换行',
+    published_at DATETIME    NOT NULL COMMENT '发布时间（业务时间，显式赋值）',
+    published_by BIGINT      NOT NULL COMMENT '发布人（FK→member）',
+    created_at   DATETIME    NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_published_at (published_at)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '更新公告';
+
+-- ⑨ file 统一文件表（docs/13 §13.3⑨）。曲目附件（`06`）、演出照片（`07`）、练习录音（`08`）
+-- **共用同一套上传/下载机制**（docs/08 §8.5），所以表只有一张、下载只走一个鉴权接口。
+CREATE TABLE IF NOT EXISTS file (
+    id            BIGINT       NOT NULL AUTO_INCREMENT,
+    stored_name   VARCHAR(64)  NOT NULL COMMENT '磁盘文件名，**服务端随机生成**：原始名可猜、还可能带路径穿越字符',
+    original_name VARCHAR(255) NULL COMMENT '原始文件名，仅下载时显示',
+    content_type  VARCHAR(64)  NOT NULL COMMENT '服务端按**文件头**判定，不信客户端传来的 MIME',
+    size_bytes    BIGINT       NOT NULL,
+    sha256        VARCHAR(64)  NOT NULL COMMENT '内容哈希（校验损坏用；本期不做去重，见移交事项）',
+    owner_id      BIGINT       NOT NULL COMMENT '上传者（FK→member）',
+    created_at    DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_stored_name (stored_name),
+    KEY idx_owner_id (owner_id),
+    KEY idx_sha256 (sha256)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '统一文件表';
+
+-- ⑩ piece 曲目（docs/13 §13.3⑩）。**不做"曲目 → 版本"父子结构**：不同版本就是两条记录（DECISIONS D14）。
+CREATE TABLE IF NOT EXISTS piece (
+    id           BIGINT      NOT NULL AUTO_INCREMENT,
+    title        VARCHAR(64) NOT NULL,
+    composer     VARCHAR(64) NULL COMMENT '作曲',
+    arranger     VARCHAR(64) NULL COMMENT '编曲 / 移植',
+    category     VARCHAR(32) NULL COMMENT '体裁',
+    difficulty   TINYINT     NULL COMMENT '1~5',
+    duration_sec INT         NULL,
+    status       VARCHAR(16) NOT NULL COMMENT 'CANDIDATE 备选 / REHEARSING 在练 / READY 已成熟 / PAUSED 已停排',
+    note         TEXT        NULL,
+    created_by   BIGINT      NOT NULL COMMENT 'FK→member',
+    updated_by   BIGINT      NULL COMMENT 'FK→member',
+    created_at   DATETIME    NOT NULL,
+    updated_at   DATETIME    NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_status (status),
+    KEY idx_title (title)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '曲目';
+
+-- ⑪ piece_attachment 曲目附件（docs/13 §13.3⑪）。文件本体在 `file` 表，这里只做关联。
+CREATE TABLE IF NOT EXISTS piece_attachment (
+    id          BIGINT      NOT NULL AUTO_INCREMENT,
+    piece_id    BIGINT      NOT NULL COMMENT 'FK→piece',
+    kind        VARCHAR(12) NOT NULL COMMENT 'AUDIO 音频 / SCORE 谱子',
+    file_id     BIGINT      NOT NULL COMMENT 'FK→file',
+    uploaded_by BIGINT      NULL COMMENT 'FK→member',
+    uploaded_at DATETIME    NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_piece_id (piece_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '曲目附件';
+
+-- ⑳ event_piece 活动关联曲目（docs/13 §13.3⑳，**期 3 起才建**）：让"这次练了哪些曲"可点开、可统计。
+CREATE TABLE IF NOT EXISTS event_piece (
+    id       BIGINT       NOT NULL AUTO_INCREMENT,
+    event_id BIGINT       NOT NULL COMMENT 'FK→event',
+    piece_id BIGINT       NOT NULL COMMENT 'FK→piece',
+    order_no INT          NULL COMMENT '练习顺序',
+    note     VARCHAR(255) NULL COMMENT '如"只练前两段"',
+    PRIMARY KEY (id),
+    KEY idx_event_id (event_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '活动关联曲目';
+
+-- ⑫ concert 演出（docs/13 §13.3⑫）。**演出不做签到**——现场忙着上台不可能点签到，
+-- 改用「参演人员名单」（⑬）记录谁上过台（docs/07 §7.4）。**视频只存链接**，不托管视频文件。
+CREATE TABLE IF NOT EXISTS concert (
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    name           VARCHAR(64)  NOT NULL,
+    date           DATE         NOT NULL,
+    start_time     TIME         NULL,
+    venue          VARCHAR(64)  NULL,
+    host           VARCHAR(64)  NULL COMMENT '主办方 / 合作单位',
+    poster_file_id BIGINT       NULL COMMENT 'FK→file',
+    video_url      VARCHAR(255) NULL COMMENT '录像链接（B 站 / 网盘），**不托管视频文件**',
+    summary        TEXT         NULL COMMENT '演出总结 / 复盘',
+    note           TEXT         NULL,
+    status         VARCHAR(12)  NOT NULL COMMENT 'PLANNED 计划 / DONE 已完成 / CANCELED 已取消',
+    created_by     BIGINT       NOT NULL COMMENT 'FK→member',
+    updated_by     BIGINT       NULL COMMENT 'FK→member',
+    created_at     DATETIME     NOT NULL,
+    updated_at     DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_date (date),
+    KEY idx_status (status)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '演出';
+
+-- ⑬ concert_cast 参演名单（docs/13 §13.3⑬）：**联合主键**。
+-- ⚠️ **荣誉团员可以被列入**（"毕业了回团参演"很常见）：不计考勤、不能自己报名、不能签到。
+CREATE TABLE IF NOT EXISTS concert_cast (
+    concert_id BIGINT      NOT NULL COMMENT 'FK→concert',
+    member_id  BIGINT      NOT NULL COMMENT 'FK→member（可以是已毕业/休团的人）',
+    note       VARCHAR(64) NULL COMMENT '如"替补"',
+    PRIMARY KEY (concert_id, member_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '演出参演名单';
+
+-- ⑭ concert_piece 演出曲目单（docs/13 §13.3⑭）：**曲目从曲目库选，不自由填写**。
+-- **指挥放在曲目行上**——协奏曲请外聘指挥、某首由学生指挥，都能表达。
+CREATE TABLE IF NOT EXISTS concert_piece (
+    id         BIGINT       NOT NULL AUTO_INCREMENT,
+    concert_id BIGINT       NOT NULL COMMENT 'FK→concert',
+    piece_id   BIGINT       NOT NULL COMMENT 'FK→piece',
+    order_no   INT          NOT NULL COMMENT '演出顺序',
+    conductor  VARCHAR(32)  NULL COMMENT '这首的指挥（可能与别的曲目不同）',
+    note       VARCHAR(255) NULL,
+    PRIMARY KEY (id),
+    KEY idx_concert_id (concert_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '演出曲目单';
+
+-- ⑮ concert_photo 演出照片（docs/13 §13.3⑮）：文件本体在 `file` 表；**前端先压缩再传**。
+CREATE TABLE IF NOT EXISTS concert_photo (
+    id          BIGINT       NOT NULL AUTO_INCREMENT,
+    concert_id  BIGINT       NOT NULL COMMENT 'FK→concert',
+    file_id     BIGINT       NOT NULL COMMENT 'FK→file',
+    caption     VARCHAR(128) NULL,
+    uploaded_by BIGINT       NULL COMMENT 'FK→member',
+    uploaded_at DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_concert_id (concert_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '演出照片';
+
+-- ⑯ recording 练习录音（docs/13 §13.3⑯）。文件本体在 `file` 表（docs/08 §8.5 的统一机制）。
+-- ⚠️ `section_id` 实现为**可空**（docs/13 原文写 NOT NULL）：因为**指挥 / 团长也能上传自己的录音**，
+--    而他们没有声部（`member.section_id` 为 NULL）——写 NOT NULL 会把这些人直接堵死。
+--    它只服务于"声部长看本声部"这一条，而指挥/团长本来就能看全部。已记移交请规格确认。
+CREATE TABLE IF NOT EXISTS recording (
+    id           BIGINT   NOT NULL AUTO_INCREMENT,
+    member_id    BIGINT   NOT NULL COMMENT '上传者（FK→member）',
+    section_id   BIGINT   NULL COMMENT '**冗余**：可见性按声部判定、查询高频；上传者无声部时为空',
+    piece_id     BIGINT   NULL COMMENT '录的是哪首曲子（FK→piece，可空）',
+    title        VARCHAR(64)  NULL,
+    file_id      BIGINT   NOT NULL COMMENT 'FK→file',
+    duration_sec INT      NULL COMMENT '**客户端上报**的时长（服务端不解析音频，拦不住时长）',
+    size_bytes   BIGINT   NULL,
+    uploaded_at  DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_member_id (member_id),
+    KEY idx_section_id (section_id),
+    KEY idx_piece_id (piece_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '练习录音';
+
+-- ⑰ recording_comment 录音点评（docs/13 §13.3⑰）：**平铺按时间，不做父子嵌套**（docs/08 §8.4）。
+-- 双向：声部长留言后团员可以回复追问——所以"能看见这条录音就能在这里说话"。
+CREATE TABLE IF NOT EXISTS recording_comment (
+    id           BIGINT   NOT NULL AUTO_INCREMENT,
+    recording_id BIGINT   NOT NULL COMMENT 'FK→recording',
+    author_id    BIGINT   NOT NULL COMMENT 'FK→member',
+    content      TEXT     NOT NULL,
+    created_at   DATETIME NOT NULL,
+    updated_at   DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_recording_id (recording_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '录音点评';
+
+-- 存量库补列（MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守护，保证本脚本可重复执行）。
+DELIMITER $$
+DROP PROCEDURE IF EXISTS band_add_honorary_until$$
+CREATE PROCEDURE band_add_honorary_until()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'member'
+          AND COLUMN_NAME = 'honorary_until'
+    ) THEN
+        ALTER TABLE member
+            ADD COLUMN honorary_until DATE NULL COMMENT '荣誉团员登录有效期；为空或已过期→不可登录，非荣誉团员恒为 NULL' AFTER left_at;
+    END IF;
+END$$
+CALL band_add_honorary_until()$$
+DROP PROCEDURE band_add_honorary_until$$
+
+-- 同上：存量库补会话管理三列（docs/13 §13.3④，2026-09-22/23）
+DROP PROCEDURE IF EXISTS band_add_token_session_columns$$
+CREATE PROCEDURE band_add_token_session_columns()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'user_token'
+          AND COLUMN_NAME = 'user_agent'
+    ) THEN
+        ALTER TABLE user_token
+            ADD COLUMN user_agent VARCHAR(255) NULL COMMENT '登录时的 UA，存原文（展示时粗解析成"设备"，规则见 docs/01 §1.4）' AFTER revoked_at;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'user_token'
+          AND COLUMN_NAME = 'ip'
+    ) THEN
+        ALTER TABLE user_token
+            ADD COLUMN ip VARCHAR(45) NULL COMMENT '登录 IP（IPv6 最长 45）。存完整值（审计用），只有展示时打码（SECURITY.md B9）' AFTER user_agent;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'user_token'
+          AND COLUMN_NAME = 'last_seen_at'
+    ) THEN
+        ALTER TABLE user_token
+            ADD COLUMN last_seen_at DATETIME NULL COMMENT '最后活跃时间，用于"我在哪儿登录过"' AFTER ip;
+    END IF;
+END$$
+CALL band_add_token_session_columns()$$
+DROP PROCEDURE band_add_token_session_columns$$
+
+-- 同上：存量库补个人页四列（docs/13 §13.3②，期 1.5）。
+-- ⚠️ avatar 存**受控标识符**（如 fluent-frog）不是 URL——预置清单是唯一权威、服务端校验 ∈ 清单 ∪ {null}，
+-- 这是"零安全面"的关键，别改成存 URL。
+DROP PROCEDURE IF EXISTS band_add_member_profile_columns$$
+CREATE PROCEDURE band_add_member_profile_columns()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'member'
+          AND COLUMN_NAME = 'avatar'
+    ) THEN
+        ALTER TABLE member
+            ADD COLUMN avatar VARCHAR(32) NULL COMMENT '预置头像的受控标识符（如 fluent-frog），不是 URL；为空→界面回退姓名首字' AFTER note;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'member'
+          AND COLUMN_NAME = 'intro'
+    ) THEN
+        ALTER TABLE member
+            ADD COLUMN intro VARCHAR(100) NULL COMMENT '个人简介/签名，本人可写' AFTER avatar;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'member'
+          AND COLUMN_NAME = 'contact'
+    ) THEN
+        ALTER TABLE member
+            ADD COLUMN contact VARCHAR(128) NULL COMMENT '联系方式（自由文本，本人自己写）' AFTER intro;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'member'
+          AND COLUMN_NAME = 'birthday'
+    ) THEN
+        ALTER TABLE member
+            ADD COLUMN birthday DATE NULL COMMENT '生日。默认只本人 + 管理员可见；对外只到「月-日」（docs/13 §13.3②）' AFTER contact;
+    END IF;
+END$$
+CALL band_add_member_profile_columns()$$
+DROP PROCEDURE band_add_member_profile_columns$$
+DELIMITER ;

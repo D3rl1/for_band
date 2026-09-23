@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -60,16 +60,48 @@
   <tbody id="rows"></tbody>
 </table>
 
+<!-- 曲目单弹层：勾选顺序即练习顺序（整体替换，见 PUT /api/events/{id}/pieces） -->
+<div class="modal fade" id="pieces-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body">
+        <p id="pm-title" class="big my-2"></p>
+        <p class="chip">勾选这场要练的曲目，勾选顺序就是练习顺序。曲目从曲目库里选（曲目页可以先新建）。</p>
+        <div id="pm-list" class="pm-list"></div>
+        <p id="pm-empty" class="chip mb-0" hidden>曲目库还是空的，先去「曲目」页建一条</p>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
+        <button class="go go-sm" id="pm-save">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 let sections = [];
+let me = null;
 const dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+
+/**
+ * 「这场活动我能不能改」——与后端 `EventService.checkEditPermission` 同一套口径：
+ * 声部课＝管理员/团长/本声部声部长；其余＝管理员/团长/指挥。
+ * ⚠️ 这里只是**别显示点了必然 403 的按钮**，真闸门在服务端。
+ */
+function canEditEvent(event) {
+  if (event.kind === 'SECTION_CLASS') {
+    return ['ADMIN', 'LEADER'].includes(me.role)
+      || (me.role === 'SECTION_LEADER' && me.sectionId != null && me.sectionId === event.sectionId);
+  }
+  return ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
+}
 
 function syncSectionSelect(kind, select) {
   select.disabled = kind !== 'SECTION_CLASS';
 }
 
 async function load() {
-  const me = await BAND.renderNav('admin-events.html');
+  me = await BAND.renderNav('admin-events.html');
   if (!me) return;
   sections = await BAND.must('/api/sections');
   const options = '<option value="">无声部</option>' +
@@ -106,7 +138,13 @@ async function loadRows() {
     tr.children[3].textContent = `${e.startTime.slice(0, 5)}-${e.endTime.slice(0, 5)} ${e.location || ''}`;
     tr.children[4].textContent = e.sectionName || '';
     tr.querySelector('.chip').textContent = e.status === 'CANCELED' ? '已取消' : '';
-    if (e.status !== 'CANCELED') {
+    if (e.status !== 'CANCELED' && canEditEvent(e)) {
+      const piecesBtn = document.createElement('button');
+      piecesBtn.className = 'go go-ghost go-sm me-1';
+      piecesBtn.textContent = '曲目单';
+      piecesBtn.addEventListener('click', () => openPiecesModal(e));
+      tr.children[6].appendChild(piecesBtn);
+
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'go go-ghost go-sm';
       cancelBtn.textContent = '取消';
@@ -121,6 +159,46 @@ async function loadRows() {
     tbody.appendChild(tr);
   }
 }
+
+let piecesTarget = null;
+
+/** 曲目单：勾选顺序即练习顺序（列表按勾选先后重排，提交时就是这个数组）。 */
+async function openPiecesModal(event) {
+  piecesTarget = event.id;
+  document.getElementById('pm-title').textContent = `${event.title} · ${event.date}`;
+  const all = await BAND.must('/api/pieces?size=100');
+  const current = (await BAND.must(`/api/events/${event.id}/pieces`)).map((p) => p.pieceId);
+  const host = document.getElementById('pm-list');
+  const ordered = current
+    .map((pid) => all.list.find((p) => p.id === pid))
+    .filter(Boolean)
+    .concat(all.list.filter((p) => !current.includes(p.id)));
+  document.getElementById('pm-empty').hidden = ordered.length > 0;
+  host.innerHTML = '';
+  ordered.forEach((p) => {
+    const row = document.createElement('label');
+    row.className = 'd-flex align-items-center gap-2 py-1';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.value = p.id;
+    box.checked = current.includes(p.id);
+    const name = document.createElement('span');
+    name.textContent = `${p.title}${p.composer ? ' · ' + p.composer : ''}（${p.statusLabel}）`;
+    row.append(box, name);
+    host.appendChild(row);
+  });
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('pieces-modal')).show();
+}
+
+document.getElementById('pm-save').addEventListener('click', async () => {
+  const picked = [...document.querySelectorAll('#pm-list input:checked')].map((b) => Number(b.value));
+  await BAND.must(`/api/events/${piecesTarget}/pieces`, {
+    method: 'PUT',
+    body: { pieceIds: picked },
+  });
+  bootstrap.Modal.getInstance(document.getElementById('pieces-modal')).hide();
+  BAND.toast('曲目单已保存', 'success');
+});
 
 document.getElementById('single-form').addEventListener('submit', async (e) => {
   e.preventDefault();

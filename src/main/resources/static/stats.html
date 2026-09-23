@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="nav-collapsed">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,7 +20,7 @@
 const PENTA = ['宫', '商', '角', '徵', '羽'];
 
 function kindCard(label, k) {
-  const lit = Math.round((k.rate || 0) * 5);
+  const lit = k.expected === 0 ? 0 : Math.round((k.rate || 0) * 5);
   const el = document.createElement('div');
   el.className = 'cell';
   el.innerHTML = `
@@ -29,7 +29,7 @@ function kindCard(label, k) {
     <div class="penta mb-2"></div>
     <p class="chip mb-0"></p>`;
   el.querySelector('.lab').textContent = label;
-  el.querySelector('.big').textContent = BAND.ratePct(k.rate);
+  el.querySelector('.big').textContent = BAND.ratePct(k.rate, k.expected);
   el.querySelector('.penta').innerHTML = PENTA.map((n, i) =>
     `<div class="pv ${i < lit ? 'on' : ''}"><i></i><em>${n}</em></div>`).join('');
   // 出勤率与请假数成对出现（docs/05 硬规则）
@@ -43,7 +43,8 @@ async function load() {
   if (!me) return;
   const cards = document.getElementById('cards');
   cards.innerHTML = '';
-  if (me.role === 'MEMBER') {
+  // 荣誉团员与普通团员一样只看本人汇总（docs/02 §2.3：他人考勤不可见）
+  if (me.role === 'MEMBER' || me.role === 'HONORARY') {
     const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
     cards.append(kindCard('排练出勤', s.rehearsal), kindCard('声部课出勤', s.sectionClass));
     return;

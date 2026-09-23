@@ -17,7 +17,11 @@
 - **JDK 17 已装，系统级 `JAVA_HOME` 已指向它**；但已开着的终端里可能还是旧的 JDK 11——
   版本不对先开新终端，别去动环境变量配置。
 - **Maven 是手动装的**（winget 源里已经没有 `Apache.Maven` 包），装在用户目录、已配阿里云镜像。
-- 本机库 `band`、账号 `band_app`；建表 `mysql -uband_app -p band < sql/schema.sql`（脚本可重复执行）。
+- 本机库 `band`、应用账号 `band_app`。
+  **建表/补列用管理员账号跑**：`mysql -uroot -p band < sql/schema.sql`（脚本可重复执行）。
+  ⚠️ **别用 `band_app`** —— 它按 `SECURITY.md` F4 只给了 DML 权限，
+  而脚本里含 `CREATE TABLE` 与守护式 `CREATE PROCEDURE`，缺 DDL 权限会直接报错。
+  授权语句与理由见 `docs/12` §12.2。
 - **数据库密码只写在 `src/main/resources/application-local.yml`**（已被 gitignore），
   不要硬编码进 `application.yml`。`application.yml` 里只放非机密的公共配置。
 - `.gitignore` 的 `*.sql` 带一条白名单 `!sql/schema.sql`——**建表脚本必须进仓库**，
@@ -65,6 +69,10 @@
 这个项目的代码**大部分是 AI 写的**，所以它的可维护性不靠"读懂每一行"，
 而靠**四样东西**：`docs/` 规格（权威）、`DECISIONS.md`（记"为什么不是别的做法"）、
 `work_log`/`debug_log`（留痕）、以及 **`mvn test`（30 条集成测试，"没改坏"的唯一凭据）**。
+> ⚠️ **当前有一份待办清单**：[`修正清单-2026-09-23.md`](修正清单-2026-09-23.md)
+> —— 2026-09-23 一次评审发现的问题（**含两处越权，排在最前面**），规格已同步、代码待改。
+> **先清它，再做别的。**
+
 **所以改任何东西，按这六步走**：
 
 1. **先判断改的是哪一类，改对应规格**（这是硬约定，不是建议）：

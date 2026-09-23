@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>曲目 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 新建 / 编辑共用一块表单：点「编辑」会把内容填进来、按钮变成「保存修改」（docs/06 §6.3 的增删改按角色显示） -->
+<div class="cell mb-4" id="edit-box" hidden>
+  <div class="lab" id="edit-title">新建曲目</div>
+  <div class="row g-2">
+    <div class="col-12 col-md-4"><input id="f-title" class="w-100" maxlength="64" placeholder="曲名*"></div>
+    <div class="col-6 col-md-2"><input id="f-composer" class="w-100" maxlength="64" placeholder="作曲"></div>
+    <div class="col-6 col-md-2"><input id="f-arranger" class="w-100" maxlength="64" placeholder="编曲 / 移植"></div>
+    <div class="col-6 col-md-2"><input id="f-category" class="w-100" maxlength="32" placeholder="体裁"></div>
+    <div class="col-6 col-md-2">
+      <select id="f-status" class="w-100">
+        <option value="CANDIDATE">备选</option>
+        <option value="REHEARSING">在练</option>
+        <option value="READY">已成熟</option>
+        <option value="PAUSED">已停排</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2"><input id="f-difficulty" type="number" min="1" max="5" class="w-100" placeholder="难度 1~5"></div>
+    <div class="col-12"><input id="f-note" class="w-100" placeholder="备注"></div>
+    <div class="col-12 d-flex gap-2">
+      <button id="save" class="go go-sm" type="button">保存</button>
+      <button id="cancel" class="go go-ghost go-sm" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">曲目库</h2>
+  <div class="d-flex gap-2">
+    <select id="q-status" class="w-auto">
+      <option value="">全部状态</option>
+      <option value="CANDIDATE">备选</option>
+      <option value="REHEARSING">在练</option>
+      <option value="READY">已成熟</option>
+      <option value="PAUSED">已停排</option>
+    </select>
+    <input id="q-keyword" placeholder="搜曲名 / 作曲">
+    <button id="new" class="go go-sm" type="button" hidden>新建</button>
+  </div>
+</div>
+<table class="tb">
+  <thead><tr><th>曲名</th><th>作曲</th><th>体裁</th><th>状态</th><th>备注</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p id="empty" class="py-4" hidden>还没有曲目——「想排的备选」也是重要的一半，先建一条吧</p>
+
+<script>
+'use strict';
+
+let me = null;
+let editingId = null;
+
+async function load() {
+  me = await BAND.renderNav('pieces.html');
+  if (!me) return;
+  // 只有管理员 / 团长 / 指挥能增删改（docs/02 §2.3）；其他人只读
+  const canEdit = ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
+  document.getElementById('new').hidden = !canEdit;
+
+  const status = document.getElementById('q-status').value;
+  const keyword = document.getElementById('q-keyword').value.trim();
+  const d = await BAND.must(`/api/pieces?size=50&status=${encodeURIComponent(status)}`
+    + `&keyword=${encodeURIComponent(keyword)}`);
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const p of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td class="act"></td>';
+    const link = document.createElement('a');
+    link.href = `/piece-detail.html?id=${p.id}`;
+    link.textContent = p.title;
+    tr.children[0].appendChild(link);
+    tr.children[1].textContent = p.composer || '';
+    tr.children[2].textContent = p.category || '';
+    tr.querySelector('.chip').textContent = p.statusLabel;
+    tr.children[4].textContent = p.note || '';
+    if (canEdit) {
+      const btn = document.createElement('button');
+      btn.className = 'go go-ghost go-sm';
+      btn.type = 'button';
+      btn.textContent = '编辑';
+      btn.addEventListener('click', () => openEditor(p));
+      tr.children[5].appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function openEditor(piece) {
+  editingId = piece ? piece.id : null;
+  document.getElementById('edit-box').hidden = false;
+  document.getElementById('edit-title').textContent = piece ? `编辑：${piece.title}` : '新建曲目';
+  document.getElementById('f-title').value = piece ? piece.title : '';
+  document.getElementById('f-composer').value = piece ? (piece.composer || '') : '';
+  document.getElementById('f-arranger').value = piece ? (piece.arranger || '') : '';
+  document.getElementById('f-category').value = piece ? (piece.category || '') : '';
+  document.getElementById('f-status').value = piece ? piece.status : 'CANDIDATE';
+  document.getElementById('f-difficulty').value = piece && piece.difficulty ? piece.difficulty : '';
+  document.getElementById('f-note').value = piece ? (piece.note || '') : '';
+  document.getElementById('f-title').focus();
+}
+
+document.getElementById('new').addEventListener('click', () => openEditor(null));
+document.getElementById('cancel').addEventListener('click', () => {
+  document.getElementById('edit-box').hidden = true;
+});
+document.getElementById('save').addEventListener('click', async () => {
+  const body = {
+    title: document.getElementById('f-title').value.trim(),
+    composer: document.getElementById('f-composer').value.trim() || null,
+    arranger: document.getElementById('f-arranger').value.trim() || null,
+    category: document.getElementById('f-category').value.trim() || null,
+    difficulty: document.getElementById('f-difficulty').value
+      ? Number(document.getElementById('f-difficulty').value) : null,
+    status: document.getElementById('f-status').value,
+    note: document.getElementById('f-note').value.trim() || null,
+  };
+  if (!body.title) {
+    BAND.toast('曲名不能为空');
+    return;
+  }
+  if (editingId) {
+    await BAND.must(`/api/pieces/${editingId}`, { method: 'PUT', body });
+  } else {
+    await BAND.must('/api/pieces', { method: 'POST', body });
+  }
+  document.getElementById('edit-box').hidden = true;
+  BAND.toast('已保存', 'success');
+  load();
+});
+
+document.getElementById('q-status').addEventListener('change', load);
+document.getElementById('q-keyword').addEventListener('input', load);
+load();
+</script>
+</body>
+</html>

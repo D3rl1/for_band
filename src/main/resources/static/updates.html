@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>更新日志 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<h2 class="mb-3">更新日志</h2>
+<div id="list"></div>
+<p id="empty" class="py-4" hidden>还没有更新公告——管理员发布之后，这里会按时间倒序列出来</p>
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
+  <span id="pageinfo" class="chip mb-0"></span>
+  <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+</div>
+
+<script>
+'use strict';
+
+let page = 1;
+const SIZE = 10;
+
+function card(n) {
+  const el = document.createElement('div');
+  el.className = 'cell mb-3';
+  const title = document.createElement('h2');
+  title.className = 'mb-1';
+  title.textContent = n.title;
+  const when = document.createElement('p');
+  when.className = 'chip mb-2';
+  when.textContent = (n.publishedAt || '').replace('T', ' ').slice(0, 16)
+    + (n.publishedByName ? ' · ' + n.publishedByName : '');
+  const body = document.createElement('p');
+  body.className = 'ann-body mb-0';
+  // 正文**纯文本 + 保留换行**，绝不解析 HTML/markdown（docs/15 §15.2 + SECURITY.md C3）
+  body.textContent = n.content;
+  el.append(title, when, body);
+  return el;
+}
+
+async function load() {
+  const me = await BAND.renderNav('updates.html');
+  if (!me) return;
+  const d = await BAND.must(`/api/release-notes?page=${page}&size=${SIZE}`);
+  const host = document.getElementById('list');
+  host.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const n of d.list) host.appendChild(card(n));
+  const pages = Math.max(1, Math.ceil(d.total / SIZE));
+  document.getElementById('pageinfo').textContent = `第 ${page} / ${pages} 页 · 共 ${d.total} 条`;
+  document.getElementById('prev').disabled = page <= 1;
+  document.getElementById('next').disabled = page >= pages;
+}
+
+document.getElementById('prev').addEventListener('click', () => { page--; load(); });
+document.getElementById('next').addEventListener('click', () => { page++; load(); });
+load();
+</script>
+</body>
+</html>

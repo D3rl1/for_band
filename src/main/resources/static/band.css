@@ -44,6 +44,25 @@
   --t-fast: 160ms;
   --t-base: 220ms;
   --ease: cubic-bezier(.22, .8, .28, 1);
+
+  /* —— 导航 rail（docs/14 §14.6.4，2026-09-23 定稿）。
+     尺寸只在这里改；帽/肩/环全部由它们算出，不写死。
+     --nav-pad 别叫 --pad-l（与全站 --pad 太像）；--nav-gap 别叫 --gap（那是格间距 20px）。 —— */
+  --rail-w: 92px;        /* 收起时的图标轨宽 */
+  --open-w: 320px;       /* 展开宽 = 预留位宽 */
+  --row-h: 58px;         /* 菜单行高（半圆帽半径 = 它的一半） */
+  --nav-pad: 12px;       /* 轨道左内边距：让半圆帽不贴着屏幕边 */
+  --ic: 20px;            /* 图标字号 */
+  --tx: 17px;            /* 文字字号 */
+  --av: 52px;            /* 头像直径 */
+  --av-h: 60px;          /* 头像行高 */
+  --nav-gap: 8px;        /* 菜单行距 */
+  --ring: 40px;          /* 当前项图标外的细环直径 */
+  --shoulder: 22px;      /* 右缘"肩"的半径（角块边长同值） */
+  --nav-foot: 15px;      /* 底部账号区字号 */
+  /* 展开这种大幅位移不能用全站 --ease：cubic-bezier(.22,.8,.28,1) 起步太猛
+     （实测第一帧跳 50px/216px），要用两头慢的曲线 —— docs/14 §14.6.4 明说不共用 */
+  --ease-nav: 340ms cubic-bezier(.4, 0, .2, 1);
 }
 
 /* ============ §2 自托管西文字体（只有拉丁与数字，不含中文） ============ */
@@ -88,60 +107,358 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 /* 数字等宽，表格列才对得齐 */
 .num, .when, .big, .pct, .st b { font-variant-numeric: tabular-nums; }
 
-/* ============ §4 深色侧栏（按键收起） ============ */
+/* ============ §4 导航：常驻 92px 图标轨 + 悬停展开（docs/14 §14.6.4，2026-09-23 定稿） ============ */
 .layout { display: flex; min-height: 100vh; }
 
-.sidebar {
-  flex: 0 0 236px; width: 236px;
-  background: var(--shell);
-  display: flex; flex-direction: column;
-  padding: 38px 0 28px 34px;
-  transition: margin-left var(--t-base) var(--ease);
-  margin-left: 0;
-}
-html.nav-collapsed .sidebar { margin-left: -236px; }
+/* ---- 预留位：**永远**留出"展开后"要占的宽度 ----
+   正文起点固定，全程一动不动（零重排）、也不被侧栏盖住；
+   收起时缺口那一段就是页面底色（留白）。 */
+.nav-slot { flex: 0 0 var(--open-w); display: flex; }
 
-.sidebar .brand { color: var(--silk); font-size: 12.5px; letter-spacing: .32em; margin-bottom: 44px; }
-.sidebar .menu { display: flex; flex-direction: column; gap: 3px; }
-.sidebar .menu a {
-  position: relative; display: block;
-  padding: 9px 0 9px 16px;
-  color: var(--shellmid); text-decoration: none; font-size: 14px;
+/* ---- 侧栏容器：只在自己的预留位里长开；超出裁掉（文字靠"裁切"露出，单份 DOM） ----
+   ⚠️ **别写死 height: 100vh**（docs/14 §14.6.4）：定高之后，名册 / 日志这类长页面滚过第一屏，
+   左边这 92px 就**没有侧栏底色**了 —— 深色柱子从中间断掉。它作为 `.nav-slot` 的 flex 项由
+   stretch 撑满，而 `.nav-slot` 自己又是 `.layout` 的 flex 项，于是整条链跟着正文一起长高。 */
+.railwrap {
+  width: var(--rail-w);
+  min-height: 100%;
+  background: var(--shell);
+  overflow: hidden;
+  transition: width var(--ease-nav);
+}
+.rail {
+  min-height: 100%;              /* 撑满容器：底部账号区才贴得到页面底部 */
+  padding: 18px 0 16px var(--nav-pad);
+  display: flex; flex-direction: column;
+}
+
+/* ---- 一行：图标位（固定一列） + 文字位（只给菜单项与头像行，别波及底部链接） ---- */
+.rail .menu a,
+.rail .me {
+  position: relative;
+  display: flex; align-items: center;
+  flex: 0 0 auto;                /* 行**不许被压扁**：空间不够就滚动，而不是偷偷缩尺寸 */
+  height: var(--row-h);
+  white-space: nowrap; text-decoration: none;
+  color: var(--shellmid);
   transition: color var(--t-fast) ease-out;
 }
-.sidebar .menu a:hover { color: var(--silk); }
-.sidebar .menu a.on { color: var(--silk); font-weight: 600; }
-.sidebar .menu a.on::before {
-  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
-  width: 2px; background: var(--shellhi);
-}
-.sidebar .foot { margin-top: auto; color: var(--shellmid); font-size: 12.5px; }
-
-/* 常驻把手：**任何时候都看得见、点得到、Tab 得到**。
-   它同时解决"不知道导航存在"和"键盘够不到"两件事。 */
-.nav-toggle {
-  position: fixed; z-index: 40;
-  top: 50%; left: 0;
-  width: 22px; height: 112px; margin-top: -56px;
+.rail .menu a:hover,
+.rail .me:hover { color: var(--silk); }
+.rail .menu a .ic,
+.rail .me .ic {
+  flex: 0 0 calc(var(--rail-w) - var(--nav-pad));   /* 图标位 = 收起时可见的那一列 */
   display: flex; align-items: center; justify-content: center;
-  background: #3A2A1E; color: #D8CBBB;
-  border: 0; border-radius: 0 9px 9px 0; padding: 0;
-  font-family: inherit; font-size: 10.5px; letter-spacing: .22em;
-  writing-mode: vertical-rl;
-  cursor: pointer;
-  box-shadow: 3px 0 8px rgba(42, 29, 20, .22);
-  transition: margin-left var(--t-base) var(--ease), background-color var(--t-fast) ease-out;
+  position: relative; font-size: var(--ic); z-index: 2;
 }
-html:not(.nav-collapsed) .nav-toggle { margin-left: 236px; }
-.nav-toggle:hover { background: #4A3527; color: var(--silk); }
-.nav-toggle:focus-visible { outline: 2px solid var(--shellhi); outline-offset: 2px; }
+.rail .menu a .tx,
+.rail .me .tx { flex: 0 0 auto; padding-left: 2px; font-size: var(--tx); }
+
+/* ---- 菜单：放不下时**内部滚动**（矮屏兜底），但**不显示滚动条** ----
+   收起态一直露着一条滚动条特别难看（用户反馈）；768 高的屏整屏放得下，滚动只在更矮的屏才用得到。 */
+.rail .menu {
+  display: flex; flex-direction: column; gap: var(--nav-gap);
+  flex: 0 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: none;                 /* Firefox */
+  /* 首项选中的"肩"伸在条目上缘之外（bottom:100%），而本容器是滚动容器、
+     overflow 在 padding 盒裁切 → 首项那个肩必然被裁掉（§13）。补等量 padding 给肩腾地方，
+     再把盒子负向拉回：条目与底部的**视觉位置和占用高度都不变**（不然 768 的屏会挤出滚动条）。 */
+  padding-top: var(--shoulder);
+  margin-top: calc(-1 * var(--shoulder));
+}
+.rail .menu::-webkit-scrollbar { display: none; }   /* Chromium / Safari */
+
+/* ---- 菜单项：只有当前项是浅色"凹槽"块 ---- */
+.rail .menu a.on {
+  background: var(--silk);
+  color: var(--wood);
+  border-radius: calc(var(--row-h) / 2) 0 0 calc(var(--row-h) / 2);  /* 左端半圆帽 */
+}
+/* 右缘两个"肩"：**一条相切的弧**围成的角块 —— 圆心取在角块自己的角落里，
+   圆外填浅色、圆内留透明（露出侧栏深色）。弧线与条目上/下边缘、与侧栏右缘都相切，
+   浅色区只有这一条弧、没有第二条直边（box-shadow 补色的写法会留一个直角，不许退回去）。 */
+.rail .menu a.on::before,
+.rail .menu a.on::after {
+  content: ""; position: absolute; right: 0;
+  width: var(--shoulder); height: var(--shoulder); z-index: 1;
+}
+.rail .menu a.on::before {
+  bottom: 100%;
+  background: radial-gradient(circle at top left,
+              transparent calc(var(--shoulder) - 1px), var(--silk) var(--shoulder));
+}
+.rail .menu a.on::after {
+  top: 100%;
+  background: radial-gradient(circle at bottom left,
+              transparent calc(var(--shoulder) - 1px), var(--silk) var(--shoulder));
+}
+/* 图标外 2px 细环 */
+.rail .menu a.on .ic::after {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: var(--ring); height: var(--ring);
+  margin: calc(var(--ring) / -2 - 1px) 0 0 calc(var(--ring) / -2 - 1px);
+  border: 2px solid var(--wood); border-radius: 50%;
+}
+
+/* ---- 顶部：头像（姓名首字占位）+ 姓名·声部 ----
+   头像行是**按钮**（个人栏的触发器，docs/14 §14.6.4），按 button 语义做无样式 reset */
+.rail .me {
+  height: var(--av-h); margin-bottom: 16px;
+  border: 0; background: none; padding: 0; cursor: pointer; font-family: inherit;
+}
+.rail .me:focus-visible { outline: 2px solid var(--shellhi); outline-offset: 2px; border-radius: 8px; }
+.rail .me .ic span {
+  width: var(--av); height: var(--av); border-radius: 50%;
+  background: var(--shellhi); color: var(--shell);
+  display: flex; align-items: center; justify-content: center;
+  font-size: calc(var(--av) * .375); font-weight: 600;
+}
+.rail .me .tx { color: var(--silk); font-size: var(--tx); }
+.rail .me .tx em { font-style: normal; color: var(--shellmid); font-size: calc(var(--tx) * .86); margin-left: 8px; }
+
+/* ---- 底部：品牌名 + 账号区（收起时被裁掉，展开才看得见） ---- */
+.rail .foot {
+  margin-top: auto; flex: 0 0 auto;
+  padding-left: calc(var(--rail-w) - var(--nav-pad));   /* 与文字位对齐 */
+  color: var(--shellmid); font-size: var(--nav-foot); line-height: 2.15;
+  white-space: nowrap;
+}
+.rail .foot .brand { color: var(--silk); font-size: var(--nav-foot); letter-spacing: .28em; margin-bottom: 4px; }
+.rail .foot a { color: inherit; text-decoration: none; cursor: pointer; }
+.rail .foot a:hover { color: var(--silk); }
+
+/* ---- 展开：只在"真有悬停能力"的设备上自动展开（防 iOS 首点只展开不跳转） ----
+   悬停目标是**侧栏自己**（不是预留位）—— 鼠标划过留白不会误展开 */
+@media (hover: hover) and (pointer: fine) {
+  .railwrap:hover { width: var(--open-w); }
+}
+
+/* 点过菜单项后"保持展开"（docs/14 §14.6.4）：类由 band-nav.js 在**首帧前**挂上（跟着 sessionStorage 标记）。
+   强制展开**不播那 340ms 过渡** —— 否则每次跳页都会看到一次"拉开"动画；类被移除后收起照样有过渡。
+   ⚠️ 门控必须带 `min-width: 721px`：这条规则的特异性（0,2,1）**压得过**手机段的
+   `.railwrap { width: 100% }`（(0,1,0)）——窄屏上若还挂着这个类，顶栏会被撑成 320px。 */
+@media (hover: hover) and (pointer: fine) and (min-width: 721px) {
+  html.rail-keep .railwrap { width: var(--open-w); transition: none; }
+}
+/* 键盘：Tab 进侧栏即展开（否则键盘用户只看到单字、读不到菜单名） */
+.railwrap:focus-within { width: var(--open-w); }
+
+/* ---- 跨文档页面过渡（2026-09-23 用户提"切页要平滑"）----
+   用浏览器原生的 View Transitions：**Chromium 生效**，其他引擎不认识这几条规则 → 退化成原来的瞬时切换
+   （所以是"增强"，不是"必需"）。时长取 docs/14 §14.6.6 给的"页面切换 300–500ms"预算里的 320ms。 */
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 320ms; }
+/* 侧栏单独起名字：两页之间它是"同一根柱子"，整体（含伪元素画出来的"肩"）被快照，
+   于是只有里面的内容（含选中项高亮）**交叉淡入**，柱子本身不闪。
+   ⚠️ 别给 `a.on` 起名字——那个凹槽是 ::before/::after 两个径向渐变伪元素，**不参与快照**，
+   给它起名字会让两张高亮框各自被拍成带直角的方块，动画中途"肩"突变。 */
+.railwrap { view-transition-name: rail; }
+/* 登录那一次**不参与**跨页过渡：目标页首帧本来就是 `.wel` 全黑幕（z-index 90），
+   再叠一层文档级过渡必然互相盖住。`band-nav.js` 读到 band_welcome 时会挂上这个类。 */
+html.no-xvt { view-transition-name: none; }
 
 /* ============ §5 主区与页头 ============ */
 .main { flex: 1; min-width: 0; padding: 36px 46px 44px 34px; }
 
 .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 26px; }
-.head h1 { margin: 0; }
+.head .head-l { display: flex; flex-direction: column; }
+.head .head-l h1 { font-size: 18px; color: var(--mid); margin: 0; }
 .head .greet { font-size: 13px; color: var(--mid); }
+
+/* ---- 右上角操作区（docs/14 §14.6.4）：声部 + 反馈 + 更新，与欢迎行同一条水平线 ----
+   ⚠️ 窄屏**不许挤掉欢迎行**（欢迎行是这一屏的主角）：空间不够时**只留图标、去掉文字**。 */
+.head .head-r { display: flex; align-items: baseline; gap: 14px; flex-wrap: nowrap; }
+.hact {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 13px; color: var(--mid); text-decoration: none;
+}
+.hact:hover { color: var(--deep); }
+.hact .hact-ic { font-size: 15px; line-height: 1; }
+/* 曲目单弹层里的勾选列表：曲目多时内部滚动，别把弹层撑爆 */
+.pm-list { max-height: 320px; overflow-y: auto; }
+
+/* ---- 演出照片墙：缩略图 + 说明 + 删除（删除只对上传者本人 / 管理员渲染）---- */
+.ph-cell {
+  position: relative; width: 150px; height: 150px;
+  border: 1px solid var(--pale); border-radius: var(--radius); overflow: hidden;
+  background: var(--cell);
+}
+.ph-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-cap {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 4px 6px; font-size: 11px; color: var(--silk);
+  background: linear-gradient(transparent, rgba(20, 14, 10, .72));
+}
+.ph-del {
+  position: absolute; top: 4px; right: 4px;
+  border: 0; border-radius: var(--radius); padding: 2px 6px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  background: rgba(20, 14, 10, .62); color: var(--silk);
+}
+.ph-del:hover { background: var(--cinna); }
+
+/* 未读公告的小红点（docs/15 §15.5）：朱砂是全站唯一强调色 */
+.hact-dot {
+  position: absolute; top: -3px; right: -6px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--cinna);
+}
+@media (max-width: 720px) {
+  .head .head-r { gap: 10px; }
+  .hact .hact-tx { display: none; }   /* 只留图标 */
+}
+
+/* ---- 头像图片：三处容器（侧栏 / 个人栏 / 欢迎过渡落点）都只换内容、不换容器 ---- */
+.av-img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+/* ---- 个人页的预置头像网格（docs/14 §14.6.4「个人页」）----
+   彩色 emoji 与"木与丝 + 朱砂"不同调是**认下来的代价**，缓解＝一律圆形 + 统一底色描边，
+   让它像**贴上去的一枚印章**，而不是一堆彩色图标漂在木色界面上。 */
+.av-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 10px; }
+.av-cell {
+  position: relative;      /* 选中态的勾是 ::after 绝对定位，靠它定位 */
+  aspect-ratio: 1 / 1; padding: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--cell); border: 1px solid var(--pale); border-radius: 50%;
+  cursor: pointer; transition: border-color var(--t-fast) ease-out, transform var(--t-fast) ease-out;
+}
+.av-cell:hover { border-color: var(--edge); transform: translateY(-1px); }
+/* 选中＝朱砂描边 + 细环 + **右下角一个勾**（docs/14 §14.6.4 明写"当前选中项打勾"；
+   朱砂是全站唯一强调色，别扩散到别处） */
+.av-cell.on { border-color: var(--cinna); box-shadow: 0 0 0 2px rgba(217, 100, 79, .22); }
+.av-cell.on::after {
+  content: "✓";
+  position: absolute; right: -2px; bottom: -2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--cinna); color: var(--silk);
+  font-size: 11px; line-height: 18px; text-align: center;
+}
+.av-cell .av-none { font-size: 12px; color: var(--mid); }
+
+/* ---- 更新公告弹层（docs/15 §15.5）：z-index **取 120**（书面值）——
+   高于欢迎过渡黑幕（90），低于 toast（2000）与 oneko（最大整数）。 */
+.ann {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 14, 10, .55);
+  padding: 24px;
+}
+.ann-in .ann-card { animation: ann-rise 220ms cubic-bezier(.22, .8, .28, 1) both; }
+@keyframes ann-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.ann-card {
+  width: 100%; max-width: 460px;
+  background: var(--cell); border: 1px solid var(--pale); border-radius: var(--radius);
+  padding: 22px 24px 16px;
+  box-shadow: 0 18px 44px rgba(20, 14, 10, .28);
+}
+.ann-title { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--deep); }
+/* 正文**纯文本 + 保留换行**、绝不解析 HTML（docs/15 §15.5 + SECURITY.md C3） */
+.ann-body {
+  margin: 0 0 18px; font-size: 14px; line-height: 1.75; color: var(--mid);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ann-acts { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ann-acts a { font-size: 13px; color: var(--mid); text-decoration: none; }
+.ann-acts a:hover { color: var(--deep); }
+
+/* ---- 欢迎行：大字在 h1 之上；姓名用朱砂（§14.6.2 铁律 2 的**唯一**例外，不许扩散） ----
+   与后面的职称**不用标点分隔**（颜色已经分开了），只留一点间隙 */
+.welcome { margin: 0 0 4px; font-size: 33px; font-weight: 600; letter-spacing: .01em; color: var(--deep); }
+.wname { color: var(--cinna); margin-right: .35em; }
+
+/* ---- 欢迎过渡：全黑遮罩 + 头像 + 欢迎文字 ----
+   遮罩标记必须**内联在目标页 <body> 最前**（首帧就铺黑，别让主页面闪一下）。
+   显隐由 <html> 上的 wel-armed 类控制——band-nav.js 在 <head> 阶段读了
+   band_welcome 标记后决定加不加：有标记 → 首帧就是黑的；没有 → display:none，
+   直接访问该页绝不会闪黑。播完由 app.js 摘掉类。 */
+.wel {
+  position: fixed; inset: 0; z-index: 90; background: #000;
+  display: none; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+}
+html.wel-armed .wel { display: flex; }
+.wel-av {
+  width: 84px; height: 84px; border-radius: 50%;
+  background: var(--shellhi); color: var(--shell); font-size: 34px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+}
+/* 与页面上的欢迎行**同号**：飞行时 scale ≈ 1，不会有缩放模糊 */
+.wel-tx { color: var(--silk); font-size: 33px; font-weight: 600; letter-spacing: .01em; opacity: 0; }
+/* 黑底上朱砂对比度不够（约 2.4:1），遮罩里用提亮的朱红；页面浅底仍用标准朱砂 */
+.wel-tx .wname { color: #D9644F; }
+.wel-av, .wel-tx { will-change: transform, opacity; }
+.wel-tx { transform-origin: 0 0; }
+
+/* ---- 个人栏：点头像弹出的浮层面板（docs/14 §14.6.4）----
+   桌面从侧栏那侧滑出；手机（≤720px）从底部升起（底部抽屉）。
+   z-index 取 500：> 欢迎过渡黑幕 90，< toast 2000 与 oneko（最大整数）——docs 无书面值，实现定值已留痕。 */
+.profile-backdrop {
+  position: fixed; inset: 0; z-index: 490;
+  background: rgba(51, 36, 26, .32);
+  opacity: 0; visibility: hidden;
+  transition: opacity var(--t-base) var(--ease), visibility 0s linear var(--t-base);
+}
+.profile-backdrop.open {
+  opacity: 1; visibility: visible;
+  transition: opacity var(--t-base) var(--ease);
+}
+.profile {
+  position: fixed; z-index: 500;
+  left: calc(var(--rail-w) + 10px); top: 64px;
+  width: min(340px, calc(100vw - 32px));
+  background: var(--cell);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  box-shadow: 0 10px 30px rgba(42, 29, 20, .18);
+  opacity: 0; visibility: hidden; transform: translateX(-14px);
+  transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease),
+              visibility 0s linear var(--t-base);
+}
+.profile.open {
+  opacity: 1; visibility: visible; transform: none;
+  transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease);
+}
+
+.p-id { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.p-av {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--shellhi); color: var(--shell);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 600;
+}
+.p-name { font-weight: 600; }
+.p-tags { font-size: 12px; color: var(--mid); }
+/* 4 格（含「入团天数」，docs/14 §14.6.4 的数字层）：窄屏自动换行，别写死列数 */
+.p-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.p-num b { display: block; font-size: 18px; }
+.p-num span { display: block; font-size: 11px; color: var(--mid); line-height: 1.5; }
+.p-flow { border-top: 1px solid var(--pale); padding-top: 10px; margin-bottom: 12px; }
+.p-flow-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.p-flow-head .lab, .p-flow .lab { margin-bottom: 0; }
+.p-flow-head a { font-size: 12px; color: var(--mid); text-decoration: none; }
+.p-flow-head a:hover { color: var(--deep); }
+.p-flow-item {
+  font-size: 12.5px; line-height: 2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.p-empty { font-size: 12.5px; color: var(--mid); margin: 4px 0 8px; }
+.p-acts { border-top: 1px solid var(--pale); padding-top: 12px; font-size: 13px; }
+.p-acts a { color: var(--mid); text-decoration: none; cursor: pointer; }
+.p-acts a:hover { color: var(--deep); }
+.p-pw-form { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.p-pw-form[hidden] { display: none; }
+
+@media (max-width: 720px) {
+  .profile {
+    left: 0; right: 0; bottom: 0; top: auto; width: auto;
+    border-radius: var(--radius) var(--radius) 0 0;
+    transform: translateY(24px); padding-bottom: 28px;
+  }
+  .profile.open { transform: none; }
+}
 
 /* ============ §6 bento 网格：一个主角格 + 配角 ============ */
 .grid {
@@ -218,19 +535,11 @@ input:focus, select:focus, textarea:focus {
 .tb th.act, .tb td.act { padding-right: 0; }
 .tb tbody tr.link { cursor: pointer; }
 
-/* 侧栏 foot 里的操作链接（声音 / 退出） */
-.sidebar .foot a { color: inherit; text-decoration: none; cursor: pointer; }
-.sidebar .foot a:hover { color: var(--silk); }
-
 /* 声部管理的顺序输入列 */
 .tb .order-input { width: 80px; }
 
 /* 双列格（考勤统计两栏并排）；窄屏收成单列 */
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
-
-/* 登录页的居中容器 */
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.login-wrap .cell { width: 380px; }
 
 /* 分页（docs/14：分页边界用 --edge；active 用木色，不碰蓝） */
 .pagination .page-link {
@@ -286,17 +595,25 @@ input:focus, select:focus, textarea:focus {
 
 /* ============ §10 手机 ============ */
 @media (max-width: 720px) {
-  .layout { flex-direction: column; }
-  /* 手机上**不应用收起状态**：侧栏直接是顶部一条、常显。
-     曾经这里写过 `html.nav-collapsed .sidebar{display:none}`，而把手在手机上也是隐藏的，
-     默认又是收起 —— 结果**手机首访没有任何导航入口**。见 docs/14 §14.6.4。 */
-  .sidebar { flex: none; width: 100%; padding: 18px 20px; margin-left: 0 !important; }
-  .sidebar .brand { margin-bottom: 14px; }
-  .sidebar .menu { flex-direction: row; flex-wrap: wrap; gap: 12px; }
-  .sidebar .menu a { padding: 4px 0; }
-  .sidebar .menu a.on::before { display: none; }
-  .sidebar .foot { margin-top: 12px; }
-  .nav-toggle { display: none; }        /* 手机上侧栏变成顶部一条，不需要把手 */
+  /* 手机端形态待定（docs/00 T9），先照旧：顶部一条横排、常显、不裁切。
+     悬停展开在触屏上不生效，预留位在窄屏上没有意义，全部放开。 */
+  .layout { display: block; }
+  .nav-slot { display: block; }
+  .railwrap { width: 100%; height: auto; min-height: 0; overflow: visible; }
+  .rail {
+    height: auto; min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center;
+    gap: 6px 14px; padding: 10px 14px;
+  }
+  .rail .me { height: auto; margin: 0 4px 0 0; }
+  .rail .menu a, .rail .me { height: auto; padding: 5px 6px; }
+  .rail .menu a .ic, .rail .me .ic { flex: 0 0 auto; padding-right: 4px; font-size: calc(var(--ic) * .8); }
+  .rail .menu a .tx, .rail .me .tx { font-size: calc(var(--tx) * .82); }
+  .rail .menu { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; overflow: visible; }
+  .rail .menu a.on { border-radius: 10px; background: var(--silk); }
+  .rail .menu a.on::before, .rail .menu a.on::after { display: none; }
+  .rail .menu a.on .ic::after { display: none; }
+  .rail .foot { margin: 0; padding-left: 0; line-height: 1.6; }
+  .rail .foot .brand { margin-bottom: 0; }
   .main { padding: 22px 20px 30px; }
   .grid { grid-template-columns: 1fr; grid-template-rows: auto; gap: 14px; }
   .cell.hero, .cell.wide, .cell.s1, .cell.s2 { grid-area: auto; }
@@ -306,7 +623,12 @@ input:focus, select:focus, textarea:focus {
 
 /* ============ §11 降级 ============ */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .nav-toggle, .go, .tb tbody tr { transition: none; }
+  .railwrap { transition-duration: 0s; }
+  .go, .tb tbody tr { transition: none; }
+  /* 跨文档页面过渡也要降级（docs/14 §14.6.6：reduced-motion 必须降级） */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
   .stamp.on { animation: stampFade 140ms ease-out forwards; }
   @keyframes stampFade { to { opacity: 1; transform: translate(-50%, -50%) rotate(-2.5deg); } }
 }

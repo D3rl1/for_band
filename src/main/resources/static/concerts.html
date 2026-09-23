@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>演出 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 新建 / 编辑共用一块表单：新人用「新建」，行内「编辑」把内容填进来 -->
+<div class="cell mb-4" id="edit-box" hidden>
+  <div class="lab" id="edit-title">新建演出</div>
+  <div class="row g-2">
+    <div class="col-12 col-md-4"><input id="f-name" class="w-100" maxlength="64" placeholder="演出名*"></div>
+    <div class="col-6 col-md-2"><input id="f-date" type="date" class="w-100" required></div>
+    <div class="col-6 col-md-2"><input id="f-start" type="time" class="w-100"></div>
+    <div class="col-6 col-md-2"><input id="f-venue" class="w-100" maxlength="64" placeholder="地点"></div>
+    <div class="col-6 col-md-2"><input id="f-host" class="w-100" maxlength="64" placeholder="主办 / 合作单位"></div>
+    <div class="col-12 col-md-4"><input id="f-video" class="w-100" maxlength="255" placeholder="录像链接（B 站 / 网盘）"></div>
+    <div class="col-6 col-md-2">
+      <select id="f-status" class="w-100">
+        <option value="PLANNED">计划中</option>
+        <option value="DONE">已完成</option>
+        <option value="CANCELED">已取消</option>
+      </select>
+    </div>
+    <div class="col-12"><textarea id="f-summary" rows="2" class="w-100" placeholder="演出总结 / 复盘"></textarea></div>
+    <div class="col-12"><input id="f-note" class="w-100" placeholder="备注"></div>
+    <div class="col-12 d-flex gap-2">
+      <button id="save" class="go go-sm" type="button">保存</button>
+      <button id="cancel" class="go go-ghost go-sm" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="mb-0">演出</h2>
+  <button id="new" class="go go-sm" type="button" hidden>新建演出</button>
+</div>
+<table class="tb">
+  <thead><tr><th>日期</th><th>演出名</th><th>地点</th><th>状态</th><th>曲目 · 参演 · 照片</th><th class="act"></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p id="empty" class="py-4" hidden>还没有演出记录——演完一场就把它记下来，以后回看有据可依</p>
+
+<script>
+'use strict';
+
+let me = null;
+let canEdit = false;
+let editingId = null;
+
+async function load() {
+  me = await BAND.renderNav('concerts.html');
+  if (!me) return;
+  canEdit = ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
+  document.getElementById('new').hidden = !canEdit;
+
+  const d = await BAND.must('/api/concerts?size=100');
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const c of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td class="act"></td>';
+    tr.children[0].textContent = c.date;
+    const link = document.createElement('a');
+    link.href = `/concert-detail.html?id=${c.id}`;
+    link.textContent = c.name;
+    tr.children[1].appendChild(link);
+    tr.children[2].textContent = c.venue || '';
+    tr.querySelector('.chip').textContent = c.statusLabel;
+    tr.children[4].textContent = `${c.pieceCount} 首 · ${c.castCount} 人 · ${c.photoCount} 张`;
+    if (canEdit) {
+      const btn = document.createElement('button');
+      btn.className = 'go go-ghost go-sm';
+      btn.type = 'button';
+      btn.textContent = '编辑';
+      btn.addEventListener('click', () => openEditor(c));
+      tr.children[5].appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+async function openEditor(concert) {
+  editingId = concert ? concert.id : null;
+  document.getElementById('edit-box').hidden = false;
+  document.getElementById('edit-title').textContent = concert ? `编辑：${concert.name}` : '新建演出';
+  let full = concert ? await BAND.must(`/api/concerts/${concert.id}`) : null;
+  full = full ? full.concert : null;
+  document.getElementById('f-name').value = full ? full.name : '';
+  document.getElementById('f-date').value = full ? full.date : '';
+  document.getElementById('f-start').value = full && full.startTime ? full.startTime.slice(0, 5) : '';
+  document.getElementById('f-venue').value = full ? (full.venue || '') : '';
+  document.getElementById('f-host').value = full ? (full.host || '') : '';
+  document.getElementById('f-video').value = full ? (full.videoUrl || '') : '';
+  document.getElementById('f-status').value = full ? full.status : 'PLANNED';
+  document.getElementById('f-summary').value = full && full.summary ? full.summary : '';
+  document.getElementById('f-note').value = full && full.note ? full.note : '';
+  document.getElementById('f-name').focus();
+}
+
+document.getElementById('new').addEventListener('click', () => openEditor(null));
+document.getElementById('cancel').addEventListener('click', () => {
+  document.getElementById('edit-box').hidden = true;
+});
+document.getElementById('save').addEventListener('click', async () => {
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    date: document.getElementById('f-date').value || null,
+    startTime: document.getElementById('f-start').value || null,
+    venue: document.getElementById('f-venue').value.trim() || null,
+    host: document.getElementById('f-host').value.trim() || null,
+    videoUrl: document.getElementById('f-video').value.trim() || null,
+    status: document.getElementById('f-status').value,
+    summary: document.getElementById('f-summary').value.trim() || null,
+    note: document.getElementById('f-note').value.trim() || null,
+  };
+  if (!body.name || !body.date) {
+    BAND.toast('演出名与日期都要填');
+    return;
+  }
+  if (editingId) {
+    await BAND.must(`/api/concerts/${editingId}`, { method: 'PUT', body });
+  } else {
+    await BAND.must('/api/concerts', { method: 'POST', body });
+  }
+  document.getElementById('edit-box').hidden = true;
+  BAND.toast('已保存', 'success');
+  load();
+});
+
+load();
+</script>
+</body>
+</html>

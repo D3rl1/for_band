@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -36,6 +37,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ErrorCode.BAD_REQUEST.getHttpStatus())
                 .body(ApiResponse.fail(ErrorCode.BAD_REQUEST.getCode(),
                         ErrorCode.BAD_REQUEST.getDefaultMessage()));
+    }
+
+    /**
+     * 上传超过 servlet 的 multipart 上限（`spring.servlet.multipart.max-file-size`）→ 422，而不是冒成 500。
+     * 执行顺序：**按类型的大小上限（20MB / 8MB）比 multipart 上限（25MB）小**，
+     * 所以正常超限会先被业务校验拦成 10001；只有一次传了更大的东西才会落到这里。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> uploadTooLarge(MaxUploadSizeExceededException e) {
+        return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.getHttpStatus())
+                .body(ApiResponse.fail(ErrorCode.VALIDATION_FAILED.getCode(), "上传文件过大"));
     }
 
     /** 静态资源不存在（含浏览器每次必请求的 /favicon.ico）→ 404，不打 ERROR 堆栈（docs/14 §14.4）。 */
