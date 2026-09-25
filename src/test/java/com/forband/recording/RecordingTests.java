@@ -35,6 +35,7 @@ class RecordingTests extends IntegrationTestBase {
     private CurrentUser leader2;     // 声部 2 的声部长
     private String leader2Token;
     private String conductorToken;
+    private String leaderToken;      // 团长（Role.LEADER，无声部）——⚠️ 与上面 leader1/leader2（**声部长**）不是一回事
     private long honoraryId;
     private String honoraryInitial;
     private long recordingAId;       // A 的一条录音
@@ -63,6 +64,9 @@ class RecordingTests extends IntegrationTestBase {
 
         MemberCreateResponse c = createMember(admin, "指挥", "conductor", null, "CONDUCTOR");
         conductorToken = loginToken("conductor", c.initialPassword());
+
+        MemberCreateResponse tz = createMember(admin, "团长", "leader", null, "LEADER");
+        leaderToken = loginToken("leader", tz.initialPassword());
 
         MemberCreateResponse h = createMember(admin, "老团员", "honorary", section1, "MEMBER");
         honoraryId = h.id();
@@ -222,14 +226,52 @@ class RecordingTests extends IntegrationTestBase {
 
     @Test
     void owner_and_management_can_delete() throws Exception {
+        // 本人删自己的
         long fileB = uploadAudio(memberBToken, "b3.m4a");
         long recB = createRecording(memberBToken, fileB, "乙的");
         api(memberBToken, "DELETE", "/api/recordings/" + recB, null).andExpect(status().isOk());
 
+        // 管理员删别人的（「能删的三方」里声部长那一支在 delete_follows_the_matrix）
         long fileC = uploadAudio(memberAToken, "c.m4a");
         long recC = createRecording(memberAToken, fileC, "甲的");
-        // 指挥删任意（docs/02 矩阵那版；docs/08 §8.3 少了团长/指挥——冲突已记移交）
-        api(conductorToken, "DELETE", "/api/recordings/" + recC, null).andExpect(status().isOk());
+        api(adminToken(), "DELETE", "/api/recordings/" + recC, null).andExpect(status().isOk());
+    }
+
+    /**
+     * 反例（`AGENTS.md` 硬规矩：动了权限必须配反例）：**团长 / 指挥不能删任何人的录音**。
+     * <p>
+     * 规格 2026-09-23 已把「删除录音」由「管理员 / 团长 / 指挥」收窄为「**本人 / 本声部长 / 管理员**」
+     * （`docs/02:104-107` 明写"口径以 `08` 为准"，`docs/08:88` 也反过来写死"不能删"），
+     * **代码到 2026-09-26 才跟上**（`交接单.md` `#57`）。
+     * ⚠️ 这条越权长期是绿灯，因为**上一条测试原先把"指挥删任意 → 200"断言成了预期行为**——
+     * 断言"谁不能做"必须与规格的"谁不能做"同源，不能照代码的现状抄。
+     */
+    @Test
+    void leader_and_conductor_cannot_delete_anyone_403_30001() throws Exception {
+        // 先确认"本人"这一支对团长 / 指挥照常成立（他们删**自己上传的**仍然合法）
+        long fileL = uploadAudio(leaderToken, "l1.m4a");
+        long recL = createRecording(leaderToken, fileL, "团长的");
+        api(leaderToken, "DELETE", "/api/recordings/" + recL, null).andExpect(status().isOk());
+
+        long fileC1 = uploadAudio(conductorToken, "c1.m4a");
+        long recC1 = createRecording(conductorToken, fileC1, "指挥的");
+        api(conductorToken, "DELETE", "/api/recordings/" + recC1, null).andExpect(status().isOk());
+
+        // 别人的（团员甲的）→ 两个角色都拒绝
+        for (String token : new String[]{leaderToken, conductorToken}) {
+            api(token, "DELETE", "/api/recordings/" + recordingAId, null)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(30001));
+        }
+        // ⚠️ 反例要验"真的没被删掉"，只看响应码不够
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM recording WHERE id = ?", Integer.class, recordingAId));
+
+        // 别误伤：他们照旧**能听全部**（canView 一个字没动）
+        api(leaderToken, "GET", "/api/recordings/" + recordingAId, null).andExpect(status().isOk());
+        api(leaderToken, "GET", "/api/recordings", null)
+                .andExpect(jsonPath("$.data.total").value(1));
+        api(conductorToken, "GET", "/api/recordings/" + recordingAId, null).andExpect(status().isOk());
     }
 
     @Test

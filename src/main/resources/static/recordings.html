@@ -98,7 +98,7 @@ function card(r) {
   del.className = 'go go-ghost go-sm';
   del.type = 'button';
   del.textContent = '删除';
-  del.hidden = true;   // 由服务端的删除权限决定（本人 / 本声部长 / 管理角色）——先试一次再说
+  del.hidden = true;   // 由服务端的删除权限决定（管理员 / 本人 / 本声部长）——先试一次再说
   row.append(toggle, del);
   el.appendChild(row);
 
@@ -116,8 +116,11 @@ function card(r) {
     BAND.toast('已删除', 'success');
     load();
   });
-  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）
-  del.hidden = !(r.memberId === me.id || ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER'].includes(me.role));
+  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）。
+  // ⚠️ **团长 / 指挥不在名单里**：他们能"听全部"但**不能删任何人的录音**（docs/02 §2.3 矩阵 +
+  //    docs/08 §8.3，2026-09-23 由 ✅ 收窄为 ❌）。`r.memberId === me.id` 那一支要留着——
+  //    团长 / 指挥删**自己上传的**那条仍然合法。
+  del.hidden = !(r.memberId === me.id || ['ADMIN', 'SECTION_LEADER'].includes(me.role));
   return el;
 }
 

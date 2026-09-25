@@ -118,7 +118,7 @@ public class RecordingService {
         return toRow(row);
     }
 
-    /** 删录音：本人 / 本声部长 / 管理员·团长·指挥（见 {@link RecordingVisibility#canDelete}）。 */
+    /** 删录音：**管理员 / 本人 / 本声部长**（团长 / 指挥能听全部、**不删**，见 {@link RecordingVisibility#canDelete}）。 */
     @Transactional
     public void delete(long id, CurrentUser operator) {
         Recording row = recordingMapper.selectById(id);

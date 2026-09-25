@@ -44,15 +44,21 @@ public class RecordingVisibility {
     }
 
     /**
-     * 这条录音 viewer 能不能删（docs/02 §2.3：管理员 / 团长 / 指挥删任意，声部长删本声部，团员删自己的）。
-     * ⚠️ `docs/08` §8.3 写的是"本人 + 本声部长 + 管理员"（少了团长 / 指挥）——按 `02` 实现（它自称权威），
-     * 冲突已记进移交。
+     * 这条录音 viewer 能不能删：**管理员 / 本人 / 本声部长**
+     * （`docs/02` §2.3 矩阵 + `docs/08` §8.3 字面：删除是不可逆动作，收窄到与录音直接相关的三方）。
+     * <p>
+     * ⚠️ **团长 / 指挥不能删任何人的录音**——他们照旧能"听全部"（{@link #canView} 没动），但**不删**。
+     * 本方法的注释早先写的是"管理员 / 团长 / 指挥删任意"，引的是 `docs/02` 的**未同步旧值**；
+     * 规格 2026-09-23 已把团长 / 指挥由 ✅ 改 ❌（`docs/02:104-107` 明写"口径以 `08` 为准"），
+     * 代码 2026-09-26 才跟上（`交接单.md` `#57`）。
+     * <p>
+     * ⚠️ **别图省事写成 `seesAll(viewer)` 兜底**——那正是这个越权的成因（团长 / 指挥也走"能看全部"那一支）。
      */
     public boolean canDelete(Recording row, CurrentUser viewer) {
         if (row == null) {
             return false;
         }
-        if (seesAll(viewer)) {
+        if (viewer.role() == Role.ADMIN) {
             return true;
         }
         if (row.getMemberId() != null && row.getMemberId() == viewer.memberId()) {

@@ -612,7 +612,23 @@ const BAND = {
    */
   async renderNav(active) {
     this.loadCachedAvatars();                          // ⓪ 同步：本会话缓存过的头像清单先就位，首帧才画得对
+    // ⚠️⚠️ **本函数会被同一个页面第二次调用**：页面上改筛选器走的就是 `change → load() → renderNav()`
+    //    （名册的状态 / 声部、曲目库的状态、活动的类型、录音的范围 —— **四处全是这个写法**）。
+    //    第二次**必须复用已搭好的骨架**：`mountSkeleton` 里 `#navbar` 已经被 `replaceWith(layout)` 换掉，
+    //    再搭一次就是 `document.getElementById('navbar')` 返回 null → `.nextSibling` 抛错，
+    //    表现是"**筛选器完全没反应**"（列表一动不动，只在控制台留一条异常）。
+    //    复用时只重画导航（`paintNav` 是幂等的：`menu.innerHTML = …` 整块重写），
+    //    **一次性副作用（欢迎过渡 / 更新公告 / 生日通告 / oneko / 个人栏）不再跑**——
+    //    否则欢迎动画会重播、猫会叠一只、个人栏会插第二份。
+    if (this.skeleton) {
+      this.paintNav(this.skeleton, this.cachedMe(), active);
+      const [me] = await Promise.all([this.requireUser(), this.avatars()]);
+      if (!me) return null;
+      this.paintNav(this.skeleton, me, active);
+      return me;
+    }
     const skeleton = this.mountSkeleton(active);       // ① 同步：布局一次到位
+    this.skeleton = skeleton;                          // 存起来给上面那条"第二次进来"的分支复用
     this.paintNav(skeleton, this.cachedMe(), active);  // ② 先用缓存填（没有就留空，不编数据）
     // 身份与头像清单**并行**取（清单很小）；avatars() 自带 catch，不会把这条链拖垮
     const [me] = await Promise.all([this.requireUser(), this.avatars()]);
