@@ -29,7 +29,7 @@ fi
 
 cd "$ROOT" || exit 1
 
-echo "[1/3] 重新构建资源…"
+echo "[1/5] 重新构建资源…"
 if ! "$MVN" -q process-resources; then
   echo "  ✗ 构建失败" >&2
   exit 1
@@ -43,7 +43,7 @@ fi
 LOCAL_HASH="$(sha256sum "$SRC" | awk '{print $1}')"
 echo "      源文件  ${LOCAL_HASH:0:12}…  $PROBE"
 
-echo "[2/3] 等 HTTP 服务可用（:$PORT）…"
+echo "[2/5] 等 HTTP 服务可用（:$PORT）…"
 CODE=""
 for _ in $(seq 1 30); do
   CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:$PORT/api/health" 2>/dev/null)"
@@ -59,7 +59,7 @@ if [ "$CODE" != "200" ]; then
 fi
 echo "      服务正常"
 
-echo "[3/3] 校验服务端拿到的与源一致…"
+echo "[3/5] 校验服务端拿到的与源一致…"
 SERVED_HASH="$(curl -s --max-time 5 "http://localhost:$PORT/$PROBE" | sha256sum | awk '{print $1}')"
 echo "      服务端  ${SERVED_HASH:0:12}…"
 
@@ -74,7 +74,7 @@ else
   exit 1
 fi
 
-# ---- [4/4] 页面可达性体检：每个 static/*.html 都得在**别处**被引用过，否则界面上够不着 ----
+# ---- [4/5] 页面可达性体检：每个 static/*.html 都得在**别处**被引用过，否则界面上够不着 ----
 # 为什么查这个：新建了页面却忘了挂入口时，**没有任何东西会报错**——页面能直接打开、接口也通，
 # 就是没人点得到（2026-09-23 真发生过一次：recordings.html 忘了进 navItems）。
 #
@@ -82,7 +82,7 @@ fi
 # 详情页（event-detail / piece-detail / concert-detail）就是靠"从列表页链过去"过关的，不必进导航。
 # 只警告、不中断：个别页面"故意不做入口"是合法的。
 echo
-echo "[4/4] 检查页面有没有入口（能否从别处点到）…"
+echo "[4/5] 检查页面有没有入口（能否从别处点到）…"
 STATIC_DIR="$ROOT/src/main/resources/static"
 MISSING=""
 COUNT=0
@@ -103,4 +103,19 @@ if [ -n "$MISSING" ]; then
   echo "    要么进 app.js 的 navItems（主导航）/ offMenuTitles，要么从某个页面链过去" >&2
 else
   echo "      ✓ $COUNT 个页面都有入口"
+fi
+
+# ---- [5/5] 规格↔代码一致性（只打印、不阻断）----
+# 为什么挂在已有的脚本上：改了前端通常也顺手改了 docs，搭在这里就等于**自动跑一遍**，
+# 不用再指望人记得（`AGENTS.md` 那句"改完 docs 跑一次"一旦靠记性就会衰减）。
+# 规则见 docs/00 §0.9.5。**只打印不中断**——报告里有 🚧 之类"已交接、不急着做"的项。
+echo
+echo "[5/5] 规格↔代码一致性检查（规则见 docs/00 §0.9.5）…"
+PY=""
+command -v python  >/dev/null 2>&1 && PY=python
+[ -z "$PY" ] && command -v python3 >/dev/null 2>&1 && PY=python3
+if [ -z "$PY" ]; then
+  echo "      (跳过：没找到 python)"
+elif ! "$PY" "$ROOT/tools/spec_check.py"; then
+  echo "      ⚠ 上面有 ❌ 项——不影响本次刷新，但该派的活别漏（交接单.md）"
 fi

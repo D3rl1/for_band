@@ -79,3 +79,18 @@ else
   tail -20 "$LOG" >&2
   exit 1
 fi
+
+# ---- [4/4] 规格↔代码一致性（只打印、不阻断）----
+# 为什么挂在已有的脚本上：改了 Java 通常也顺手改了 docs，搭在这里就等于**自动跑一遍**，
+# 不用再指望人记得（`AGENTS.md` 那句"改完 docs 跑一次"一旦靠记性就会衰减）。
+# 规则见 docs/00 §0.9.5。**只打印不中断**——报告里有 🚧 之类"已交接、不急着做"的项。
+echo
+echo "[4/4] 规格↔代码一致性检查（规则见 docs/00 §0.9.5）…"
+PY=""
+command -v python  >/dev/null 2>&1 && PY=python
+[ -z "$PY" ] && command -v python3 >/dev/null 2>&1 && PY=python3
+if [ -z "$PY" ]; then
+  echo "      (跳过：没找到 python)"
+elif ! "$PY" "$ROOT/tools/spec_check.py"; then
+  echo "      ⚠ 上面有 ❌ 项——不影响本次重启，但该派的活别漏（交接单.md）"
+fi
