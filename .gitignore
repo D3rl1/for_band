@@ -11,6 +11,12 @@ target/
 .vscode/
 *.swp
 
+# ---- 工具脚本（tools/）----
+# `tools/spec_check.py` 本身要进仓库（它是文档↔代码一致性的闸门，见 docs/00 §0.9.5）；
+# 只挡 Python 顺带产出的字节码缓存。
+__pycache__/
+*.pyc
+
 # ---- 构建与运行产物 ----
 logs/
 *.log
