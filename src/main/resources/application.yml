@@ -25,6 +25,11 @@ band:
     # 存储用量警戒线：超过它就在管理后台把用量那一行标成醒目色（docs/08 §8.3「到阈值时提醒管理员」）。
     # ⚠️ 规格没给这个数值，取 2GB 并做成可配置（已记移交请规格登记）。**只提醒，绝不自动删任何东西。**
     warn-bytes: 2147483648
+  backup:
+    # 备份脚本写的状态文件（docs/12 §12.5「⚡ 备份成败怎么让应用知道」）。
+    # ⚠️ **脚本写、应用只读**：应用绝不发起备份、也不写这个文件（理由见 BackupStatusService 的注释）。
+    # 服务器上就是 /opt/band/backup-status.json，与备份脚本里那条路径必须逐字相同。
+    status-file: /opt/band/backup-status.json
 
 mybatis-plus:
   configuration:

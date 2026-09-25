@@ -4,6 +4,8 @@ import com.forband.auth.CurrentUser;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import com.forband.file.dto.FileDtos.FileView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import java.util.Optional;
  */
 @Service
 public class FileService {
+
+    private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     private static final int SNIFF_BYTES = 32;
 
@@ -55,13 +59,13 @@ public class FileService {
         String originalName = upload.getOriginalFilename() == null ? "" : upload.getOriginalFilename();
         FileTypes.Kind byExtension = FileTypes.kindOfExtension(originalName);
         if (byExtension == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+            throw new BusinessException(ErrorCode.FILE_TYPE_UNSUPPORTED,
                     "不支持的文件类型（音频 m4a/mp3/wav、图片 jpg/png/gif/webp、谱子 pdf）");
         }
 
         long limit = limitOf(byExtension);
         if (upload.getSize() > limit) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+            throw new BusinessException(ErrorCode.FILE_TOO_LARGE,
                     "文件超过上限（" + (limit / 1024 / 1024) + "MB）");
         }
 
@@ -74,15 +78,17 @@ public class FileService {
             in.reset();
             detected = FileTypes.sniff(head);
             if (detected == null) {
-                throw new BusinessException(ErrorCode.VALIDATION_FAILED, "文件内容认不出来，拒绝入库");
+                throw new BusinessException(ErrorCode.FILE_TYPE_UNSUPPORTED, "文件内容认不出来，拒绝入库");
             }
             // 扩展名与文件头**互相印证**：改名绕过（exe 改名成 .mp3）在这里被挡住
             if (detected.kind() != byExtension) {
-                throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                throw new BusinessException(ErrorCode.FILE_TYPE_UNSUPPORTED,
                         "文件内容与扩展名不符（内容像 " + detected.kind() + "，名字却是 " + byExtension + "）");
             }
             stored = storage.write(in, FileTypes.extensionOf(originalName));
         } catch (IOException e) {
+            // 与 FileStorage 那条同理：读上传流失败也要自己说话（docs/10 §10.5「落盘失败必须留日志」）
+            log.error("读取上传文件失败：文件={}", originalName, e);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取上传文件失败");
         }
 

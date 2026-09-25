@@ -1,14 +1,21 @@
 package com.forband.member;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.forband.auth.CurrentUser;
 import com.forband.member.dto.MemberCreateResponse;
+import com.forband.member.dto.MemberUpdateRequest;
 import com.forband.support.IntegrationTestBase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,6 +34,7 @@ class ProfileTests extends IntegrationTestBase {
     private String memberAToken;
     private long memberBId;
     private String memberBToken;
+    private long honoraryId;
 
     @BeforeEach
     void setUp() {
@@ -78,15 +86,27 @@ class ProfileTests extends IntegrationTestBase {
     }
 
     @Test
-    void catalog_has_the_recorded_avatars() throws Exception {
-        // 清单文件与素材一起放在 vendor/fluent-emoji/，**服务端与前端读同一份**
-        String manifest = new String(new ClassPathResource(
-                "static/vendor/fluent-emoji/manifest.json").getInputStream().readAllBytes(),
-                StandardCharsets.UTF_8);
-        assertTrue(manifest.contains("fluent-frog"), "清单里要有 fluent-frog");
-        assertTrue(new ClassPathResource(
-                        "static/vendor/fluent-emoji/fluent-frog.svg").exists(),
-                "清单点名的素材必须真的在库里");
+    void catalog_entries_all_have_files_on_disk() throws Exception {
+        // 清单文件与素材一起放在 vendor/avatars/，**服务端与前端读同一份**
+        JsonNode avatars = new ObjectMapper().readTree(new ClassPathResource(
+                "static/vendor/avatars/manifest.json").getInputStream()).path("avatars");
+
+        Set<String> ids = new HashSet<>();
+        for (JsonNode item : avatars) {
+            String id = item.path("id").asText();
+            String file = item.path("file").asText();
+            assertFalse(id.isBlank(), "每条都要有 id");
+            // ⭐ 每条都必须**显式写 file**（代码里不拼后缀——本目录同时有 .svg 与 .png），
+            // 且它**真的躺在磁盘上**。这是"坏图不许静默"唯一可自动化的代理：
+            // 运行期清单写错时前端会看得见坏图（那正是 `#37` 要的效果），这里让它连测试都过不去。
+            assertFalse(file.isBlank(), id + " 缺 file 字段");
+            assertTrue(new ClassPathResource("static/vendor/avatars/" + file).exists(),
+                    id + " 点名的素材不在库里：" + file);
+            assertTrue(ids.add(id), "id 重复：" + id);
+        }
+        // 不写死总条数（会随入库变化）——只钉住两个端点：上游那批不许删、自制那张必须在
+        assertTrue(ids.contains("fluent-frog"), "12 个上游 id 不许删（2026-09-25 这次是共存）");
+        assertTrue(ids.contains("band-chubby"), "第一张自制头像 band-chubby 要入库");
     }
 
     @Test
@@ -135,27 +155,87 @@ class ProfileTests extends IntegrationTestBase {
     }
 
     @Test
-    void birthday_is_hidden_from_others() throws Exception {
+    void birthday_is_full_for_self_and_month_day_for_others() throws Exception {
         api(adminToken(), "PUT", "/api/admin/members/" + memberAId,
                 "{\"birthday\":\"1999-03-05\",\"avatar\":\"fluent-frog\",\"contact\":\"wx\"}")
                 .andExpect(status().isOk());
 
-        // 本人看得到
+        // 本人（与管理员）看**全值**
         api(memberAToken, "GET", "/api/members/" + memberAId, null)
                 .andExpect(jsonPath("$.data.birthday").value("1999-03-05"));
-        // 别人看不到（连"月-日"都没有——本期没有对外界面显示生日，宁可什么都不给）
+        api(adminToken(), "GET", "/api/members/" + memberAId, null)
+                .andExpect(jsonPath("$.data.birthday").value("1999-03-05"));
+        // 别人**只到「月-日」、不带年份**（docs/03 §3.4 + docs/13 §13.3②）。
+        // ⚠️ 2026-09-25 之前这里是"一律 null"（实现比规格更保守，见 `交接单` `#8`）——
+        // 现在按规格落地：别人的主页上要显示生日，只是不显示年份。
         api(memberBToken, "GET", "/api/members/" + memberAId, null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.birthday").doesNotExist());
-        // 名册列表里也一样
+                .andExpect(jsonPath("$.data.birthday").value("03-05"));
+        // 名册列表里也一样：月-日可以出现，**带年份的完整值不许出现**
         String list = api(memberBToken, "GET", "/api/members?size=50", null)
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertFalse(list.contains("1999-03-05"), "名册列表不能泄漏他人生日");
+        assertTrue(list.contains("\"03-05\""), "别人该看到「月-日」");
+        assertFalse(list.contains("1999-03-05"), "名册列表不能泄漏他人的完整生日（带年份）");
 
         // 而 avatar / intro / contact 是登录即可见的
         api(memberBToken, "GET", "/api/members/" + memberAId, null)
-                .andExpect(jsonPath("$.data.avatar").exists());
+                .andExpect(jsonPath("$.data.avatar").exists())
+                .andExpect(jsonPath("$.data.contact").value("wx"));
+    }
+
+    // ---------- 荣誉团员只读（docs/02 §2.3；2026-09-24 拍板维持 ❌，2026-09-25 落地） ----------
+
+    @Test
+    void honorary_cannot_update_profile_403_30001_and_db_untouched() throws Exception {
+        String token = seedHonorary();
+        // 管理员先写死四个字段，作为"一个字都不许变"的基线
+        api(adminToken(), "PUT", "/api/admin/members/" + honoraryId,
+                "{\"avatar\":\"fluent-panda\",\"intro\":\"管理员填的\","
+                        + "\"contact\":\"138\",\"birthday\":\"2000-01-02\"}")
+                .andExpect(status().isOk());
+
+        // 反例①：荣誉团员改资料 → 403 + 30001
+        api(token, "PUT", "/api/me/profile",
+                "{\"avatar\":\"fluent-frog\",\"intro\":\"我要改\","
+                        + "\"contact\":\"999\",\"birthday\":\"1990-01-01\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
+        // 清空生日走的是同一个 update()，同样拦
+        api(token, "PUT", "/api/me/profile", "{\"clearBirthday\":true}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
+
+        // 四列逐列比对：库里确实没变（别只信响应）
+        assertEquals("fluent-panda", jdbc.queryForObject(
+                "SELECT avatar FROM member WHERE id = ?", String.class, honoraryId));
+        assertEquals("管理员填的", jdbc.queryForObject(
+                "SELECT intro FROM member WHERE id = ?", String.class, honoraryId));
+        assertEquals("138", jdbc.queryForObject(
+                "SELECT contact FROM member WHERE id = ?", String.class, honoraryId));
+        assertEquals("2000-01-02", jdbc.queryForObject(
+                "SELECT DATE_FORMAT(birthday, '%Y-%m-%d') FROM member WHERE id = ?",
+                String.class, honoraryId));
+    }
+
+    @Test
+    void honorary_can_still_read_own_profile() throws Exception {
+        // 只读权别被误伤（荣誉团员的定位是"只读的过去"）
+        api(seedHonorary(), "GET", "/api/me/profile", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.name").value("荣誉团员"));
+    }
+
+    /** 造一个**能登录**的荣誉团员（角色 HONORARY + 有效期未过 ⇒ canLogin 放行），返回其 token。 */
+    private String seedHonorary() throws Exception {
+        MemberCreateResponse h = createMember(admin, "荣誉团员", "honorary", section1, "MEMBER");
+        honoraryId = h.id();
+        setMemberStatus(admin, h.id(), "GRADUATED");
+        memberService.update(h.id(), new MemberUpdateRequest(
+                null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
+                null, null, null, null), admin);
+        return loginToken("honorary", h.initialPassword());
     }
 
 }

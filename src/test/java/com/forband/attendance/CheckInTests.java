@@ -169,7 +169,7 @@ class CheckInTests extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value(0));
     }
 
-    // ---------- 代签不受签到窗口限制（补录历史场次走的就是这条路，docs/05 §5.4） ----------
+    // ---------- 代签不受签到窗口限制（补录历史场次走的就是这条路，docs/05 §5.3） ----------
 
     @Test
     void mark_for_other_works_outside_window_backfill() throws Exception {
@@ -184,7 +184,7 @@ class CheckInTests extends IntegrationTestBase {
         assertEquals(1, countAttendance(eventId));
     }
 
-    // ---------- 有生效中请假的人不能代签（docs/05 §5.4 + docs/10 40008） ----------
+    // ---------- 有生效中请假的人不能代签（docs/05 §5.3 + docs/10 40008） ----------
 
     @Test
     void mark_for_other_refused_when_leave_pending_40008() throws Exception {
@@ -262,7 +262,7 @@ class CheckInTests extends IntegrationTestBase {
     private long event(LocalDateTime start, long durationMinutes) {
         return eventService.create(new EventCreateRequest(
                 "REHEARSAL", "排练", start.toLocalDate(), start.toLocalTime(),
-                start.plusMinutes(durationMinutes).toLocalTime(), "排练厅", null, null), admin).id();
+                endTimeWithinDay(start, durationMinutes), "排练厅", null, null), admin).id();
     }
 
     private LocalDateTime startsInMinutes(long minutes) {

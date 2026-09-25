@@ -122,7 +122,7 @@ public class LeaveService {
         }
         Member requester = memberMapper.selectById(leaveRequest.getMemberId());
         permissionService.checkCanDecideApproval(decider,
-                Role.valueOf(requester.getRole()), requester.getSectionId(),
+                Role.valueOf(requester.getRole()), requester.getId(), requester.getSectionId(),
                 approval.getRequiredRole());
 
         approval.setDecision(request.decision());
@@ -304,7 +304,8 @@ public class LeaveService {
                                 && LeaveStatus.PENDING.equals(leaveRequest.getStatus())
                                 && requester != null
                                 && permissionService.canDecideApproval(viewer,
-                                        Role.valueOf(requester.getRole()), requester.getSectionId(),
+                                        Role.valueOf(requester.getRole()), requester.getId(),
+                                        requester.getSectionId(),
                                         a.getRequiredRole())))
                 .toList();
 

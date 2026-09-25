@@ -22,6 +22,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
 /**
@@ -65,6 +68,7 @@ public abstract class IntegrationTestBase {
             "event_piece", "piece_attachment", "piece",   // 期 3：曲目相关三张表
             "concert_photo", "concert_piece", "concert_cast", "concert",   // 期 4：演出四张表
             "recording_comment", "recording",   // 期 5：录音与点评
+            "profile_visit",   // 期 1.6：访客记录（两个 FK 都指向 member，必须排在它前面）
             "member", "section",
     };
 
@@ -142,5 +146,23 @@ public abstract class IntegrationTestBase {
 
     protected long memberIdOf(String account) {
         return jdbc.queryForObject("SELECT id FROM member WHERE account = ?", Long.class, account);
+    }
+
+    /**
+     * 造活动时的"结束时间"（`event` 只有 `date` + 两个 `time` 列，**不能跨天**：docs/13 不变式 12）。
+     * <p>
+     * 可测试常写成 `start.plusMinutes(d).toLocalTime()`——**起点 + 时长一旦越过午夜**，
+     * `toLocalTime()` 会绕回 `00:xx`，于是创建被「开始时间晚于结束时间」拒掉：
+     * 这不是被测代码坏了，而是造数本身过不了校验，且**只在临近午夜跑测试时才炸**
+     * （2026-09-25 22:2x 实测 21 条报错，全是这个）。所以统一收在这里：跨天就夹到当天最后一秒，
+     * 其余原样返回——**只有本来就会失败的用例会走到夹取那一支**，不影响其余用例的时间语义。
+     */
+    protected static LocalTime endTimeWithinDay(LocalDateTime start, long durationMinutes) {
+        LocalDateTime end = start.plusMinutes(durationMinutes);
+        if (end.toLocalDate().equals(start.toLocalDate())) {
+            return end.toLocalTime();
+        }
+        LocalDateTime lastSecond = start.toLocalDate().atTime(23, 59, 59);
+        return (lastSecond.isAfter(start) ? lastSecond : start.minusMinutes(1)).toLocalTime();
     }
 }

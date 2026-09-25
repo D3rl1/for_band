@@ -2,8 +2,10 @@ package com.forband.leave;
 
 import com.forband.auth.CurrentUser;
 import com.forband.common.BusinessException;
+import com.forband.common.ErrorCode;
 import com.forband.common.PageResult;
 import com.forband.event.dto.EventCreateRequest;
+import com.forband.leave.dto.LeaveDtos.ApprovalView;
 import com.forband.leave.dto.LeaveDtos.CreateRequest;
 import com.forband.leave.dto.LeaveDtos.DecideRequest;
 import com.forband.leave.dto.LeaveDtos.RequestView;
@@ -80,7 +82,7 @@ class LeaveFlowTests extends IntegrationTestBase {
 
     @Test
     void any_rejection_rejects_whole_request_and_further_decide_40006() {
-        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
         leaveService.decide(request.approvals().get(0).id(),
                 new DecideRequest("REJECTED", "不给假"), secLeader);
         assertEquals("REJECTED", ownRequest().status());
@@ -91,26 +93,26 @@ class LeaveFlowTests extends IntegrationTestBase {
 
     @Test
     void duplicate_apply_40004_then_reapply_allowed_after_rejection() {
-        RequestView first = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView first = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
         // 同人同场已有 PENDING → 40004（docs/05 并发与幂等）
         assertThrows(BusinessException.class,
-                () -> leaveService.create(futureEventId, new CreateRequest(null), memberA));
+                () -> leaveService.create(futureEventId, new CreateRequest("有事"), memberA));
         // 驳回第一单 → 重新申请放行
         leaveService.decide(first.approvals().get(0).id(),
                 new DecideRequest("REJECTED", null), secLeader);
-        assertTrue(leaveService.create(futureEventId, new CreateRequest(null), memberA).id() > 0);
+        assertTrue(leaveService.create(futureEventId, new CreateRequest("有事"), memberA).id() > 0);
     }
 
     @Test
     void withdraw_only_once_and_only_before_start() {
-        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
         leaveService.cancel(request.id(), memberA);
         assertEquals("CANCELED", ownRequest().status());
         // 已撤回再撤 → 40006
         assertThrows(BusinessException.class, () -> leaveService.cancel(request.id(), memberA));
 
         // 开始后撤回 → 40005（docs/05：否则可用来逃避缺勤）
-        RequestView second = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView second = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
         jdbc.update("UPDATE event SET date = CURDATE(), start_time = '00:00:01' WHERE id = ?",
                 second.eventId());
         assertThrows(BusinessException.class, () -> leaveService.cancel(second.id(), memberA));
@@ -120,12 +122,12 @@ class LeaveFlowTests extends IntegrationTestBase {
     void apply_to_started_event_40005() {
         long startedEventId = event(startsInMinutes(-30), 60);
         assertThrows(BusinessException.class,
-                () -> leaveService.create(startedEventId, new CreateRequest(null), memberA));
+                () -> leaveService.create(startedEventId, new CreateRequest("有事"), memberA));
     }
 
     @Test
     void section_leader_cannot_self_approve_leader_signs_instead() {
-        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), secLeader);
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), secLeader);
         // 声部长审自己的 SECTION_LEADER 行 → 30001
         assertThrows(BusinessException.class, () -> leaveService.decide(
                 request.approvals().get(0).id(), new DecideRequest("APPROVED", null), secLeader));
@@ -140,7 +142,7 @@ class LeaveFlowTests extends IntegrationTestBase {
 
     @Test
     void needsMe_scope_filters_and_overdue_flag() {
-        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
 
         // 团长的 needsMe 含该单（LEADER 行待他签）
         PageResult<RequestView> forLeader = leaveService
@@ -208,7 +210,7 @@ class LeaveFlowTests extends IntegrationTestBase {
 
     @Test
     void approval_without_prior_checkin_is_not_flagged() {
-        RequestView request = leaveService.create(futureEventId, new CreateRequest(null), memberA);
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
         leaveService.decide(request.approvals().get(0).id(), new DecideRequest("APPROVED", null), secLeader);
         RequestView finalView = leaveService.decide(request.approvals().get(1).id(),
                 new DecideRequest("APPROVED", null), tuanzhang);
@@ -254,6 +256,83 @@ class LeaveFlowTests extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value(30001));
     }
 
+    // ---------- 理由必填（docs/05 §5.5，2026-09-25 改口径） ----------
+
+    @Test
+    void missing_or_blank_reason_is_rejected_10001() throws Exception {
+        String memberToken = loginToken("memberA", jdbc.queryForObject(
+                "SELECT initial_password FROM member WHERE id = ?", String.class, memberAId));
+
+        // 缺 reason → 422 + 10001（不给它落库成 NULL 的机会）
+        api(memberToken, "POST", "/api/events/" + futureEventId + "/leave-requests", "{}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(10001));
+        // 纯空白也不算"填了"（@NotBlank 的语义就是这样）
+        api(memberToken, "POST", "/api/events/" + futureEventId + "/leave-requests",
+                "{\"reason\":\"   \"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(10001));
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM leave_request", Integer.class), "被拒的申请不该落库");
+
+        // 填了理由照旧能提交
+        api(memberToken, "POST", "/api/events/" + futureEventId + "/leave-requests",
+                "{\"reason\":\"回家\"}").andExpect(status().isOk());
+        assertEquals("回家", jdbc.queryForObject("SELECT reason FROM leave_request", String.class));
+    }
+
+    // ---------- 团长请假：换另一位在团团长签，只有一位时管理员兜底（docs/05 §5.5） ----------
+
+    @Test
+    void leader_leave_can_be_approved_by_another_leader() {
+        CurrentUser leaderB = secondLeader();
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), tuanzhang);
+        long leaderRowId = approvalOf(request, "LEADER").id();
+
+        // 改前这里是一刀切拒绝（只有管理员能签）
+        leaveService.decide(leaderRowId, new DecideRequest("APPROVED", null), leaderB);
+
+        assertEquals("APPROVED", jdbc.queryForObject(
+                "SELECT decision FROM leave_approval WHERE id = ?", String.class, leaderRowId));
+    }
+
+    @Test
+    void leader_cannot_approve_own_leave_and_sole_leader_falls_back_to_admin() {
+        // 夹具里只有 tuanzhang 一位在团团长 → 另一个能签的只能是管理员
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), tuanzhang);
+        long leaderRowId = approvalOf(request, "LEADER").id();
+
+        BusinessException self = assertThrows(BusinessException.class, () -> leaveService.decide(
+                leaderRowId, new DecideRequest("APPROVED", null), tuanzhang));
+        assertEquals(ErrorCode.NO_PERMISSION, self.getErrorCode(), "自己不能签自己的");
+
+        leaveService.decide(leaderRowId, new DecideRequest("APPROVED", null), admin);
+        assertEquals("APPROVED", jdbc.queryForObject(
+                "SELECT decision FROM leave_approval WHERE id = ?", String.class, leaderRowId));
+    }
+
+    @Test
+    void member_cannot_approve_leaders_leave_30001() {
+        RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), tuanzhang);
+        long leaderRowId = approvalOf(request, "LEADER").id();
+
+        BusinessException denied = assertThrows(BusinessException.class, () -> leaveService.decide(
+                leaderRowId, new DecideRequest("APPROVED", null), memberA));
+        assertEquals(ErrorCode.NO_PERMISSION, denied.getErrorCode());
+    }
+
+    /** 造第二位在团团长（LEADER / ACTIVE）。 */
+    private CurrentUser secondLeader() {
+        MemberCreateResponse b = createMember(admin, "团长乙", "tuanzhang2", null, "LEADER");
+        return currentUserOf(b.id());
+    }
+
+    private ApprovalView approvalOf(RequestView request, String requiredRole) {
+        return request.approvals().stream()
+                .filter(a -> requiredRole.equals(a.requiredRole()))
+                .findFirst().orElseThrow(() -> new AssertionError("没有 " + requiredRole + " 待签行"));
+    }
+
     private CurrentUser honoraryOf(long sectionId) {
         MemberCreateResponse h = createMember(admin, "荣誉团员", "honorary", sectionId, "MEMBER");
         setMemberStatus(admin, h.id(), "GRADUATED");
@@ -274,7 +353,7 @@ class LeaveFlowTests extends IntegrationTestBase {
     private long event(LocalDateTime start, long durationMinutes) {
         return eventService.create(new EventCreateRequest(
                 "REHEARSAL", "排练", start.toLocalDate(), start.toLocalTime(),
-                start.plusMinutes(durationMinutes).toLocalTime(), "排练厅", null, null), admin).id();
+                endTimeWithinDay(start, durationMinutes), "排练厅", null, null), admin).id();
     }
 
     private int countAttendance() {

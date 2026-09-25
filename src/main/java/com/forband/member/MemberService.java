@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,10 @@ public class MemberService {
     /** 初始密码字母表：排除易混淆的 0/O、1/l/I（docs/01）。 */
     private static final String PASSWORD_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
+    /** 「对外只到月-日 / 只到年份」用的两个格式（本人与管理员走 `ISO_LOCAL_DATE` 全值）。 */
+    private static final DateTimeFormatter MONTH_DAY = DateTimeFormatter.ofPattern("MM-dd");
+    private static final DateTimeFormatter YEAR_ONLY = DateTimeFormatter.ofPattern("yyyy");
 
     private final MemberMapper memberMapper;
     private final MemberRoleHistoryMapper historyMapper;
@@ -260,7 +265,7 @@ public class MemberService {
         if (Boolean.TRUE.equals(member.getIsSystem())) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
-        return toView(member, viewer, sectionNamesOf(List.of(member.getSectionId())));
+        return toView(member, viewer, sectionNamesOfOne(member.getSectionId()));
     }
 
     /** 个人页的读口子（docs/03 §3.3）：只读自己，不裁剪——本人的资料就是给本人看的。 */
@@ -351,22 +356,55 @@ public class MemberService {
         return member;
     }
 
-    /** 名册视图的唯一生产点。可见性都在这里裁剪：phone 按角色、birthday 按"本人 / 管理员"。 */
+    /**
+     * 名册视图的**唯一生产点**：可见性全在这里裁（`docs/03` §3.4 那张「`MemberView` 各字段的可见性表」）。
+     * <p>
+     * ⚠️ **两处口径是用户 2026-09-25 当场改的，与那张表相反**（见 `交接单.md` `#42` 的移交事项）：
+     * `contact` **对全团可见**（"填了就说明不担心"）、`account` **维持可见**（"就是姓名拼音"）。
+     */
     private MemberView toView(Member member, CurrentUser viewer, Map<Long, String> sectionNames) {
-        boolean canViewPhone = permissionService.canViewPhone(viewer);
-        boolean fullBirthday = viewer.role() == Role.ADMIN || viewer.memberId() == member.getId();
-        return new MemberView(member.getId(), member.getName(), member.getStudentNo(),
+        boolean isAdmin = viewer.role() == Role.ADMIN;
+        // 本人看自己 = 看自己的资料，姓名 / 学号 / 生日都给全值
+        boolean fullValue = isAdmin || viewer.memberId() == member.getId();
+        return new MemberView(member.getId(), member.getName(),
+                // 学号与生日同级隐私（T17）：本人 + 管理员
+                fullValue ? member.getStudentNo() : null,
                 member.getSectionId(),
                 member.getSectionId() == null ? null : sectionNames.get(member.getSectionId()),
                 member.getInstrument(),
-                canViewPhone ? member.getPhone() : null,
+                permissionService.canViewPhone(viewer) ? member.getPhone() : null,
                 member.getRole(), member.getStatus(), member.getAccount(),
-                member.getInitialPassword() == null,
-                member.getJoinedAt(), member.getLeftAt(), member.getHonoraryUntil(),
-                member.getLastLoginAt(), member.getNote(),
+                // activated（= 还在用初始密码）/ 荣誉有效期 / 最后登录：账号级信息，仅管理员
+                // （界面上也只有管理端用得到；给别人 null，别用 false 冒充"未激活"）
+                isAdmin ? Boolean.valueOf(member.getInitialPassword() == null) : null,
+                dateText(member.getJoinedAt(), fullValue),
+                dateText(member.getLeftAt(), fullValue),
+                isAdmin ? member.getHonoraryUntil() : null,
+                isAdmin ? member.getLastLoginAt() : null,
+                isAdmin ? member.getNote() : null,
                 member.getAvatar(), member.getIntro(), member.getContact(),
-                // 生日只给本人 + 管理员；给别人一律 null（连"月-日"也不给，见移交事项）
-                fullBirthday ? member.getBirthday() : null);
+                birthdayText(member.getBirthday(), fullValue));
+    }
+
+    /**
+     * 生日：本人 / 管理员看全值，**别人只到「月-日」、不显示年份**（`docs/03` §3.4 + `docs/13` §13.3②；
+     * 用户 2026-09-25 拍板"按规格实现"，此前实现比规格更保守、对外一律 null，见 `交接单.md` `#8`）。
+     */
+    private static String birthdayText(LocalDate birthday, boolean fullValue) {
+        if (birthday == null) {
+            return null;
+        }
+        return birthday.format(fullValue ? DateTimeFormatter.ISO_LOCAL_DATE : MONTH_DAY);
+    }
+
+    /**
+     * 入团 / 退团时间：本人与管理员看全值（管理端的日期输入要完整值才能编辑），**别人只到年份**（`docs/03` §3.4）。
+     */
+    private static String dateText(LocalDate date, boolean fullValue) {
+        if (date == null) {
+            return null;
+        }
+        return date.format(fullValue ? DateTimeFormatter.ISO_LOCAL_DATE : YEAR_ONLY);
     }
 
     private String sectionNameOf(Long sectionId) {
@@ -384,6 +422,14 @@ public class MemberService {
         }
         return sectionMapper.selectBatchIds(distinct).stream()
                 .collect(Collectors.toMap(Section::getId, Section::getName, (a, b) -> a));
+    }
+
+    /**
+     * 单条版。⚠️ **不能用 `List.of(声部 id)`**：团长 / 指挥 / 未分配声部的团员 `section_id` 是 null，
+     * 而 `List.of` 不收 null、会当场 NPE（看这些人的主页 = 500）。上面那个批量版是从流里取的，天然过滤了 null。
+     */
+    private Map<Long, String> sectionNamesOfOne(Long sectionId) {
+        return sectionId == null ? Map.of() : sectionNamesOf(List.of(sectionId));
     }
 
     private String randomPassword() {

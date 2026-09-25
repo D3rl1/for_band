@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 个人页（docs/03 §3.3）：`GET/PUT /api/me/profile`。**本人**——**绝不收 `memberId`**，
  * 参数里连这个口子都不开，从签名上就杜绝越权（`SECURITY.md` A2 的样板思路）。
- * 所有登录角色都能用（含荣誉团员——他们也有头像与简介）。
+ * 所有登录角色都能 **GET**（含荣誉团员——他们也有头像与简介）；
+ * 但 **PUT 唯独荣誉团员不行**（`docs/02` §2.3 只读），闸门在 `MeProfileService.update()`。
  */
 @RestController
 @RequestMapping("/api/me/profile")

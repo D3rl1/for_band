@@ -2,6 +2,7 @@ package com.forband.member;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.forband.auth.CurrentUser;
+import com.forband.auth.PermissionService;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,9 @@ import java.time.LocalDate;
  * 「个人页」的读写口子（docs/03 §3.3/§3.4）：**本人**、**绝不收 `memberId`**，
  * 可写字段只有 `avatar` / `intro` / `contact` / `birthday`。
  * <p>
+ * ⚠️ **荣誉团员只读**：`docs/02` §2.3 的防腐条款把"改自己的资料（含头像）"判为 ❌，
+ * 所以 `update()` 第一件事就是 `checkNotHonorary`（2026-09-24 拍板维持 ❌，2026-09-25 落地）。
+ * <p>
  * ⚠️ **姓名 / 声部 / 乐器 / 角色 / 学号在这里一概改不动**——那些是**账号级**动作，收归管理员
  * （`docs/02` T8 + §2.5 的边界澄清：T8 管的是账号级动作，**不挡"本人写自己的资料字段"**，
  * 先例是 `PUT /api/alumni/{memberId}/message` 的「本人 / 管理员」）。
@@ -22,10 +26,13 @@ public class MeProfileService {
 
     private final MemberMapper memberMapper;
     private final AvatarCatalog avatarCatalog;
+    private final PermissionService permissionService;
 
-    public MeProfileService(MemberMapper memberMapper, AvatarCatalog avatarCatalog) {
+    public MeProfileService(MemberMapper memberMapper, AvatarCatalog avatarCatalog,
+                            PermissionService permissionService) {
         this.memberMapper = memberMapper;
         this.avatarCatalog = avatarCatalog;
+        this.permissionService = permissionService;
     }
 
     /**
@@ -38,6 +45,8 @@ public class MeProfileService {
 
     @Transactional
     public void update(CurrentUser user, ProfileUpdate request) {
+        // 先鉴权后校验：荣誉团员必须拿到 403，而不是"字段没填对"的 422
+        permissionService.checkNotHonorary(user);
         validateAvatar(request.avatar());
         Member update = new Member();
         update.setId(user.memberId());

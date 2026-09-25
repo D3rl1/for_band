@@ -11,7 +11,8 @@ public final class LeaveDtos {
     private LeaveDtos() {
     }
 
-    public record CreateRequest(@Size(max = 255) String reason) {
+    public record CreateRequest(
+            @NotBlank(message = "请假理由不能为空") @Size(max = 255) String reason) {
     }
 
     public record DecideRequest(@NotBlank String decision, @Size(max = 255) String note) {

@@ -19,10 +19,13 @@ public final class AttendanceDtos {
     /**
      * 考勤明细的一行。{@code status} 只来自 attendance 表（**区分不出"申请中"**），所以额外带
      * {@code leaveStatus} = 该人在本场的请假状态（`PENDING` / `APPROVED` / `REJECTED` /
-     * `CANCELED` / null）——界面靠它决定要不要出现「代签」（docs/05 §5.4 / §5.6）。
+     * `CANCELED` / null）——界面靠它决定要不要出现「代签」（docs/05 §5.3 / §5.6）。
+     * <p>
+     * {@code avatar} = 预置头像的标识符（`null` = 不用头像），明细里要显示头像（docs/14 §14.6.4
+     * 「名单里的头像」）。
      */
-    public record AttendanceRow(Long recordId, long memberId, String name, String sectionName,
-                                String status, LocalDateTime markedAt,
+    public record AttendanceRow(Long recordId, long memberId, String name, String avatar,
+                                String sectionName, String status, LocalDateTime markedAt,
                                 Long markedBy, String markedByName, String leaveStatus) {
     }
 

@@ -16,17 +16,21 @@ import java.util.Set;
  * 预置头像清单的**唯一权威**读取口（docs/14 §14.6.4：`member.avatar` 存**受控标识符**、
  * 服务端必须校验 `值 ∈ 清单 ∪ {null}`——这是"零安全面"的关键，**别改成"存 URL"**）。
  * <p>
- * 清单文件与素材放在一起（`static/vendor/fluent-emoji/manifest.json`），**前端读同一份**渲染网格，
+ * 清单文件与素材放在一起（`static/vendor/avatars/manifest.json`），**前端读同一份**渲染网格，
  * 免得两边各手抄一遍 id 而对不上。
+ * <p>
+ * ⚠️ 清单是**启动时读一次**的：新增一张头像（改 `manifest.json`）**必须重启服务**，
+ * 否则这里的名单还是旧的，写库时会被 {@link #isAllowed} 拒成 422。
  */
 @Component
 public class AvatarCatalog {
 
     private static final Logger log = LoggerFactory.getLogger(AvatarCatalog.class);
 
-    private static final String MANIFEST = "static/vendor/fluent-emoji/manifest.json";
+    private static final String MANIFEST = "static/vendor/avatars/manifest.json";
 
-    public record Avatar(String id, String name) {
+    /** `file` = 该头像的**保存文件名（带后缀）**——清单显式给出，代码里不拼后缀（docs/14 §14.6.4）。 */
+    public record Avatar(String id, String name, String file) {
     }
 
     private final List<Avatar> avatars;
@@ -37,7 +41,8 @@ public class AvatarCatalog {
             JsonNode items = objectMapper.readTree(in).path("avatars");
             List<Avatar> parsed = new java.util.ArrayList<>();
             for (JsonNode item : items) {
-                parsed.add(new Avatar(item.path("id").asText(), item.path("name").asText()));
+                parsed.add(new Avatar(item.path("id").asText(), item.path("name").asText(),
+                        item.path("file").asText()));
             }
             loaded = List.copyOf(parsed);
         } catch (Exception e) {

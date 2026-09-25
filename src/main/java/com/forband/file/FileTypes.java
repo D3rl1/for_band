@@ -24,7 +24,7 @@ public final class FileTypes {
     }
 
     /** 只认这些扩展名（原始名仅用于展示与后缀，**不参与路径拼接**）。 */
-    private static final Set<String> AUDIO_EXT = Set.of("m4a", "mp3", "wav", "mp4");
+    private static final Set<String> AUDIO_EXT = Set.of("m4a", "mp3", "wav");
     private static final Set<String> IMAGE_EXT = Set.of("jpg", "jpeg", "png", "gif", "webp");
     private static final Set<String> PDF_EXT = Set.of("pdf");
 

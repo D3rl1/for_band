@@ -1,5 +1,7 @@
 -- for_band 建表脚本。表结构以 docs/13-数据模型总表.md 为唯一权威，改动必须先改 docs/13。
--- 本机执行：mysql -uband_app -p band < sql/schema.sql
+-- 本机执行：mysql -uroot -p band < sql/schema.sql
+-- ⚠️ **必须用管理员账号**（见 AGENTS.md「运行与环境」）：脚本含 `CREATE TABLE` 与守护式
+--    `CREATE PROCEDURE`，应用账号 `band_app` 只有 DML 权限，拿它跑会直接报错。
 
 -- ① section 声部（docs/13 §13.3①）
 CREATE TABLE IF NOT EXISTS section (
@@ -131,7 +133,7 @@ CREATE TABLE IF NOT EXISTS leave_request (
     id         BIGINT      NOT NULL AUTO_INCREMENT,
     event_id   BIGINT      NOT NULL,
     member_id  BIGINT      NOT NULL,
-    reason     VARCHAR(255) NULL COMMENT '理由',
+    reason     VARCHAR(255) NOT NULL COMMENT '理由',
     status     VARCHAR(12) NOT NULL COMMENT 'PENDING/APPROVED/REJECTED/CANCELED',
     applied_at DATETIME    NOT NULL,
     PRIMARY KEY (id),
@@ -333,6 +335,22 @@ CREATE TABLE IF NOT EXISTS recording_comment (
     PRIMARY KEY (id),
     KEY idx_recording_id (recording_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '录音点评';
+
+-- ㉓ profile_visit 主页访客记录（docs/13 §13.3㉓，期 1.6 建）。
+-- ⚠️ 去重**靠唯一键**（uk_viewer_host_date），**不靠代码判重**——代码判重挡不住并发；
+--    所以 `visit_date` 必须是**显式的日期列**（`DATE(visited_at)` 这种函数表达式进不了唯一键）。
+-- ⚠️ 不记 IP / UA；**不进操作日志**（docs/11 §11.3 的判据：对象自己已经记了"谁在何时来的"）。
+CREATE TABLE IF NOT EXISTS profile_visit (
+    id          BIGINT   NOT NULL AUTO_INCREMENT,
+    viewer_id   BIGINT   NOT NULL COMMENT 'FK→member：谁来看的',
+    host_id     BIGINT   NOT NULL COMMENT 'FK→member：看了谁的主页',
+    visit_date  DATE     NOT NULL COMMENT '去重键的一部分：同一人同一天对同一人只一条',
+    visited_at  DATETIME NOT NULL COMMENT '当天第一次来的时间点',
+    created_at  DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_viewer_host_date (viewer_id, host_id, visit_date),
+    KEY idx_host_date (host_id, visit_date)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '主页访客记录';
 
 -- 存量库补列（MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守护，保证本脚本可重复执行）。
 DELIMITER $$

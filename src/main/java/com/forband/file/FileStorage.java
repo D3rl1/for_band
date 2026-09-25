@@ -61,6 +61,11 @@ public class FileStorage {
         try (DigestInputStream dis = new DigestInputStream(in, digest)) {
             size = Files.copy(dis, target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
+            // 落盘失败必须自己说话（docs/10 §10.5）：目录 + 目标文件名 + 完整异常（带堆栈）。
+            // 三者缺一不可——目录不可写是 AccessDeniedException，磁盘满是 No space left on device，
+            // 两者的修法完全不同；压成一句话就白记了（2026-09-24 线上真踩过，日志里零线索）。
+            // 响应仍只说人话、不暴露服务器路径（见下面那个 BusinessException）。
+            log.error("文件写入失败：目录={} 文件名={}", root, storedName, e);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件写入失败");
         }
         return new Stored(storedName, size, HexFormat.of().formatHex(digest.digest()));

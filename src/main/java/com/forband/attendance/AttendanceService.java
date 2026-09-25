@@ -90,7 +90,7 @@ public class AttendanceService {
         if (markingForOther) {
             target = requireMember(request.memberId());
             permissionService.checkCanMarkFor(requester);
-            // 有生效中请假的人不出现代签（docs/05 §5.4）——前端藏按钮只是体验，这里是闸门
+            // 有生效中请假的人不出现代签（docs/05 §5.3）——前端藏按钮只是体验，这里是闸门
             ensureNoActiveLeave(eventId, target.getId());
         } else {
             target = requireMember(requester.memberId());
@@ -99,7 +99,7 @@ public class AttendanceService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "该团员不在此活动的应到名单中");
         }
         if (!markingForOther) {
-            // 窗口只约束"本人签到"：代签不受限（docs/05 §5.4），否则补录历史场次会被 40003 挡死。
+            // 窗口只约束"本人签到"：代签不受限（docs/05 §5.3），否则补录历史场次会被 40003 挡死。
             // ⚠️ 位置不能挪到 isExpected 之前——那会改变错误码优先级（不在应到名单的人也是 40003）。
             ensureInWindow(event);
         }
@@ -169,7 +169,8 @@ public class AttendanceService {
                 .map(m -> {
                     Attendance record = byMember.get(m.getId());
                     if (record == null) {
-                        return new AttendanceRow(null, m.getId(), m.getName(), sectionNameOf(m.getSectionId()),
+                        return new AttendanceRow(null, m.getId(), m.getName(), m.getAvatar(),
+                                sectionNameOf(m.getSectionId()),
                                 null, null, null, null, leaveStatuses.get(m.getId()));
                     }
                     return toRow(record, m, null, leaveStatuses.get(m.getId()));
@@ -347,7 +348,7 @@ public class AttendanceService {
 
     /**
      * "生效中的请假" = PENDING / APPROVED（与 `LeaveService.create` 的重复申请判定同一口径）。
-     * 已驳回 / 已撤回不算——他该来，要能补签（docs/05 §5.4）。
+     * 已驳回 / 已撤回不算——他该来，要能补签（docs/05 §5.3）。
      */
     private void ensureNoActiveLeave(long eventId, long memberId) {
         Long active = leaveRequestMapper.selectCount(new LambdaQueryWrapper<LeaveRequest>()
@@ -426,7 +427,7 @@ public class AttendanceService {
             Member marker = memberMapper.selectById(record.getMarkedBy());
             markedByName = marker == null ? null : marker.getName();
         }
-        return new AttendanceRow(record.getId(), member.getId(), member.getName(),
+        return new AttendanceRow(record.getId(), member.getId(), member.getName(), member.getAvatar(),
                 sectionNameOf(member.getSectionId()),
                 record.getStatus(), record.getMarkedAt(), record.getMarkedBy(), markedByName, leaveStatus);
     }

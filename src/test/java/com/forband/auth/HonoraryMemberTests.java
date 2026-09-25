@@ -103,8 +103,9 @@ class HonoraryMemberTests extends IntegrationTestBase {
         String token = loginToken("zhang3", zhangInitial);
         long eventId = event(startsInMinutes(60));
 
-        // 请假 ❌
-        api(token, "POST", "/api/events/" + eventId + "/leave-requests", "{}")
+        // 请假 ❌ —— ⚠️ 必须带上合法 reason，否则会先被 @NotBlank 拦成 422/10001，
+        // 这条就测不到"权限拒绝"了（理由必填见 docs/05 §5.5）
+        api(token, "POST", "/api/events/" + eventId + "/leave-requests", "{\"reason\":\"x\"}")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(30001));
         // 签到 ❌（不在应到名单：仅 ACTIVE）
@@ -195,7 +196,7 @@ class HonoraryMemberTests extends IntegrationTestBase {
     private long event(String kind, Long sectionId, LocalDateTime start) {
         return eventService.create(new EventCreateRequest(
                 kind, "活动", start.toLocalDate(), start.toLocalTime(),
-                start.plusMinutes(30).toLocalTime(), "排练厅", sectionId, null), admin).id();
+                endTimeWithinDay(start, 30), "排练厅", sectionId, null), admin).id();
     }
 
     private LocalDateTime startsInMinutes(long minutes) {

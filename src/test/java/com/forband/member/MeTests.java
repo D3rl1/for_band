@@ -99,7 +99,7 @@ class MeTests extends IntegrationTestBase {
     private long event(String title, LocalDateTime start) {
         return eventService.create(new EventCreateRequest(
                 "REHEARSAL", title, start.toLocalDate(), start.toLocalTime(),
-                start.plusMinutes(30).toLocalTime(), "排练厅", null, null), admin).id();
+                endTimeWithinDay(start, 30), "排练厅", null, null), admin).id();
     }
 
     /** 直接落库并**显式给时间**：同一秒内造的行排序不稳定（DATETIME 没有小数秒）。 */

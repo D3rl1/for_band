@@ -192,7 +192,7 @@ class PieceTests extends IntegrationTestBase {
     private long event(LocalDateTime start) {
         return eventService.create(new EventCreateRequest(
                 "REHEARSAL", "排练", start.toLocalDate(), start.toLocalTime(),
-                start.plusMinutes(60).toLocalTime(), "排练厅", null, null), admin).id();
+                endTimeWithinDay(start, 60), "排练厅", null, null), admin).id();
     }
 
     private LocalDateTime startsInMinutes(long minutes) {

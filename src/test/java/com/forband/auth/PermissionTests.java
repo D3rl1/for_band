@@ -39,7 +39,9 @@ class PermissionTests extends IntegrationTestBase {
     void no_token_or_bad_token_401_20002() throws Exception {
         api(null, "GET", "/api/sections", null)
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(20002));
+                .andExpect(jsonPath("$.code").value(20002))
+                // 文案也是契约（docs/10 §10.5，闸门 R10 逐字核）
+                .andExpect(jsonPath("$.message").value("登录已过期，请重新登录"));
         api("garbage-token", "GET", "/api/sections", null)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(20002));
@@ -50,7 +52,8 @@ class PermissionTests extends IntegrationTestBase {
         api(memberAToken, "POST", "/api/admin/members",
                 "{\"name\":\"x\",\"account\":\"x1\"}")
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(30001));
+                .andExpect(jsonPath("$.code").value(30001))
+                .andExpect(jsonPath("$.message").value("你没有权限执行此操作"));
     }
 
     @Test
@@ -93,7 +96,7 @@ class PermissionTests extends IntegrationTestBase {
         LocalDateTime start = LocalDateTime.now().plusMinutes(10);
         com.forband.event.dto.EventCreateRequest request = new com.forband.event.dto.EventCreateRequest(
                 "REHEARSAL", "排练", start.toLocalDate(), start.toLocalTime(),
-                start.plusHours(1).toLocalTime(), "排练厅", null, null);
+                endTimeWithinDay(start, 60), "排练厅", null, null);
         return eventService.create(request, admin).id();
     }
 }
