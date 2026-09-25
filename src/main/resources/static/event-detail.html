@@ -147,14 +147,21 @@ function toggleLeaveForm(wrap) {
   form.className = 'd-flex gap-2 mt-2';
   const input = document.createElement('input');
   input.className = 'flex-grow-1';
-  input.placeholder = '请假理由（可空）';
+  input.placeholder = '请假理由（必填）';
   const submit = document.createElement('button');
   submit.className = 'go go-ghost go-sm';
   submit.textContent = '提交申请';
   submit.addEventListener('click', async () => {
+    // 理由必填（docs/05 §5.5）——这里只是体验，后端才是闸门
+    const reason = input.value.trim();
+    if (!reason) {
+      BAND.toast('请填写请假理由');
+      input.focus();
+      return;
+    }
     await BAND.must(`/api/events/${id}/leave-requests`, {
       method: 'POST',
-      body: { reason: input.value.trim() || null },
+      body: { reason },
     });
     BAND.toast('已提交，等待审批', 'success');
     load();
@@ -172,7 +179,14 @@ async function loadRows(me, canceled) {
   for (const r of d.rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
-    tr.children[0].textContent = r.name;
+    // 姓名格：头像 + 姓名（与名册同一套姿势，走 paintAvatar 唯一入口）
+    const nameWrap = document.createElement('span');
+    nameWrap.className = 'av-name';
+    const avSlot = document.createElement('span');
+    avSlot.className = 'av-sm';
+    BAND.paintAvatar(avSlot, r);
+    nameWrap.append(avSlot, document.createTextNode(r.name));
+    tr.children[0].appendChild(nameWrap);
     tr.children[1].textContent = r.sectionName || '';
     const chip = tr.querySelector('.chip');
     if (r.status === 'LEAVE') { chip.textContent = statusText.LEAVE; }
@@ -181,7 +195,7 @@ async function loadRows(me, canceled) {
     tr.children[3].textContent = r.markedAt ? r.markedAt.replace('T', ' ').slice(5, 16) : '';
     tr.children[4].textContent = r.markedByName || '';
     const action = tr.children[5];
-    // 有生效中请假的人不出现「代签」（docs/05 §5.4）：已驳回 / 已撤回不算——他该来，要能补签
+    // 有生效中请假的人不出现「代签」（docs/05 §5.3）：已驳回 / 已撤回不算——他该来，要能补签
     const onLeave = r.leaveStatus === 'PENDING' || r.leaveStatus === 'APPROVED';
     if (!canceled && canMark && !r.status && !onLeave) {
       const btn = document.createElement('button');

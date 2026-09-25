@@ -45,18 +45,24 @@
   --t-base: 220ms;
   --ease: cubic-bezier(.22, .8, .28, 1);
 
+  /* —— 名单里的头像（docs/14 §14.6.4「名单里的头像」，2026-09-25 新增）。
+     名册与考勤明细的表格行内用；**改尺寸只改这一个令牌**。
+     ⚠️ 别复用下面的 --av（52px）——那**是侧栏令牌**，≈一整行高。 —— */
+  --av-sm: 28px;
+
   /* —— 导航 rail（docs/14 §14.6.4，2026-09-23 定稿）。
      尺寸只在这里改；帽/肩/环全部由它们算出，不写死。
      --nav-pad 别叫 --pad-l（与全站 --pad 太像）；--nav-gap 别叫 --gap（那是格间距 20px）。 —— */
   --rail-w: 92px;        /* 收起时的图标轨宽 */
   --open-w: 320px;       /* 展开宽 = 预留位宽 */
-  --row-h: 58px;         /* 菜单行高（半圆帽半径 = 它的一半） */
+  --row-h: 48px;         /* 菜单行高（半圆帽半径 = 它的一半）。**2026-09-24 由 58 压到 48**（高度账见 docs/14 §14.6.4） */
   --nav-pad: 12px;       /* 轨道左内边距：让半圆帽不贴着屏幕边 */
   --ic: 20px;            /* 图标字号 */
   --tx: 17px;            /* 文字字号 */
   --av: 52px;            /* 头像直径 */
   --av-h: 60px;          /* 头像行高 */
-  --nav-gap: 8px;        /* 菜单行距 */
+  --nav-gap: 6px;        /* 菜单行距。**2026-09-24 由 8 压到 6** */
+  --nav-hit: 180px;      /* 展开判定的宽度（见下面 `.hit`）。**菜单名超过 4 个汉字要调大** */
   --ring: 40px;          /* 当前项图标外的细环直径 */
   --shoulder: 22px;      /* 右缘"肩"的半径（角块边长同值） */
   --nav-foot: 15px;      /* 底部账号区字号 */
@@ -81,6 +87,20 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
                  U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
                  U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---- 欢迎行姓名的中文楷体子集（docs/14 §14.6.5「姓名字体」；交接单 #48）----
+   只收"名册姓名用字 ∪ 常用姓氏前 100"（本次 114 字），子集 **27.7 KB**。
+   ⚠️ **`font-weight: 600` 是刻意声明成 600 的**：源文件内部其实是 **Medium(500)**，
+   而 `.wname` 继承 `.welcome` 的 600 —— 声明成 500 会让浏览器**伪合成加粗**
+   （中文禁伪合成、描边会发虚），声明成 600 才是"与请求字重精确匹配、不合成"。
+   **别改成 500。** 来源 / 版本 / SHA256 / 许可 / 字符集清单见 `vendor/wenkai/SOURCE.md`。
+   ⚠️ 这里**故意不写 `unicode-range`**（子集里本就没有拉丁与数字）：缺字按字符回退是默认行为，
+   落回 `var(--font-ui)` 的中文栈 ⇒ **回退黑体、绝不出方框**。 */
+@font-face {
+  font-family: "BandName";
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url("vendor/wenkai/wenkai-name-subset.woff2") format("woff2");
 }
 
 /* ============ §3 基础排版 ============ */
@@ -113,21 +133,45 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 /* ---- 预留位：**永远**留出"展开后"要占的宽度 ----
    正文起点固定，全程一动不动（零重排）、也不被侧栏盖住；
    收起时缺口那一段就是页面底色（留白）。 */
-.nav-slot { flex: 0 0 var(--open-w); display: flex; }
+.nav-slot { flex: 0 0 var(--open-w); display: flex; position: relative; }
+
+/* ---- 展开的「命中区」（docs/14 §14.6.4，2026-09-24 改；设计稿挑定的是 v1 档） ----
+   `--nav-hit` = `--nav-pad 12 + 图标列 80 + .tx padding-left 2 + 4×17 = 162`，取 180 留 18 余量。
+   ⚠️ 只铺**轨道右边**那一段（x ≥ `--rail-w = 92`），**不铺 x < 92**：铺满会挡住菜单点击，
+   而且展开后又被轨道盖住 → hover 丢掉 → 侧栏**来回抖**（设计稿实测卡在 124px）。
+   ⚠️ 它在 DOM 里必须排在 `.railwrap` **之前**：展开后 320px 的轨道要**盖住**它，菜单才点得动；
+   顺序反了会把 x 92–180 那段的菜单点击挡掉。 */
+.hit {
+  position: absolute; top: 0; height: 100%;
+  left: var(--rail-w);
+  width: max(0px, calc(var(--nav-hit) - var(--rail-w)));
+  pointer-events: auto;
+  z-index: 0;
+}
 
 /* ---- 侧栏容器：只在自己的预留位里长开；超出裁掉（文字靠"裁切"露出，单份 DOM） ----
-   ⚠️ **别写死 height: 100vh**（docs/14 §14.6.4）：定高之后，名册 / 日志这类长页面滚过第一屏，
-   左边这 92px 就**没有侧栏底色**了 —— 深色柱子从中间断掉。它作为 `.nav-slot` 的 flex 项由
-   stretch 撑满，而 `.nav-slot` 自己又是 `.layout` 的 flex 项，于是整条链跟着正文一起长高。 */
+   ⚠️ **别只写 `height` 而不钉住**（docs/14 §14.6.4，2026-09-25 改）。
+   旧话是"**别写死 `height: 100vh`**"，理由是：定高之后，名册 / 日志这类长页面滚过第一屏，
+   左边这 92px 就**没有侧栏底色**了 —— 深色柱子从中间断掉。
+   （**这句旧理由保留不删**：现在配上 `position: sticky` 正好两全——钉在视口上，
+   同时"可停靠的行程"由 `.nav-slot` 提供，柱子不会断。）
+   ⚠️ 两个会让钉住**静默失效**的写法（不报错、只是不生效，都别写回来）：
+   (a) `.nav-slot` 加 `align-items: flex-start` —— 它的 **stretch 正是行程来源**
+       （`.railwrap` 是它的 flex 项、被撑到**文档高**，才有可移动的行程）；
+   (b) 给 `.railwrap` 写 `min-height: 100%` —— 它对着 `.nav-slot`（文档高）解析，
+       `min-*` 会**压过**显式的 `height: 100vh`，盒子又变回文档高 ⇒ sticky 没有行程。 */
 .railwrap {
   width: var(--rail-w);
-  min-height: 100%;
+  position: sticky;
+  top: 0;
+  height: 100vh;
   background: var(--shell);
   overflow: hidden;
   transition: width var(--ease-nav);
 }
 .rail {
-  min-height: 100%;              /* 撑满容器：底部账号区才贴得到页面底部 */
+  height: 100%;                  /* 撑满容器（= 一屏）：底部账号区贴底，菜单成为**唯一**会滚的东西 */
+  min-height: 0;
   padding: 18px 0 16px var(--nav-pad);
   display: flex; flex-direction: column;
 }
@@ -154,20 +198,25 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 .rail .menu a .tx,
 .rail .me .tx { flex: 0 0 auto; padding-left: 2px; font-size: var(--tx); }
 
-/* ---- 菜单：放不下时**内部滚动**（矮屏兜底），但**不显示滚动条** ----
-   收起态一直露着一条滚动条特别难看（用户反馈）；768 高的屏整屏放得下，滚动只在更矮的屏才用得到。 */
+/* ---- 菜单：放不下时**内部滚动**（矮屏兜底） ----
+   收起态**不显示滚动条**（用户反馈：一直露着一条特别难看；768 高的屏整屏放得下，
+   滚动只在更矮的屏才用得到）；**展开态给细滚动条**——展开才是"真正在导航"的那一态。 */
 .rail .menu {
   display: flex; flex-direction: column; gap: var(--nav-gap);
   flex: 0 1 auto; min-height: 0;
   overflow-y: auto; overscroll-behavior: contain;
-  scrollbar-width: none;                 /* Firefox */
+  scrollbar-width: none;                 /* 收起态：不显示 */
   /* 首项选中的"肩"伸在条目上缘之外（bottom:100%），而本容器是滚动容器、
      overflow 在 padding 盒裁切 → 首项那个肩必然被裁掉（§13）。补等量 padding 给肩腾地方，
      再把盒子负向拉回：条目与底部的**视觉位置和占用高度都不变**（不然 768 的屏会挤出滚动条）。 */
   padding-top: var(--shoulder);
   margin-top: calc(-1 * var(--shoulder));
 }
-.rail .menu::-webkit-scrollbar { display: none; }   /* Chromium / Safari */
+/* 展开态：细滚动条（docs/14 §14.6.4「矮屏」）。
+   ⚠️ 这里**故意不再写** `::-webkit-scrollbar { display: none }`：Chromium ≥121 里
+   `scrollbar-width` 一旦不是 `auto`，整个 `::-webkit-scrollbar` 家族都被忽略 —— 那行是死代码。 */
+.railwrap:hover .menu,
+.railwrap:focus-within .menu { scrollbar-width: thin; scrollbar-color: var(--shellhi) transparent; }
 
 /* ---- 菜单项：只有当前项是浅色"凹槽"块 ---- */
 .rail .menu a.on {
@@ -229,9 +278,15 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 .rail .foot a:hover { color: var(--silk); }
 
 /* ---- 展开：只在"真有悬停能力"的设备上自动展开（防 iOS 首点只展开不跳转） ----
-   悬停目标是**侧栏自己**（不是预留位）—— 鼠标划过留白不会误展开 */
-@media (hover: hover) and (pointer: fine) {
-  .railwrap:hover { width: var(--open-w); }
+   ⚠️ **2026-09-24 改（旧文与旧理由保留，别抹）**：这里原来写的是
+   「悬停目标是**侧栏自己**（不是预留位）—— 鼠标划过留白不会误展开」。
+   现在**多了一条**：指针落在「命中区」里（轨道右边到 `--nav-hit` 那一段，x 92–180）也展开——
+   那一段是**预留位的留白**，不是侧栏自己。所以旧话"划过留白不会误展开"只在 x > 180 时成立。
+   ⚠️ `.railwrap:hover` 这一条**必须保留**：它是"展开之后**保持**"的那一半；
+   省了它，指针一落到加宽盒之外就会立刻缩回（抖）。 */
+@media (hover: hover) and (pointer: fine) and (min-width: 721px) {
+  .railwrap:hover,
+  .nav-slot:has(.hit:hover) .railwrap { width: var(--open-w); }
 }
 
 /* 点过菜单项后"保持展开"（docs/14 §14.6.4）：类由 band-nav.js 在**首帧前**挂上（跟着 sessionStorage 标记）。
@@ -241,22 +296,37 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 @media (hover: hover) and (pointer: fine) and (min-width: 721px) {
   html.rail-keep .railwrap { width: var(--open-w); transition: none; }
 }
-/* 键盘：Tab 进侧栏即展开（否则键盘用户只看到单字、读不到菜单名） */
-.railwrap:focus-within { width: var(--open-w); }
+/* 键盘：Tab 进侧栏即展开（否则键盘用户只看到单字、读不到菜单名）
+   ⚠️ 2026-09-25 补媒体门控：这条原来**没有**门控，特异性 (0,2,0) 压得过手机段的
+   `.railwrap { width: 100% }`（(0,1,0)）——手机上点一下头像按钮就会把顶栏撑成 320px。 */
+@media (hover: hover) and (pointer: fine) and (min-width: 721px) {
+  .railwrap:focus-within { width: var(--open-w); }
+}
 
 /* ---- 跨文档页面过渡（2026-09-23 用户提"切页要平滑"）----
    用浏览器原生的 View Transitions：**Chromium 生效**，其他引擎不认识这几条规则 → 退化成原来的瞬时切换
    （所以是"增强"，不是"必需"）。时长取 docs/14 §14.6.6 给的"页面切换 300–500ms"预算里的 320ms。 */
 @view-transition { navigation: auto; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 320ms; }
-/* 侧栏单独起名字：两页之间它是"同一根柱子"，整体（含伪元素画出来的"肩"）被快照，
-   于是只有里面的内容（含选中项高亮）**交叉淡入**，柱子本身不闪。
-   ⚠️ 别给 `a.on` 起名字——那个凹槽是 ::before/::after 两个径向渐变伪元素，**不参与快照**，
-   给它起名字会让两张高亮框各自被拍成带直角的方块，动画中途"肩"突变。 */
-.railwrap { view-transition-name: rail; }
+/* 跳页过渡**点名"当前项"**（2026-09-25 改；docs/14 §14.6.4「跳页过渡」，设计稿挑定的是 m1 档）：
+   原来点名的是**整根柱子**——320ms 里整栏被横向缩放，里面的高亮块跟着一起缩，看着就是抖。
+   只点当前项那块"凹槽"，让它在两页之间平滑滑到位，柱子本身不参与。
+   ⚠️ **更正留痕（旧文与旧理由原样保留，别抹）**：这里原来写的是
+   「侧栏单独起名字：两页之间它是"同一根柱子"，整体（含伪元素画出来的"肩"）被快照，于是只有里面的
+     内容（含选中项高亮）**交叉淡入**，柱子本身不闪。
+     ⚠️ 别给 `a.on` 起名字——那个凹槽是 ::before/::after 两个径向渐变伪元素，**不参与快照**，
+     给它起名字会让两张高亮框各自被拍成带直角的方块，动画中途"肩"突变。」
+   —— 其中「**伪元素不参与快照**」这句是**错的**：命名元素的快照**包含**它生成的伪元素；
+   真正的风险是"**盒子外面的墨迹**"（伪元素画到命名盒子之外的像素不跟手）。
+   所以"肩"保不保留、糊不糊，以人眼看到的那一瞬间为准
+   （`design-samples/_rail_pill.py` 只出截图，也没能把它自动定下来）。 */
+.railwrap { view-transition-name: none; }        /* 不再点名整根柱子（原来叫 rail） */
+.rail .menu a.on { view-transition-name: nav-pill; }
 /* 登录那一次**不参与**跨页过渡：目标页首帧本来就是 `.wel` 全黑幕（z-index 90），
    再叠一层文档级过渡必然互相盖住。`band-nav.js` 读到 band_welcome 时会挂上这个类。 */
 html.no-xvt { view-transition-name: none; }
+/* 同上：那一次连"当前项"那块也别点名（否则黑幕上还会冒出一块滑动的凹槽） */
+html.no-xvt .rail .menu a.on { view-transition-name: none; }
 
 /* ============ §5 主区与页头 ============ */
 .main { flex: 1; min-width: 0; padding: 36px 46px 44px 34px; }
@@ -311,8 +381,30 @@ html.no-xvt { view-transition-name: none; }
   .hact .hact-tx { display: none; }   /* 只留图标 */
 }
 
-/* ---- 头像图片：三处容器（侧栏 / 个人栏 / 欢迎过渡落点）都只换内容、不换容器 ---- */
+/* ---- 头像图片：各处容器（侧栏 / 个人栏 / 欢迎过渡落点 / 名册 / 考勤明细）都**只换内容、不换容器** ---- */
 .av-img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+/* ---- 名单里的头像（docs/14 §14.6.4）：名册与考勤明细的姓名格 ----
+   姿势固定为 `.av-name > .av-sm > .av-img`（或首字）。 ⚠️ `.av-sm` 这一层**必须有**：
+   `.av-img` 写的是 width/height:100%，直接塞进 `<td>` 会**撑满整个单元格**。 */
+.av-name { display: flex; align-items: center; gap: 8px; }
+/* ⚠️ 上面必须是**块级 flex**，不能改成 inline-flex：内联盒会参与行盒的基线计算，
+   同一张表里行高会明显不一致（实测 57/62/62px，docs/14 §14.6.4 记过这笔账） */
+/* 名册的姓名格是**链接**（进"别人的主页"，docs/14 §14.6.4）：别让它长成蓝色带下划线的链接样——
+   它长得还是姓名，只是能点。这条只针对 `a.av-name`，不影响别处的 `.av-name`。 */
+a.av-name { color: inherit; text-decoration: none; }
+a.av-name:hover { color: var(--deep); text-decoration: underline; }
+.av-sm {
+  flex: 0 0 auto;
+  width: var(--av-sm);
+  height: var(--av-sm);
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  /* 与 `.av-cell` 同一套"印章"处理：彩色头像漂在木色界面上要有一层统一底色描边压住 */
+  background: var(--cell); border: 1px solid var(--pale);
+  font-size: 13px; line-height: 1;
+}
 
 /* ---- 个人页的预置头像网格（docs/14 §14.6.4「个人页」）----
    彩色 emoji 与"木与丝 + 朱砂"不同调是**认下来的代价**，缓解＝一律圆形 + 统一底色描边，
@@ -364,10 +456,45 @@ html.no-xvt { view-transition-name: none; }
 .ann-acts a { font-size: 13px; color: var(--mid); text-decoration: none; }
 .ann-acts a:hover { color: var(--deep); }
 
-/* ---- 欢迎行：大字在 h1 之上；姓名用朱砂（§14.6.2 铁律 2 的**唯一**例外，不许扩散） ----
-   与后面的职称**不用标点分隔**（颜色已经分开了），只留一点间隙 */
+/* ---- 欢迎行：大字在 h1 之上；姓名用**楷体子集字体 + 墨色** ----
+   ⚠️ **留痕（旧文与旧理由保留，别抹）**：这里原来写的是
+   「姓名用朱砂（§14.6.2 铁律 2 的**唯一**例外，不许扩散）」——
+   2026-09-24 用户把整条例外**撤掉了**（不是调低红度，是整条撤掉），理由是"**红笔写活人名字**"的民俗忌讳。
+   现在改用 `BandName`（霞鹜文楷子集，@font-face 见上面 §2）+ `--deep` 墨色 ⇒ 铁律 2 恢复成**没有例外**。
+   与后面的职称**不用标点分隔**（颜色已经分开了），只留一点间隙。
+   `--sc` / `--sc-o` = 下面那道装饰笔划的颜色与透明度（§14.6.3 例外二、§14.6.4）。 */
 .welcome { margin: 0 0 4px; font-size: 33px; font-weight: 600; letter-spacing: .01em; color: var(--deep); }
-.wname { color: var(--cinna); margin-right: .35em; }
+.wname {
+  /* ⚠️ 栈里必须**紧跟** var(--font-ui)：子集缺字时回退中文黑体，绝不出方框 */
+  font-family: "BandName", var(--font-ui);
+  color: var(--deep);
+  margin-right: .35em;
+  /* ⚠️ **只加 position 这一条**：别动 display / line-height —— 实测会让欢迎行盒子高差 2px、把下方顶动 2px */
+  position: relative;
+  --sc: var(--wood); --sc-o: .72;
+}
+
+/* ---- 姓名下面那道装饰笔划（docs/14 §14.6.4；**§14.6.3 版式规矩的例外二**）----
+   用户从八档样张里挑定：**飞白毛笔 · 粗细"粗" · 主色木 · 紧贴字底**。黑幕那份也加（只换颜色，见下）。
+   用 `::after` 绝对定位（**不占布局**，样张实测位移 0.00px）+ `mask` 贴一个 SVG 形状。
+   ⚠️ **别给 `::after` 写 `width`**：写了就固定宽度、失去"跟着名字缩放"——
+   `left:0; right:0` 靠绝对定位盒的包含块（`.wname` 的 inline padding box，宽度恰等于文字宽）
+   **自动**达成 3 字 / 4 字各自缩放，纵向恒 1:1 ⇒ 线宽恒定。空名字时宽度为 0、笔划自然消失，不用特判。
+   ⚠️ mask 里 `preserveAspectRatio='none'` **绝对不能省**：漏了会**静默**变成等比缩放，
+   线宽被"名字宽 ÷ 300"绑死、只剩设计值约 1/3（样张阶段真踩过，`work_log` 有记）。
+   ⚠️ 形状**只在这一处写**（黑幕那份只覆盖 `--sc`），别复制第二份。 */
+.wname::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -8.1px; height: 15.2px;
+  background-color: var(--sc); opacity: var(--sc-o);
+  -webkit-mask: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 300 15.2'%3E %3Cdefs%3E %3ClinearGradient id='f' x1='0' y1='0' x2='1' y2='0'%3E %3Cstop offset='0' stop-color='%23000' stop-opacity='0'/%3E %3Cstop offset='0.07' stop-color='%23000' stop-opacity='1'/%3E %3Cstop offset='0.93' stop-color='%23000' stop-opacity='1'/%3E %3Cstop offset='1' stop-color='%23000' stop-opacity='0'/%3E %3C/linearGradient%3E %3C/defs%3E %3Cg fill='none' stroke='url(%23f)' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M5.00 6.84 L42.00 4.56 L82.00 9.12 L122.00 6.27 L162.00 5.13 L202.00 7.41 L242.00 6.27' stroke-width='7.22'/%3E %3Cpath d='M10.00 11.21 L62.00 10.07 L122.00 11.78 L172.00 10.45' stroke-width='2.09' stroke-opacity='0.50'/%3E %3Cpath d='M32.00 2.66 L92.00 1.90 L152.00 3.23 L208.00 2.28' stroke-width='1.71' stroke-opacity='0.40'/%3E %3C/g%3E %3C/svg%3E") no-repeat 0 0 / 100% 100%;
+          mask: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 300 15.2'%3E %3Cdefs%3E %3ClinearGradient id='f' x1='0' y1='0' x2='1' y2='0'%3E %3Cstop offset='0' stop-color='%23000' stop-opacity='0'/%3E %3Cstop offset='0.07' stop-color='%23000' stop-opacity='1'/%3E %3Cstop offset='0.93' stop-color='%23000' stop-opacity='1'/%3E %3Cstop offset='1' stop-color='%23000' stop-opacity='0'/%3E %3C/linearGradient%3E %3C/defs%3E %3Cg fill='none' stroke='url(%23f)' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M5.00 6.84 L42.00 4.56 L82.00 9.12 L122.00 6.27 L162.00 5.13 L202.00 7.41 L242.00 6.27' stroke-width='7.22'/%3E %3Cpath d='M10.00 11.21 L62.00 10.07 L122.00 11.78 L172.00 10.45' stroke-width='2.09' stroke-opacity='0.50'/%3E %3Cpath d='M32.00 2.66 L92.00 1.90 L152.00 3.23 L208.00 2.28' stroke-width='1.71' stroke-opacity='0.40'/%3E %3C/g%3E %3C/svg%3E") no-repeat 0 0 / 100% 100%;
+  pointer-events: none;
+}
+/* "划出"：**只在登录那一次**（由 app.js 的 `playWelcome()` 收尾加 `.draw-on`）；其它页面加载一律静态。
+   用 `clip-path` 而不是 `scaleX` —— 后者会把毛笔**横向拉伸**变味（样张里两档并排给用户看过，他选了裁切）。
+   见 §14.6.6 的第三条留痕：这条出了"只动 transform / opacity"的白名单，代价是"只此一处、只那一次"。 */
+.welcome.draw-on .wname::after { animation: strokeDraw 460ms cubic-bezier(.4, 0, .2, 1) both; }
+@keyframes strokeDraw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 
 /* ---- 欢迎过渡：全黑遮罩 + 头像 + 欢迎文字 ----
    遮罩标记必须**内联在目标页 <body> 最前**（首帧就铺黑，别让主页面闪一下）。
@@ -387,8 +514,11 @@ html.wel-armed .wel { display: flex; }
 }
 /* 与页面上的欢迎行**同号**：飞行时 scale ≈ 1，不会有缩放模糊 */
 .wel-tx { color: var(--silk); font-size: 33px; font-weight: 600; letter-spacing: .01em; opacity: 0; }
-/* 黑底上朱砂对比度不够（约 2.4:1），遮罩里用提亮的朱红；页面浅底仍用标准朱砂 */
-.wel-tx .wname { color: #D9644F; }
+/* 黑幕那份：底色是**深木**，所以文字与笔划都换成"深色上的亮木"（`--shellhi`）。
+   ⚠️ **只覆盖颜色，不重复那份 mask**——形状在 `.wname::after` 里只写一遍。
+   ⚠️ **留痕**：这里原来是朱砂的提亮版 `#D9644F`（当时的理由：黑底上标准朱砂对比度不够约 2.4:1）；
+   2026-09-24 随"姓名不用朱砂"整条一起撤掉。 */
+.wel-tx .wname { color: var(--silk); --sc: var(--shellhi); }
 .wel-av, .wel-tx { will-change: transform, opacity; }
 .wel-tx { transform-origin: 0 0; }
 
@@ -535,9 +665,6 @@ input:focus, select:focus, textarea:focus {
 .tb th.act, .tb td.act { padding-right: 0; }
 .tb tbody tr.link { cursor: pointer; }
 
-/* 声部管理的顺序输入列 */
-.tb .order-input { width: 80px; }
-
 /* 双列格（考勤统计两栏并排）；窄屏收成单列 */
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
 
@@ -599,7 +726,9 @@ input:focus, select:focus, textarea:focus {
      悬停展开在触屏上不生效，预留位在窄屏上没有意义，全部放开。 */
   .layout { display: block; }
   .nav-slot { display: block; }
-  .railwrap { width: 100%; height: auto; min-height: 0; overflow: visible; }
+  /* ⚠️ `position: static` 不能少（docs/14 §14.6.4「移动端」）：手机段给了 `height: auto`，
+     若还留着桌面那条 `sticky`，会把整条顶栏**钉在屏幕顶上**——那是真实的行为变更，不是 no-op */
+  .railwrap { width: 100%; height: auto; min-height: 0; overflow: visible; position: static; }
   .rail {
     height: auto; min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center;
     gap: 6px 14px; padding: 10px 14px;
@@ -631,4 +760,8 @@ input:focus, select:focus, textarea:focus {
   ::view-transition-new(*) { animation: none !important; }
   .stamp.on { animation: stampFade 140ms ease-out forwards; }
   @keyframes stampFade { to { opacity: 1; transform: translate(-50%, -50%) rotate(-2.5deg); } }
+  /* 欢迎行姓名下面那道笔划：reduced-motion 下**全程不动**（笔划直接就在）。
+     ⚠️ 这一条是**兜底**：正常情况下 JS 侧已经保证了——`playWelcome()` 的早退分支含 `reduced`，
+     所以 `.draw-on` 压根不会被加上（`docs/14` §14.6.6 降级清单 ⑤）。这里防的是"日后有人动了那个早退条件"。 */
+  .welcome.draw-on .wname::after { animation: none; }
 }

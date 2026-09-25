@@ -48,7 +48,17 @@ async function load() {
   for (const m of d.list) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td>';
-    tr.children[0].textContent = m.name;
+    // 姓名格：头像 + 姓名（docs/14 §14.6.4「名单里的头像」的统一姿势；走 paintAvatar 唯一入口）
+    // ⚠️ 整块包成链接进"别人的主页"（docs/14 §14.6.4：**姓名与头像都可点**）——
+    // 别只把名字包起来：头像是大家最顺手点的位置
+    const nameWrap = document.createElement('a');
+    nameWrap.className = 'av-name';
+    nameWrap.href = '/member-detail.html?id=' + m.id;
+    const avSlot = document.createElement('span');
+    avSlot.className = 'av-sm';
+    BAND.paintAvatar(avSlot, m);
+    nameWrap.append(avSlot, document.createTextNode(m.name));
+    tr.children[0].appendChild(nameWrap);
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent = m.instrument || '';
     tr.children[3].textContent = BAND.roleLabel(m.role);

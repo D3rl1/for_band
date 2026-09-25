@@ -23,14 +23,16 @@
   </div>
   <!-- ⚠️ 只读说明行**必须有**：这就是"不能改名"的落地方式，免得用户以为页面坏了（docs/14 §14.6.4） -->
   <p class="chip mb-0">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
+  <!-- 荣誉团员整页只读（docs/02 §2.3）：下面两个可编辑的格子对他们是隐藏的，这句是给他们看的解释 -->
+  <p class="chip mb-0 mt-2" id="honorary-note" hidden>荣誉团员为只读身份，头像与个人资料由管理员维护</p>
 </div>
 
-<div class="cell mb-4">
+<div class="cell mb-4" id="cell-avatar">
   <div class="lab">头像</div>
   <div id="av-grid" class="av-grid"></div>
 </div>
 
-<div class="cell mb-4">
+<div class="cell mb-4" id="cell-edit">
   <div class="lab">简介 · 联系方式 · 生日</div>
   <div class="row g-2">
     <div class="col-12 col-md-8">
@@ -38,6 +40,8 @@
     </div>
     <div class="col-12 col-md-4">
       <input id="f-birthday" type="date" class="w-100">
+      <!-- 本人知情（docs/14 §14.6.4）：这条会被公开，先让人知道再让他填 -->
+      <p class="chip mb-0 mt-2">填了生日，全团会在那天看到你的生日通告</p>
     </div>
     <div class="col-12">
       <input id="f-contact" class="w-100" maxlength="128" placeholder="联系方式（自由填写，如 微信 xxx / QQ xxx）">
@@ -64,16 +68,13 @@ function renderIdentity() {
   document.getElementById('big-tags').textContent = BAND.identityTags(profile);
 }
 
-/** 预置头像网格：清单与素材一起放在 vendor/fluent-emoji/（**服务端读的是同一份**）。 */
+/** 预置头像网格：清单与素材一起放在 `vendor/avatars/`（**服务端读的是同一份**）。 */
 async function renderGrid() {
   const host = document.getElementById('av-grid');
-  let avatars = [];
-  try {
-    const res = await fetch('/vendor/fluent-emoji/manifest.json');
-    avatars = (await res.json()).avatars || [];
-  } catch (e) {
-    avatars = [];   // 素材没入库：只给「不用头像」，界面照常可用
-  }
+  // 清单由 app.js 统一取并缓存（`renderNav` 已经 await 过一次，这里通常是零成本命中）——
+  // 别在本页再 fetch 一份，否则"清单是唯一权威"就变成两处各自解释了
+  await BAND.avatars();
+  const avatars = BAND.avatarList;
   host.innerHTML = '';
   const items = [{ id: null, name: '不用头像' }].concat(avatars);
   for (const item of items) {
@@ -86,7 +87,8 @@ async function renderGrid() {
       const img = document.createElement('img');
       img.className = 'av-img';
       img.alt = item.name;
-      img.src = '/vendor/fluent-emoji/' + encodeURIComponent(item.id) + '.svg';
+      // 按清单里的 `file` 取文件，**不在代码里拼后缀**（docs/14 §14.6.4）
+      img.src = '/vendor/avatars/' + encodeURIComponent(item.file);
       cell.appendChild(img);
     } else {
       const span = document.createElement('span');
@@ -117,6 +119,14 @@ async function load() {
   document.getElementById('f-contact').value = profile.contact || '';
   document.getElementById('f-birthday').value = profile.birthday || '';
   renderIdentity();
+  // 荣誉团员只读（docs/02 §2.3）：**整块隐藏**编辑入口，别让他们点进去撞 403。
+  // 用 hidden 而不是删节点——下面 #save / #clear-bd 的监听器是模块顶层绑的，删了会炸。
+  if (me.role === 'HONORARY') {
+    document.getElementById('cell-avatar').hidden = true;
+    document.getElementById('cell-edit').hidden = true;
+    document.getElementById('honorary-note').hidden = false;
+    return;
+  }
   await renderGrid();
 }
 

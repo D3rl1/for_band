@@ -119,21 +119,88 @@ const BAND = {
   },
 
   /**
-   * 画头像：**有 `avatar` 用预置头像、否则回退姓名首字**（docs/14 §14.6.4）。
-   * ⚠️ 三处调用（侧栏头像行 / 个人栏 / **欢迎过渡的落点**）都**保留外层容器**、
+   * 预置头像清单在本地的两份表示：`avatarIndex`（`id → file`，给 `paintAvatar` 同步查）
+   * 与 `avatarList`（清单原文 `[{id,name,file}]`，给「个人页」渲染选择网格）。
+   * `avatarIndex === null` = 还没就绪。权威永远是 `vendor/avatars/manifest.json` 那一份
+   * （docs/14 §14.6.4：**别在别处再抄一遍**），这里只是把它搬进内存一次。
+   */
+  avatarIndex: null,
+  avatarList: [],
+  avatarCall: null,
+
+  /** 收下清单：同时建索引与原文，并**写穿会话缓存**（隐私模式下 `sessionStorage` 会抛，忽略即可）。 */
+  adoptAvatars(list) {
+    this.avatarList = list;
+    this.avatarIndex = new Map(list.map((item) => [item.id, item.file]));
+    try {
+      sessionStorage.setItem('band_avatars', JSON.stringify(list));
+    } catch (e) { /* 隐私模式：忽略 */ }
+  },
+
+  /**
+   * 取预置头像清单（**永不 reject**：拿不到就当空清单，界面全部回退姓名首字——
+   * 比抛出去拖垮整条 `renderNav` 安全得多）。同一页里多处调用只发一次请求。
+   */
+  avatars() {
+    if (this.avatarCall) {
+      return this.avatarCall;
+    }
+    this.avatarCall = fetch('/vendor/avatars/manifest.json')
+      .then((res) => res.json())
+      .then((data) => {
+        // 只收齐了 id 与 file 的条目：缺 file 的条目前端paint不出来（会回退首字），
+        // 那种写法属于清单自身出错——由 ProfileTests 里那条"每条 file 都真的在磁盘上"的断言兜住
+        const list = ((data && data.avatars) || [])
+          .filter((item) => item && item.id && item.file)
+          .map((item) => ({ id: item.id, name: item.name || item.id, file: item.file }));
+        this.adoptAvatars(list);
+        return this.avatarIndex;
+      })
+      .catch((e) => {
+        // 清单没入库 / 网络坏了：留痕但不打扰用户（头像全部回退姓名首字，页面照常可用）
+        console.warn('预置头像清单读取失败，头像回退姓名首字', e);
+        this.avatarIndex = new Map();
+        return this.avatarIndex;
+      });
+    return this.avatarCall;
+  },
+
+  /** 每页开画前**同步**读一次会话缓存，让"本会话后续跳页"的首帧就能画对头像（不用等请求回来）。 */
+  loadCachedAvatars() {
+    if (this.avatarIndex) {
+      return;
+    }
+    try {
+      const raw = sessionStorage.getItem('band_avatars');
+      if (raw) {
+        this.adoptAvatars(JSON.parse(raw) || []);
+      }
+    } catch (e) { /* 隐私模式 / 内容坏了：当作没有 */ }
+  },
+
+  /**
+   * 画头像（**唯一入口**）：**有 `avatar` 且 `id ∈ 预置清单` 才画图，否则回退姓名首字**
+   * （docs/14 §14.6.4「名单里的头像」；清单校验收在这里，所以**哪里调它哪里就有保护**）。
+   * ⚠️ 所有调用点（侧栏头像行 / 个人栏 / **欢迎过渡的落点** / 名册 / 考勤明细）都**保留外层容器**、
    * 只换里面的内容——过渡是 FLIP，**靠量那个容器的坐标**，把容器本身换成 `<img>` 就会飞到空元素上。
-   * `avatar` 是服务端校验过白名单的受控标识符，这里只拼路径、不解释内容。
+   * <p>
+   * ⚠️⚠️ 判据是"**id 在不在清单**"，**不是"图加载成不成功"**——所以这里**故意不给 `<img>` 挂 `onerror` 回退**：
+   * 清单里 `file` 写错时必须**看得见坏图**（`交接单.md` `#37` 的验收就是这么要求的）。
+   * 给 `<img>` 加兜底会把这类错误静默吃掉，与那条验收直接冲突。
    */
   paintAvatar(el, member) {
+    const avatar = member && member.avatar;
+    const file = avatar && this.avatarIndex ? this.avatarIndex.get(avatar) : undefined;
     el.textContent = '';
-    if (member && member.avatar) {
+    if (file) {
       const img = document.createElement('img');
       img.className = 'av-img';
       img.alt = '';
-      img.src = '/vendor/fluent-emoji/' + encodeURIComponent(member.avatar) + '.svg';
+      img.src = '/vendor/avatars/' + encodeURIComponent(file);
       el.appendChild(img);
       return;
     }
+    // ① 没选头像 ② 清单外的旧 id ③ 清单还没就绪 / 读不到 ④ 清单里 file 为空 —— 四种都回退姓名首字
     el.textContent = Array.from((member && member.name) || '?')[0];
   },
 
@@ -148,6 +215,29 @@ const BAND = {
 
   markReleaseSeen(id) {
     try { localStorage.setItem('band_seen_release', String(id)); } catch (e) { /* 忽略 */ }
+  },
+
+  /**
+   * 生日通告"今天弹过没"（docs/14 §14.6.4「生日通告」）：**设备级、记的是日期**，
+   * 值与今天相等就不再弹。代价与公告同一口径：清浏览器数据 / 换设备会再弹一次（已知、可接受）。
+   */
+  seenBirthday() {
+    try {
+      return localStorage.getItem('band_seen_birthday') || '';
+    } catch (e) {
+      return '';   // 隐私模式：当作没记录过 → 会再弹，可接受
+    }
+  },
+
+  markBirthdaySeen(day) {
+    try { localStorage.setItem('band_seen_birthday', day); } catch (e) { /* 忽略 */ }
+  },
+
+  /** 本地日期 `YYYY-MM-DD`。⚠️ **别用 `toISOString()`**——那是 UTC，跨日会错一天。 */
+  localDayKey() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   },
 
   /**
@@ -295,6 +385,80 @@ const BAND = {
       document.addEventListener('keydown', onKey);
       document.body.appendChild(mask);
       ok.focus();
+    });
+  },
+
+  /**
+   * 生日通告（docs/14 §14.6.4「生日通告」）：登录那一次，今天有在团团员过生日就弹一个居中小浮层。
+   * **顺序**：欢迎过渡 → 更新公告 → **生日通告** → 才加载 oneko（docs/15 §15.5 的四者顺序）。
+   * <p>
+   * ⚠️ 这套是**照抄上面那个 `announce()` 的**（同一个 `.ann` 浮层类与 `ann-rise` 动画、同一套关闭行为、
+   * z-index 120）——规格明写"**不要另造一套弹层**，那会重演'两个浮层争 z-index'的坑"。
+   * **故意不抽成通用函数**：`announce()` 的 `close()` 里带着两个**公告专有**的副作用
+   * （`markReleaseSeen` + 清右上角红点），抽通用会牵动既有公告的行为。
+   * <p>
+   * 没有寿星 → **不弹、不占位、不出空层**（直接 resolve，让链子继续走到 oneko）。
+   * @param fromLogin 只有登录成功那一次为 true
+   */
+  announceBirthday(fromLogin) {
+    if (!fromLogin) {
+      return Promise.resolve();   // 平时浏览页面不弹
+    }
+    const today = this.localDayKey();
+    if (this.seenBirthday() === today) {
+      return Promise.resolve();   // 今天已经弹过了（设备级去重）
+    }
+    return this.api('/api/birthdays/today').then((envelope) => {
+      const list = envelope.code === 0 && Array.isArray(envelope.data) ? envelope.data : [];
+      if (!list.length) {
+        return;   // 今天没人过生日：整个环节跳过
+      }
+      // 文案（docs/14 §14.6.4 逐字）：一位**带职称**，多位只列名字。
+      // 职称直接用 identityTags——接口不下发 joinedAt，所以它正好拼出规格要的「声部 · 乐器 · 角色」。
+      const text = list.length === 1
+        ? `今天是 ${list[0].name}（${this.identityTags(list[0])}）的生日，大家祝他/她生日快乐吧`
+        : `今天是 ${list.map((m) => m.name).join('、')} 的生日，大家祝他们生日快乐吧`;
+      return new Promise((resolve) => {
+        const reduced = window.matchMedia
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const mask = document.createElement('div');
+        mask.className = 'ann' + (reduced ? '' : ' ann-in');
+        const card = document.createElement('div');
+        card.className = 'ann-card';
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-label', '生日通告');
+        const title = document.createElement('p');
+        title.className = 'ann-title';
+        title.textContent = '生日快乐';
+        const body = document.createElement('p');
+        body.className = 'ann-body';
+        body.textContent = text;   // 纯文本，不解析 HTML（与公告同规矩）
+        const acts = document.createElement('div');
+        acts.className = 'ann-acts';
+        const ok = document.createElement('button');
+        ok.className = 'go go-sm';
+        ok.type = 'button';
+        ok.textContent = '知道了';
+        acts.appendChild(ok);      // ⚠️ 生日没有"查看全部"那个入口，.ann-acts 里只有它一个
+        card.append(title, body, acts);
+        mask.appendChild(card);
+
+        let closed = false;
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          this.markBirthdaySeen(today);   // 记**日期**：今天剩下的登录都不再弹
+          document.removeEventListener('keydown', onKey);
+          mask.remove();
+          resolve();
+        };
+        function onKey(e) { if (e.key === 'Escape') close(); }
+        ok.addEventListener('click', close);
+        mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(mask);
+        ok.focus();
+      });
     });
   },
 
@@ -447,14 +611,17 @@ const BAND = {
    * 用户看到的就是"切页闪一下"。
    */
   async renderNav(active) {
+    this.loadCachedAvatars();                          // ⓪ 同步：本会话缓存过的头像清单先就位，首帧才画得对
     const skeleton = this.mountSkeleton(active);       // ① 同步：布局一次到位
     this.paintNav(skeleton, this.cachedMe(), active);  // ② 先用缓存填（没有就留空，不编数据）
-    const me = await this.requireUser();
+    // 身份与头像清单**并行**取（清单很小）；avatars() 自带 catch，不会把这条链拖垮
+    const [me] = await Promise.all([this.requireUser(), this.avatars()]);
     if (!me) return null;                              // 401 已在 api() 里跳转；其他错误已 toast + 摘黑幕
     this.paintNav(skeleton, me, active);               // ③ 再用服务端**权威**数据填一遍
 
     this.mountProfile(skeleton.layout, me);
-    this.mountRailKeep(skeleton.layout);
+    // ⚠️ `mountRailKeep` **不在这里**了：2026-09-25 起它随骨架**同步绑**（在 `mountSkeleton` 里），
+    // 否则那几十~几百毫秒没监听，指针甩到正文会卡在展开态（详见它的方法注释）。
     this.refreshReleaseDot();
     // ⚠️ **三者顺序写死**（docs/15 §15.5）：欢迎过渡 → 更新公告 → **关掉公告才加载 oneko**。
     // 猫的 z-index 是最大整数，不等公告关掉就会从公告上跑过去（当年"从欢迎黑幕上跑过去"是同款坑）。
@@ -463,6 +630,7 @@ const BAND = {
     try { fromLogin = sessionStorage.getItem('band_welcome') === '1'; } catch (e) { /* 隐私模式 */ }
     this.playWelcome()
       .then(() => this.announce(fromLogin))
+      .then(() => this.announceBirthday(fromLogin))   // 生日通告**排在公告之后**（docs/15 §15.5 的四者顺序）
       .then(() => this.loadCat());
     return me;
   },
@@ -481,7 +649,6 @@ const BAND = {
     ['approve-leave.html', '请假审批', '批', ['ADMIN', 'LEADER', 'SECTION_LEADER']],
     ['admin-events.html', '活动管理', '理', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER']],
     ['admin-members.html', '团员管理', '员', ['ADMIN']],
-    ['admin-sections.html', '声部管理', '部', ['ADMIN']],
     ['admin-feedback.html', '反馈管理', '馈', ['ADMIN']],
     ['admin-notes.html', '更新公告', '告', ['ADMIN']],
     ['logs.html', '操作日志', '志', ['ADMIN', 'LEADER']],
@@ -494,19 +661,22 @@ const BAND = {
     'updates.html': '更新日志',
     'piece-detail.html': '曲目详情',
     'concert-detail.html': '演出详情',
+    'member-detail.html': '团员主页',
   },
 
   /**
    * ① 同步搭骨架：`.layout` / `.nav-slot` / `.railwrap` / `.rail` / `.main` / `.head`，
    * 并把 `#navbar` 之后的页面内容**搬进 `.main`**。**完全不依赖 `me`**——所以能在首帧前跑完。
-   * 底部的退出/声音两个入口也在这里绑（它们与身份无关）。
+   * 底栏的「退出」也在这里绑（它与身份无关）。
+   * ⚠️ 「声音 开/关」2026-09-25 已**搬去个人栏**（`mountProfile`）——底栏那 4 项里
+   * 「登录设备」「退出」与个人栏入口行**逐字重复**，见 `docs/14` §14.6.4「底部只留品牌一行」。
+   * 收起判定（`#46` 的几何判断）也在这里同步绑——见 `mountRailKeep` 的说明。
    */
   mountSkeleton(active) {
-    const soundOn = localStorage.getItem('band_sound') !== '0';
     const layout = document.createElement('div');
     layout.className = 'layout';
     layout.innerHTML = `
-      <div class="nav-slot"><div class="railwrap"><aside class="rail">
+      <div class="nav-slot"><span class="hit" aria-hidden="true"></span><div class="railwrap"><aside class="rail">
         <button class="me" type="button" aria-expanded="false" aria-controls="profile">
           <span class="ic"><span></span></span>
           <span class="tx"><span class="me-name"></span> <em class="me-sec"></em></span>
@@ -514,9 +684,6 @@ const BAND = {
         <nav class="menu"></nav>
         <div class="foot">
           <div class="brand">山水民族管弦乐团</div>
-          <a href="#" id="sound-toggle">声音 ${soundOn ? '开' : '关'}</a> ·
-          <a href="/sessions.html">登录设备</a> ·
-          <a href="#" id="logout-link">退出</a>
         </div>
       </aside></div></div>`;
 
@@ -557,18 +724,10 @@ const BAND = {
     moved.forEach((n) => main.appendChild(n));
     host.replaceWith(layout);   // ← 这一步之后，布局就定了；接口还没回来也不影响首帧
 
-    layout.querySelector('#logout-link').addEventListener('click', async (e) => {
-      e.preventDefault();
-      await this.api('/api/auth/logout', { method: 'POST' });
-      this.clearToken();
-      location.href = '/login.html';
-    });
-    layout.querySelector('#sound-toggle').addEventListener('click', (e) => {
-      e.preventDefault();
-      const nowOn = localStorage.getItem('band_sound') !== '0';
-      localStorage.setItem('band_sound', nowOn ? '0' : '1');
-      e.target.textContent = '声音 ' + (nowOn ? '关' : '开');
-    });
+    // 底栏现在只剩品牌一行，**没有监听器要绑**了——「退出」与「声音」都搬去了个人栏
+    //（`#p-logout` / `#p-sound`，见 `mountProfile`）。
+    // ⚠️ 收起判定**必须在这里同步绑**（不能等 `await requireUser()` 回来），详见 `mountRailKeep`。
+    this.mountRailKeep(layout);
 
     return {
       layout, active,
@@ -624,30 +783,39 @@ const BAND = {
      四层：身份行 / 数字（排练、声部课分开算，出勤率与请假次数成对）/ 最近流水 / 入口。
      不做：编辑资料（账号操作全归管理员）、大封面、排行榜。 */
   /**
-   * 点过菜单项 → 新页面**仍然展开**，直到指针离开侧栏才收起（docs/14 §14.6.4）。
+   * 点过菜单项 → 新页面**仍然展开**，直到指针越过「命中区」右缘才收起（docs/14 §14.6.4）。
    *
-   * 语义（2026-09-23 修 bug 后重写，两个坑都写在下面）：
+   * 语义（2026-09-23 修 bug 后重写；2026-09-25 又修两处，见下）：
    * 1. 标记 `band_nav_keep` 是"**给下一页用一次**"的意图：菜单项 `mousedown` 时写下**时间戳**，
    *    下一页在 `<head>` 里（`band-nav.js`）读走并**立刻消费掉**（`removeItem`），之后不再有人碰它。
    *    ⚠️ **本页绝不能清这个标记**：以前 `release()` 顺手 `removeItem`，于是"点完菜单项 → 跳页"
-   *    那几十毫秒里鼠标一动（`mouseleave`/兜底 `pointermove` 命中旧页）就把意图**撤回了**，
-   *    新页首帧便是收起的——症状就是"有时展开、有时点完就缩回去"。
-   * 2. 收起 = **鼠标移开才收**（不在加载时按指针位置判断）：`mouseleave` 常绑；
-   *    而**一次性 `pointermove` 兜底只在"本页真的处于保持展开"时才绑**——
-   *    它的职责是"这页被强制展开了、但指针本来就在外面，得有人把它收掉"；
-   *    没被强制展开就没有状态要清。⚠️ 无条件绑会踩第二个坑：登录后 `events.html` 的欢迎黑幕
-   *    与更新公告是**全屏遮罩**（`position:fixed; inset:0`），那期间指针一动，`e.target` 是遮罩、
-   *    命中测试必然为"不在侧栏内" → 兜底立刻收起并把标记也清了。
-   * 3. 记标记的时机是菜单项上的 **`mousedown`**——不能用 `click`（**键盘 Enter 激活链接也触发 click**），
+   *    那几十毫秒里鼠标一动就把意图**撤回了**，新页首帧便是收起的——症状就是"有时展开、有时点完就缩回去"。
+   * 2. 记标记的时机是菜单项上的 **`mousedown`**——不能用 `click`（**键盘 Enter 激活链接也触发 click**），
    *    也不能"悬停侧栏就记"（那样在正文里点任何按钮跳页也会展开侧栏）。
+   *
+   * ⚠️ **2026-09-25 改了两处（都是 bug 修复，旧写法与旧理由保留在上面）**：
+   * (a) **收起判定从"命中测试"改成"几何判断"**：原来是一条**一次性** `pointermove`，
+   *     里面用 `wrap.contains(e.target)`。问题是**全屏遮罩**（欢迎黑幕 / 更新公告，`position:fixed; inset:0`）
+   *     一盖，`e.target` 就不再是侧栏里的东西了，指针动一下就被判成"已移出" → 误收。
+   *     现在量**命中区**的右缘：`clientX > hit.right + 8` 才收（`+8` 是滞回带）。
+   *     ⚠️ **绝不能用 `.railwrap` 的 `getBoundingClientRect()` 当阈值**——它的右缘就是那个
+   *     92 ↔ 320 的**动画值**，阈值每帧都在动，又是一种抖。
+   * (b) **绑定时机提前到 `mountSkeleton`（同步）**：原来跑在 `await requireUser()` 之后，
+   *     那几十~几百毫秒里**根本没有监听**，指针这时甩到正文就会**卡在展开态**。
+   *     提前之后**必须事件委托**——`paintNav` 会把菜单 `innerHTML` 重写两遍（首访无缓存时三遍），
+   *     逐项绑的 `mousedown` 会跟着被销毁。所以挂在 `.menu` 上（它由骨架创建、**永不重建**）。
    */
   mountRailKeep(layout) {
     if (!window.matchMedia
         || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
       return;   // 手机端没有展开/收起这回事，行为与之前完全一致
     }
-    const wrap = layout.querySelector('.railwrap');
     const root = document.documentElement;
+    const menu = layout.querySelector('.menu');
+    const hit = layout.querySelector('.hit');   // 骨架里就有（现在不在 DOM 上也没关系，几何运行时才算）
+    if (!menu || !hit) {
+      return;
+    }
     const keep = () => {
       // 时间戳而不是 '1'：旧页不清标记，万一 mousedown 了却没跳转（按下后拖走 = 无 click），
       // 这枚标记就该自己过期，而不是留到很久以后的某次跳页才被用掉
@@ -655,19 +823,32 @@ const BAND = {
       root.classList.add('rail-keep');
     };
     const release = () => root.classList.remove('rail-keep');   // 只摘类：**不碰标记**
-    wrap.querySelectorAll('.menu a').forEach((a) => a.addEventListener('mousedown', keep));
-    wrap.addEventListener('mouseleave', release);
-    if (root.classList.contains('rail-keep')) {
-      const onMove = (e) => {
-        document.removeEventListener('pointermove', onMove);
-        if (!wrap.contains(e.target)) release();
-      };
-      document.addEventListener('pointermove', onMove);
-    }
+    // 事件委托：`e.target` 落在某个菜单链接里才算"点过菜单项"
+    menu.addEventListener('mousedown', (e) => {
+      if (!e.target || !e.target.closest || !e.target.closest('a')) return;
+      keep();
+    });
+    // 常驻监听（不再"只在已展开时才绑"）：提前绑的目的就是别让"还没监听"的窗口存在
+    document.addEventListener('pointermove', (e) => {
+      if (!root.classList.contains('rail-keep')) return;
+      if (e.clientX > hit.getBoundingClientRect().right + 8) release();
+    });
   },
 
   mountProfile(layout, me) {
     const meBtn = layout.querySelector('.me');
+    // 荣誉团员只读（docs/02 §2.3）：入口对他们**不显示**（docs/14 §14.6.4），
+    // 不然点进去只会撞 403。后端 `MeProfileService.update()` 才是真闸门。
+    // 底部去重（docs/14 §14.6.4「底部只留品牌一行」，2026-09-24）：
+    // 「声音 开/关」从侧栏底栏**搬到这里**；底栏原来那 4 项里「登录设备」「退出」与本行**逐字重复**、
+    // 已删掉。声音与身份无关，所以荣誉团员那一支也要有它（所以放在 `concat` 里，不在条件分支里）。
+    const soundOn = localStorage.getItem('band_sound') !== '0';
+    const acts = (me.role === 'HONORARY' ? [] : ['<a href="/profile.html">编辑资料</a>'])
+      .concat(['<a href="#" id="p-pw">改密码</a>',
+               `<a href="#" id="p-sound">声音 ${soundOn ? '开' : '关'}</a>`,
+               '<a href="/sessions.html">登录设备</a>',
+               '<a href="#" id="p-logout">退出</a>'])
+      .join(' · ');
     const panel = document.createElement('aside');
     panel.className = 'profile';
     panel.id = 'profile';
@@ -689,12 +870,7 @@ const BAND = {
         </div>
         <div class="p-flow-list"></div>
       </div>
-      <div class="p-acts">
-        <a href="/profile.html">编辑资料</a> ·
-        <a href="#" id="p-pw">改密码</a> ·
-        <a href="/sessions.html">登录设备</a> ·
-        <a href="#" id="p-logout">退出</a>
-      </div>
+      <div class="p-acts">${acts}</div>
       <form class="p-pw-form" id="p-pw-form" hidden>
         <input type="password" id="p-old" placeholder="原密码" autocomplete="current-password" required>
         <input type="password" id="p-new" placeholder="新密码（至少 8 位）" autocomplete="new-password" minlength="8" required>
@@ -733,6 +909,16 @@ const BAND = {
     panel.querySelector('#p-pw').addEventListener('click', (e) => {
       e.preventDefault();
       panel.querySelector('#p-pw-form').hidden = !panel.querySelector('#p-pw-form').hidden;
+    });
+    // 「声音 开/关」：**监听器在这边重绑**（原来绑在 `mountSkeleton` 建的那个节点上，
+    // 2026-09-25 那个节点已随底部去重删掉——留着就是一个指向空节点的悬空监听器）。
+    // ⚠️ 文案按**当时**的 localStorage 重算：`mountSkeleton` 里那份是首帧时读的，可能已经过期。
+    // 用 `currentTarget` 而不是 `target`：文案挂在这个锚点自身，但这样写对子节点也安全。
+    panel.querySelector('#p-sound').addEventListener('click', (e) => {
+      e.preventDefault();
+      const nowOn = localStorage.getItem('band_sound') !== '0';
+      localStorage.setItem('band_sound', nowOn ? '0' : '1');
+      e.currentTarget.textContent = '声音 ' + (nowOn ? '关' : '开');
     });
     panel.querySelector('#p-pw-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -805,7 +991,9 @@ const BAND = {
      黑幕的显示由 band-nav.js 首帧前加的 wel-armed 类控制；这里读掉并清掉标记，
      落点全部运行时测量（getBoundingClientRect），手机端顶栏形态也自动对上。 */
   playWelcome() {
-    return new Promise((resolve) => {
+    // ⚠️ 执行器写成 **async** 只为下面那一句 `await document.fonts.load(...)`（字体就绪再量矩形）：
+    //    它抛出的异常全被 try/catch 吞掉，所以不会变成"没人接的 rejection"。
+    return new Promise(async (resolve) => {
       const wel = document.getElementById('wel');
       const root = document.documentElement;
       let hadFlag = false;
@@ -820,6 +1008,25 @@ const BAND = {
         resolve();
         return;
       }
+
+      // ⭐ **字体就绪之后才量矩形**（docs/14 §14.6.5 与 `交接单.md` `#48` ④）：
+      // 子集字体还没落地时量到的是**回退黑体**的字宽 ⇒ FLIP 落点会偏，
+      // 而且只在"首次访问、字形没进缓存"那一次明显（之后字形已缓存，量得就对了）。
+      // ⚠️ 落点必须在**挂 skip 监听之前**：否则用户在等待期间点屏触发 skip() → place()，
+      //    量的还是未就绪的字面。
+      // ⚠️ 异常一律吞掉：老浏览器没有 `document.fonts`、或字体加载失败，都必须**继续往下走**——
+      //    **绝不许把黑幕留在屏幕上**（docs/14:1467）。
+      try {
+        if (document.fonts && document.fonts.load) {
+          // ⚠️ **给这个等待封顶 350ms**：字体正常情况下是本地的 27.7 KB、几毫秒就就绪；
+          // 但万一它慢或被卡住（机器内存紧张时磁盘/换页会拖），**绝不能把用户晾在黑幕上干等**——
+          // 超时就用回退字面量继续跑，落点最多差一点，比"黑屏等着"强得多。
+          await Promise.race([
+            document.fonts.load('600 33px BandName'),
+            new Promise((r) => setTimeout(r, 350)),
+          ]);
+        }
+      } catch (e) { /* 跳过，不阻断欢迎过渡 */ }
 
       const av = wel.querySelector('.wel-av');
       const tx = wel.querySelector('.wel-tx');
@@ -863,6 +1070,13 @@ const BAND = {
               disarm();
               playing = false;
               document.removeEventListener('keydown', onKey);
+              // 收尾：给欢迎行加 `.draw-on` ⇒ 姓名下面那道笔划"**划出**"（docs/14 §14.6.4；`交接单` `#53`）。
+              // ⚠️ **只在登录那一次**：本函数只在带 `band_welcome` 标记时才走到这里，
+              //    其它页面加载走的是上面那条早退分支 ⇒ 笔划静态可见、**不重播**（每页都播就退化成纯装饰）。
+              // ⚠️ reduced-motion 下根本到不了这里（早退分支已含 reduced）⇒ 笔划全程不动；
+              //    `band.css` 的 reduced-motion 块里还有一条 `animation: none` 兜底。
+              const w = document.querySelector('.welcome');
+              if (w) w.classList.add('draw-on');
               resolve();
             });
           });
