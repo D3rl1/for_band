@@ -30,6 +30,17 @@
   --pad: 26px;          /* 格内边距 */
   --radius: 14px;       /* 圆角，全站统一 */
 
+  /* —— 字号（2026-09-28 新增；起因：用户真机反馈"手机端字体大小很混乱"）——
+     ⚠️ **全站字号只说这一处**：手机端在 §10 的 `:root` 里改这几个值就行，
+     别再往页面段里写死 px —— 那正是"混乱"的成因（本表原来只有 px、Bootstrap 又用 `vw`，三套并存）。
+     桌面值 = 迁移前各处的**原值**（本次桌面一个像素都没动）。
+     ⚠️ 下面 `.ann-title`(18px) 与 `.p-num b`(18px) **故意不进令牌**：各只有一个消费者、
+     且手机值不同档（17 / 16）——为它们各造一个只服务一处选择的令牌，是给令牌表添乱。 */
+  --fs-hero:  33px;     /* 页头欢迎行的大字 · hero 标题 */
+  --fs-title: 26px;     /* 卡片主数字 · 正文里的 h2 */
+  --fs-body:  14px;     /* 正文基准（表格与公告正文同档） */
+  --fs-field: 14px;     /* 表单控件（手机端必须 ≥16px，否则 iOS 聚焦会放大整页） */
+
   /* —— 字体：西文/数字在前，各系统中文字体在中，sans-serif 兜底不可省 —— */
   --font-ui:
     "IBM Plex Sans",
@@ -94,24 +105,16 @@
                  U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ---- 欢迎行姓名的中文楷体子集（docs/14 §14.6.5「姓名字体」；交接单 #48）----
-   只收"名册姓名用字 ∪ 常用姓氏前 100"（本次 114 字），子集 **27.7 KB**。
-   ⚠️ **`font-weight: 600` 是刻意声明成 600 的**：源文件内部其实是 **Medium(500)**，
-   而 `.wname` 继承 `.welcome` 的 600 —— 声明成 500 会让浏览器**伪合成加粗**
-   （中文禁伪合成、描边会发虚），声明成 600 才是"与请求字重精确匹配、不合成"。
-   **别改成 500。** 来源 / 版本 / SHA256 / 许可 / 字符集清单见 `vendor/wenkai/SOURCE.md`。
-   ⚠️ 这里**故意不写 `unicode-range`**（子集里本就没有拉丁与数字）：缺字按字符回退是默认行为，
-   落回 `var(--font-ui)` 的中文栈 ⇒ **回退黑体、绝不出方框**。 */
-@font-face {
-  font-family: "BandName";
-  font-style: normal; font-weight: 600; font-display: swap;
-  src: url("vendor/wenkai/wenkai-name-subset.woff2") format("woff2");
-}
+/* ---- 欢迎行姓名字体：**2026-09-28 起改用系统楷体，不再自制子集** ----
+   这里原来有一个 `BandName` 的 `@font-face`：霞鹜文楷子集，字符集 = "名册姓名用字 ∪ 常用姓氏前 100"
+   （当时 114 字 / 27.7 KB，文件 `vendor/wenkai/wenkai-name-subset.woff2`，由 `tools/build_name_font.py --names` 裁）。
+   用户真机试用后的定论与代价见下面 `.wname` 那条留痕 ⇒ **家族、字体文件、脚本的 `--names` 模式三者一并删除**。
+   ⚠️ `BandMotto`（寄语子集）不受影响，照旧。 */
 
 /* 寄语字体（`docs/14` §14.6.5「寄语字体」，专页底部那一句）：
    **另一档子集、另一个家族名**（`BandMotto`）—— 字符集 = **那句话的全部字符（含标点）**，本次 15 字、**4.7 KB**。
-   ⚠️ **绝不能复用 `BandName`**：那是按名册姓名裁的（114 字），那句话里的字大多不在里面
-   ⇒ 套上去会变成"少数几个字楷体、其余全黑体"的**花脸**。
+   ⚠️ **它的字符集只有这一句话（含标点）** ⇒ 别再想着"顺手复用到别处"：换一句话就得重裁，
+   否则字符集外的字会**静默**掉回黑体，变成"少数几个字楷体、其余全黑体"的**花脸**。
    ⚠️ 那句话一改就得重跑 `tools/build_name_font.py --motto "…"`（漏了只是回退黑体、**不报错**）。
    字重同样**刻意声明 600**（源是 Medium(500)，声明 500 会触发中文伪合成）；同样**不写 `unicode-range`**。
    来源 / SHA256 / 字符集清单见 `vendor/wenkai/SOURCE.md`。 */
@@ -127,7 +130,7 @@ html, body { margin: 0; padding: 0; }
 
 body {
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 400;            /* 中文正文只用 400 */
   line-height: 1.7;            /* 中文笔画密，行高要比英文松 */
   letter-spacing: 0;           /* 正文不调字距；禁负值 */
@@ -232,9 +235,18 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 }
 /* 展开态：细滚动条（docs/14 §14.6.4「矮屏」）。
    ⚠️ 这里**故意不再写** `::-webkit-scrollbar { display: none }`：Chromium ≥121 里
-   `scrollbar-width` 一旦不是 `auto`，整个 `::-webkit-scrollbar` 家族都被忽略 —— 那行是死代码。 */
-.railwrap:hover .menu,
-.railwrap:focus-within .menu { scrollbar-width: thin; scrollbar-color: var(--shellhi) transparent; }
+   `scrollbar-width` 一旦不是 `auto`，整个 `::-webkit-scrollbar` 家族都被忽略 —— 那行是死代码。
+   ⚠️⚠️ **这两条必须带桌面门控**（2026-09-28 补；用户真机反馈"活动管理页的侧栏还有滑块"）：
+   它的特异性 (0,3,0) 压得过手机段那条隐藏规则 `.rail .menu { scrollbar-width: none }`（(0,2,0)，见 §10），
+   于是**抽屉里只要有任何东西拿到焦点**（身份行的按钮、组标题按钮都会）滑块就在手机上露出来；
+   而只有"菜单撑满一屏"的页（管理组展开，例如活动管理）才看得见内容在滚
+   ⇒ 症状是**同一套侧栏有的页有滑块、有的页没有**，看着像"这一页坏了"。
+   ⚠️ 它与上面 `:focus-within { width }` 那条（§4）是**同一类漏洞的另一半**：那条 2026-09-25 补了门控，
+   这条当时漏了 ⇒ 以后给 `.railwrap:focus-within` 加规则，**两条一起看**。 */
+@media (hover: hover) and (pointer: fine) and (min-width: 721px) {
+  .railwrap:hover .menu,
+  .railwrap:focus-within .menu { scrollbar-width: thin; scrollbar-color: var(--shellhi) transparent; }
+}
 
 /* ---- 菜单的分组容器（`docs/14` §14.6.4「手机端」二）----
    DOM 只有一份：桌面与抽屉共用同一棵菜单树。**桌面端整块透明**（`display: contents` ⇒
@@ -483,24 +495,39 @@ a.av-name:hover { color: var(--deep); text-decoration: underline; }
 .ann-title { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--deep); }
 /* 正文**纯文本 + 保留换行**、绝不解析 HTML（docs/15 §15.5 + SECURITY.md C3） */
 .ann-body {
-  margin: 0 0 18px; font-size: 14px; line-height: 1.75; color: var(--mid);
+  margin: 0 0 18px; font-size: var(--fs-body); line-height: 1.75; color: var(--mid);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .ann-acts { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ann-acts a { font-size: 13px; color: var(--mid); text-decoration: none; }
 .ann-acts a:hover { color: var(--deep); }
 
-/* ---- 欢迎行：大字在 h1 之上；姓名用**楷体子集字体 + 墨色** ----
+/* ---- 欢迎行：大字在 h1 之上；姓名用**楷体 + 墨色** ----
    ⚠️ **留痕（旧文与旧理由保留，别抹）**：这里原来写的是
    「姓名用朱砂（§14.6.2 铁律 2 的**唯一**例外，不许扩散）」——
    2026-09-24 用户把整条例外**撤掉了**（不是调低红度，是整条撤掉），理由是"**红笔写活人名字**"的民俗忌讳。
-   现在改用 `BandName`（霞鹜文楷子集，@font-face 见上面 §2）+ `--deep` 墨色 ⇒ 铁律 2 恢复成**没有例外**。
+   ⇒ 铁律 2 恢复成**没有例外**，姓名改用墨色 `--deep`。
+   ⚠️ **第二条留痕（2026-09-28，真机试用后）**：楷体这一半**从自制子集改成系统楷体**。
+   原先是 `BandName`（霞鹜文楷子集，按名册姓名裁 114 字）——用户反映"字体问题很严重"，
+   核实后确认**不是没生效**（线上字体文件实测 200、28 KB 完整下载），真因是两条：
+   ① 子集只覆盖名册用字，**名册之外的字静默掉回黑体**，与楷体混排成"花脸"；
+   ② `.welcome` 的 `font-weight: 600` 落在只有 Regular 的楷体上会被浏览器**伪合成加粗**（中文描边发虚）。
+   ⇒ 定为**系统楷体**（见 `.wname` 那条栈）+ 单给姓名一档 `font-weight: 400`。
+   **代价（当时写明、用户已接受）**：安卓多数机型没有楷体字，会掉回黑体（与全站一致，但"楷体"这个意图落空）；
+   换来"不依赖下载、不靠子集维护、任何名字都不会花脸"。
    与后面的职称**不用标点分隔**（颜色已经分开了），只留一点间隙。
    `--sc` / `--sc-o` = 下面那道装饰笔划的颜色与透明度（§14.6.3 例外二、§14.6.4）。 */
-.welcome { margin: 0 0 4px; font-size: 33px; font-weight: 600; letter-spacing: .01em; color: var(--deep); }
+.welcome { margin: 0 0 4px; font-size: var(--fs-hero); font-weight: 600; letter-spacing: .01em; color: var(--deep); }
 .wname {
-  /* ⚠️ 栈里必须**紧跟** var(--font-ui)：子集缺字时回退中文黑体，绝不出方框 */
-  font-family: "BandName", var(--font-ui);
+  /* 系统楷体（各平台的名字都列上：Windows 的 KaiTi / macOS 的 STKaiti、Kaiti SC / 部分 ROM 的"楷体"）。
+     绝大多数手机**没有**楷体字 ⇒ 末端紧跟 var(--font-ui)（中文黑体栈）兜底：
+     **绝不出方框**，也**绝不"只有几个字是楷体"**（这是弃用子集的直接原因）。
+     ⚠️ 这里是**系统字体**、不是 webfont —— 别再造子集/`@font-face` 塞回来（理由见上面的留痕）。 */
+  font-family: "KaiTi", "STKaiti", "Kaiti SC", "Kaiti TC", "楷体", var(--font-ui);
+  /* ⚠️ **必须单给 400**：`.welcome` 的 600 是给中文黑体定的，而楷体基本只有 Regular
+     ⇒ 继承 600 会被浏览器**伪合成加粗**、中文笔画描边发虚（用户那半句"字体问题"的直接成因）。
+     **别删这一行**；也别顺手把 `.welcome` 的 600 改掉（页头那串大字是黑体，600 是对的）。 */
+  font-weight: 400;
   color: var(--deep);
   margin-right: .35em;
   /* ⚠️ **只加 position 这一条**：别动 display / line-height —— 实测会让欢迎行盒子高差 2px、把下方顶动 2px */
@@ -667,11 +694,11 @@ html.wel-armed .wel { display: flex; }
 
 .lab { font-size: 11px; letter-spacing: .18em; color: var(--mid); margin-bottom: 12px; }
 .hero .lab { color: var(--shellmid); margin-bottom: 16px; }
-.hero h2 { margin: 0 0 10px; font-size: 33px; line-height: 1.15; color: var(--silk); }
+.hero h2 { margin: 0 0 10px; font-size: var(--fs-hero); line-height: 1.15; color: var(--silk); }
 .hero .when { font-size: 14px; margin: 0; color: #D8CBBB; }
 .hero .last { margin: 10px 0 0; font-size: 12px; color: #9A8B7C; }
 .hero .act { margin-top: auto; }
-.cell .big { font-size: 26px; font-weight: 600; line-height: 1.1; margin: 0; }
+.cell .big { font-size: var(--fs-title); font-weight: 600; line-height: 1.1; margin: 0; }
 
 /* ============ §7 按钮与状态 ============ */
 .go {
@@ -689,7 +716,7 @@ html.wel-armed .wel { display: flex; }
 .chip.warn { color: var(--cinna); font-weight: 600; }  /* 异常才强调 */
 
 /* ============ §8 表格（无框线，靠间距） ============ */
-.tb { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tb { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
 .tb th {
   text-align: left; padding: 0 22px 13px 0;
   font-size: 11.5px; letter-spacing: .16em; color: var(--mid);
@@ -710,7 +737,7 @@ html.wel-armed .wel { display: flex; }
 
 /* ============ §7.5 表单控件与行内小件（实现期追加，令牌内取值） ============ */
 input, select, textarea {
-  font-family: inherit; font-size: 14px; color: var(--deep);
+  font-family: inherit; font-size: var(--fs-field); color: var(--deep);
   background: #FFFDF9;
   border: 1.5px solid var(--edge); border-radius: 9px;
   padding: 8px 12px;
@@ -1257,16 +1284,52 @@ body.cat-off #oneko { display: none; }
   }
   html.drawer-open .scrim { opacity: 1; pointer-events: auto; }
 
+  /* ---- 三·b、抽屉开着时**锁住主页面**（2026-09-28 补）----
+     在此之前 `html.drawer-open` 只控抽屉与遮罩，底下的正文**照样能滚**
+     —— 用户真机反馈"打开侧边栏后，还能移动主页面"。
+     ⚠️ 锁的是 `<html>` / `<body>`（页面滚动容器）；抽屉自己的 `.menu` **照旧能滚**
+     （它 `overflow-y: auto`，且 `.railwrap` 是 `position: fixed`、不受 body 的 `overflow` 影响）。
+     ⚠️ **别顺手加 `touch-action: none`**：它按"触点所在元素向上依次取交"生效，
+     会连抽屉内部的滚动一起废掉（那样抽屉就滚不动了）。
+     ⚠️ iOS Safari 对 `body{overflow:hidden}` 不认（那边惯例是 `position: fixed`），
+     本项主要治安卓/夸克；iOS 上算"尽力而为"——真机上若发现还能滚，再按平台补。 */
+  html.drawer-open, html.drawer-open body { overflow: hidden; }
+
   /* ---- 四、跳页过渡：窄屏 / 触屏**不许点名当前项**（它在屏外，凹槽会从边上飞进来）---- */
   .rail .menu a.on { view-transition-name: none; }
 
   /* ---- 五、密度收紧一档（只在手机段覆盖，§1 的令牌值与桌面版一律不动）---- */
-  :root { --pad: 18px; --gap: 14px; }
+  /* ⚠️ **字号令牌一并在这里覆盖**（2026-09-28）：全站字号只在 §1 `:root` 里声明、手机段这一处改值 ——
+     改字号时**只动这一行**，别回到页面段写 px（那正是"手机端字号混乱"的来源）。
+     档位是"大 → 中 → 正文 → 表单"，手机上一律比桌面小一档（**表单反过来大**，见 `--fs-field` 的注释）。 */
+  :root {
+    --pad: 18px; --gap: 14px;
+    --fs-hero: 27px;    /* 33 → 27：欢迎行在 390px 上原来大得离谱（用户反馈的"字号混乱"主要就这一处） */
+    --fs-title: 22px;   /* 26 → 22 */
+    --fs-body: 15px;    /* 14 → 15：手机离眼远、正文比桌面**大一档**更好读 */
+    --fs-field: 16px;   /* 14 → 16：**必须 ≥16px**，否则 iOS 聚焦时会把整页放大 */
+  }
   body:not(.page-showcase) .main { padding: 0; }        /* 标题栏要贴到屏幕顶与左右两边 */
   body:not(.page-showcase) .mbody { padding: 0 18px 30px; }
   .grid { grid-template-columns: 1fr; grid-template-rows: auto; gap: 10px; }
   .cell.hero, .cell.wide, .cell.s1, .cell.s2 { grid-area: auto; }
-  .hero h2 { font-size: 27px; }
+  /* 正文里的 `h2` 在桌面走 Bootstrap 的 `calc(1.325rem + .9vw)`（390px 上≈24px）——收进令牌。
+     ⚠️ **`.hero h2` 那条要写在后面**：两者特异性都是 (0,1,1)，靠**顺序**分胜负
+     （hero 里的大字该走 `--fs-hero`，不是标题档）。 */
+  .mbody h2 { font-size: var(--fs-title); }
+  .mbody .hero h2 { font-size: var(--fs-hero); }
+  /* 这两处**不进令牌**（各只有一个消费者、手机值还不同档，见 §1 令牌表的注释） */
+  .ann-title { font-size: 17px; }
+  .p-num b { font-size: 16px; }
+
+  /* ---- 五·b、两处"桌面形态直接漏到手机"的地方（2026-09-28）---- */
+  /* ① 考勤统计（`stats.html`）的 `.row2`：桌面是**两栏并排**，手机上两栏各剩 ~155px、数字挤在一起。
+     上面那条注释本来就写着"窄屏收成单列"——**但一直没写规则**（只写了注释）。 */
+  .row2 { grid-template-columns: 1fr; }
+  /* ② 公告弹层（`updates.html` / `admin-notes.html`）：`.ann-card` 的 `22px 24px` 内边距
+     是按桌面 460px 宽定的，390px 上卡片本身只剩 ~340px、正文每行少放 4~5 个字。
+     ⚠️ 只收内边距，**不动 `max-width`**（那个数桌面手机通用）。 */
+  .ann-card { padding: 18px 18px 14px; }
 
   /* ---- 六、表格 → 「一行一人」的卡片行（`docs/14` §14.6.4 八）----
      名册 5 列 / 考勤明细 6 列在 390px 上靠缩 padding 撑不住（字小、还得横着拖）⇒

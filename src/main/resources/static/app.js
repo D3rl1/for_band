@@ -1158,7 +1158,14 @@ const BAND = {
       });
     };
     const close = (tr) => { tr.classList.remove('open'); setX(tr, 0, false); };
-    let row = null, x0 = 0, dx = 0, moved = false;
+    // ⭐ **屏幕左缘让给系统返回手势**（2026-09-28；用户真机反馈"左滑时页面直接返回了"）。
+    // ⚠️ 先说清一件事：安卓（夸克等）的**边缘返回是系统级手势，网页关不掉**
+    //    —— 浏览器里没有 exclusion API，`preventDefault` 也管不着它。
+    //    所以这里能做的只有两条：① 起手点落在左缘保护区内就**根本不接管**（不跟它抢那一下）；
+    //    ② 要求**横向意图明确**才拖动（免得纵向滚动 / 斜滑被误判成左滑）。
+    //    ⇒ 用户在**屏幕最左缘**往右滑时页面**仍会返回上一页**：那是系统行为，不是本页的 bug。
+    const EDGE = 24;        // 左缘保护区宽度（CSS px）：这一条给系统返回手势
+    let row = null, x0 = 0, y0 = 0, dx = 0, dy = 0, moved = false;
     const settle = (cancel) => {
       if (!row) return;
       const tr = row, w = swipeW(), wasMoved = moved;
@@ -1177,14 +1184,18 @@ const BAND = {
     };
     document.addEventListener('pointerdown', (e) => {
       if (!this.isMobile() || e.button !== 0) return;
+      if (e.clientX < EDGE) return;   // ① 左缘保护区：交给系统返回手势，本页不接管
       const tr = e.target && e.target.closest ? e.target.closest('.tb tbody tr.swipable') : null;
       if (!tr) return;
-      row = tr; x0 = e.clientX; dx = 0; moved = false;
+      row = tr; x0 = e.clientX; y0 = e.clientY; dx = 0; dy = 0; moved = false;
     });
     window.addEventListener('pointermove', (e) => {
       if (!row) return;
-      dx = e.clientX - x0;
-      if (Math.abs(dx) > 8) moved = true;
+      dx = e.clientX - x0; dy = e.clientY - y0;
+      // ② 方向意图：横向要**明显**赢过纵向才接管（1.5 倍是明确的"这是横划"判据）。
+      //    没赢之前**一格都不动**——`moved` 也跟着它走，所以"吃点击"那半段同样不会被误触发。
+      if (!moved && !(Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5)) return;
+      moved = true;
       const w = swipeW();
       const base = row.classList.contains('open') ? -w : 0;
       setX(row, Math.max(-w, Math.min(0, base + dx)), true);
@@ -1235,7 +1246,11 @@ const BAND = {
     const body = s.mbody, hint = s.hint, tx = s.hintTx;
     let startY = 0, dy = 0, dragging = false, busy = false;
     const atTop = () => (document.scrollingElement.scrollTop || 0) <= 0;
-    const allowed = () => this.isMobile() && !busy && atTop();
+    // ⚠️ **抽屉开着时不许接管**（2026-09-28 补）：`band.css` 里 `html.drawer-open` 已经锁了
+    // `<html>/<body>` 的滚动，但这段手势是**用 transform 推 `.mbody`**、根本不走滚动
+    // ⇒ 不拦的话，"锁住主页面"就成了半句话（正文照样被拖着走）。
+    const allowed = () => this.isMobile() && !busy
+      && !root.classList.contains('drawer-open') && atTop();
     const paint = () => {
       root.classList.toggle('ptr-drag', dy > 0);
       body.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
@@ -1512,24 +1527,13 @@ const BAND = {
         return;
       }
 
-      // ⭐ **字体就绪之后才量矩形**（docs/14 §14.6.5 与 `交接单.md` `#48` ④）：
-      // 子集字体还没落地时量到的是**回退黑体**的字宽 ⇒ FLIP 落点会偏，
-      // 而且只在"首次访问、字形没进缓存"那一次明显（之后字形已缓存，量得就对了）。
-      // ⚠️ 落点必须在**挂 skip 监听之前**：否则用户在等待期间点屏触发 skip() → place()，
-      //    量的还是未就绪的字面。
-      // ⚠️ 异常一律吞掉：老浏览器没有 `document.fonts`、或字体加载失败，都必须**继续往下走**——
-      //    **绝不许把黑幕留在屏幕上**（docs/14:1467）。
-      try {
-        if (document.fonts && document.fonts.load) {
-          // ⚠️ **给这个等待封顶 350ms**：字体正常情况下是本地的 27.7 KB、几毫秒就就绪；
-          // 但万一它慢或被卡住（机器内存紧张时磁盘/换页会拖），**绝不能把用户晾在黑幕上干等**——
-          // 超时就用回退字面量继续跑，落点最多差一点，比"黑屏等着"强得多。
-          await Promise.race([
-            document.fonts.load('600 33px BandName'),
-            new Promise((r) => setTimeout(r, 350)),
-          ]);
-        }
-      } catch (e) { /* 跳过，不阻断欢迎过渡 */ }
+      // ⚠️ **2026-09-28 删掉了原先这里的一段"等字体就绪再量矩形"**（原代码是
+      //    `await Promise.race([document.fonts.load('600 33px BandName'), 350ms 上限])`）。
+      //    它存在的**唯一**理由是：姓名那时用的是**下载来的子集字体**，字形没落地时量到的是
+      //    回退黑体的字宽 ⇒ FLIP 落点会偏（且只在无缓存的首访那一次明显）。
+      //    现在姓名改用**系统楷体**（见 `band.css` 的 `.wname` 与那里的留痕）——系统字体**即时就绪**，
+      //    没有"等"可言，留着就只是白等（还可能白等满 350ms）⇒ 整段删除。
+      //    ⭐ 落点仍然是**运行时量出来的**（换宽度 / 手机端自动对上，绝不写死坐标），这点没变。
 
       const av = wel.querySelector('.wel-av');
       const tx = wel.querySelector('.wel-tx');
