@@ -338,7 +338,7 @@ class LeaveFlowTests extends IntegrationTestBase {
         setMemberStatus(admin, h.id(), "GRADUATED");
         memberService.update(h.id(), new MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
-                null, null, null, null), admin);
+                null, null, null, null, null), admin);
         return currentUserOf(h.id());
     }
 

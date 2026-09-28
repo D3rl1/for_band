@@ -20,7 +20,7 @@
      **仅管理员渲染**；未知 / 从没成功过 / 超 48 小时 → 标红（读不到状态本身就是"备份情况不明"）。 -->
 <p id="backup" class="chip" hidden></p>
 
-<table class="tb">
+<table class="tb" id="logs-table">
   <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -39,6 +39,10 @@ const actionLabels = {
   PIECE_UPDATE: '修改曲目', PIECE_ATTACHMENT_DELETE: '删除曲目附件',
   CONCERT_UPDATE: '修改演出档案', CONCERT_PHOTO_DELETE: '删除演出照片',
   RECORDING_DELETE: '删除录音',
+  // 专场策展（docs/17）：⚠️ 这 6 个串是**实现方定的**，请规格侧登记进 docs/11 §11.3（交接单 §三）
+  SHOWCASE_CREATE: '开专场时间点', SHOWCASE_TOGGLE: '设为/取消专场',
+  SHOWCASE_PHOTO_ADD: '加入策展图', SHOWCASE_PHOTO_ORDER: '调整策展顺序',
+  SHOWCASE_PHOTO_NOTE: '改策展文案', SHOWCASE_PHOTO_DELETE: '移出策展图',
   // ⚠️ 这两个 action **不由应用写**，而是服务器上的备份脚本 best-effort 直插 operation_log
   //（docs/12 §12.5 ④）。脚本侧请**逐字**用这两个串，否则日志页会显示英文裸串。
   BACKUP_RUN: '备份执行', BACKUP_FAILED: '备份失败',
@@ -126,6 +130,7 @@ async function load() {
     tr.children[5].textContent = compact(log.after) || compact(log.before);
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('logs-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
   const pager = document.getElementById('pager');
   pager.innerHTML = '';
   const totalPages = Math.max(1, Math.ceil(d.total / d.size));

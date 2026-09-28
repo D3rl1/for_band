@@ -20,6 +20,7 @@
   <div class="wel-tx">欢迎回来，<span class="wname"></span></div>
 </div>
 
+
 <div id="navbar"></div>
 
 <section class="grid mb-4" id="bento">
@@ -35,13 +36,15 @@
   </div>
   <div class="cell s1">
     <div class="lab">我的出勤</div>
-    <p class="big" id="att-big">—</p>
+    <p class="big" id="att-big" data-count>—</p>
+    <!-- 出勤横条（docs/14 §14.6.4「界面的活性」④）：出勤率是主角数字的地方才有它 -->
+    <div class="attbar" id="att-bar"><b></b></div>
     <p class="mb-0 text-nowrap" id="att-note" hidden></p>
     <div class="penta mt-auto" id="penta"></div>
   </div>
   <div class="cell s2">
     <div class="lab">待办</div>
-    <p class="big" id="todo-big">0</p>
+    <p class="big" id="todo-big" data-count>0</p>
     <p class="mb-0 text-nowrap" id="todo-note" hidden></p>
   </div>
 </section>
@@ -55,7 +58,7 @@
     <option value="DRESS_REHEARSAL">彩排</option>
   </select>
 </div>
-<table class="tb">
+<table class="tb" id="events-table">
   <thead><tr><th>日期</th><th>类型</th><th>标题</th><th>时间</th><th>声部</th><th>状态</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -76,11 +79,14 @@ async function load() {
 
   const kind = document.getElementById('kind').value;
   const d = await BAND.must(`/api/events?size=100${kind ? '&kind=' + kind : ''}`);
-  renderBento(me, d.list);
+  // ⚠️ 等两个汇总都写进 DOM 之后才播「活性」——它们没写完就播，快照到的是 `—` / 空点阵，
+  // 而"播过"的标志一置位就**再也不播**了（docs/14 §14.6.4 ③"只在首次出现数一次"的前提）
+  await renderBento(me, d.list);
   renderList(d.list);
+  BAND.alive(document.getElementById('bento'), document.getElementById('events-table'));
 }
 
-function renderBento(me, list) {
+async function renderBento(me, list) {
   // 主角格：下一场（未取消、未开始的最近一场）
   const now = Date.now();
   const upcoming = list
@@ -137,12 +143,14 @@ function renderBento(me, list) {
   score.appendChild(days);
 
   // 我的出勤：五声点阵 = 出勤率 × 5 档；出勤率与请假数成对展示（docs/05 硬规则）
-  fetchSummary(me);
-  renderTodo(me);
+  // ⚠️ 这两条要 await：调用方（load）要在它们写完 DOM 之后才播「活性」
+  await fetchSummary(me);
+  await renderTodo(me);
 }
 
 async function fetchSummary(me) {
   const penta = document.getElementById('penta');
+  const bar = document.getElementById('att-bar');
   const names = ['宫', '商', '角', '徵', '羽'];
   try {
     const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
@@ -150,6 +158,10 @@ async function fetchSummary(me) {
     const rate = s.rehearsal.rate || 0;
     const lit = expected === 0 ? 0 : Math.round(rate * 5);
     document.getElementById('att-big').textContent = BAND.ratePct(rate, expected);
+    // 分母为 0（指挥 / 荣誉团员）⇒ 出勤率显示「—」，横条**为空**：整条藏掉，
+    // 不画一条 0% 的条（那会被读成"出勤率为零"）。
+    bar.hidden = expected === 0;
+    bar.style.setProperty('--r', String(rate));
     const note = document.getElementById('att-note');
     note.hidden = false;
     note.textContent = `排练应到 ${s.rehearsal.expected} · 出勤 ${s.rehearsal.present} · 请假 ${s.rehearsal.leave}`;
@@ -157,6 +169,7 @@ async function fetchSummary(me) {
       `<div class="pv ${i < lit ? 'on' : ''}"><i></i><em>${n}</em></div>`).join('');
   } catch (e) {
     penta.innerHTML = '';
+    bar.hidden = true;
   }
 }
 

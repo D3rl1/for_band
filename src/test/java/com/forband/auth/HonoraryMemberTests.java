@@ -185,7 +185,7 @@ class HonoraryMemberTests extends IntegrationTestBase {
         memberService.update(memberId,
                 new com.forband.member.dto.MemberUpdateRequest(
                         null, null, "HONORARY", null, null, null, null, null, until, null,
-                        null, null, null, null),
+                        null, null, null, null, null),
                 admin);
     }
 

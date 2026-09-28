@@ -239,7 +239,8 @@ public class ConcertService {
                 count(castMapper, new LambdaQueryWrapper<ConcertCast>()
                         .eq(ConcertCast::getConcertId, id)),
                 count(photoMapper, new LambdaQueryWrapper<ConcertPhoto>()
-                        .eq(ConcertPhoto::getConcertId, id)));
+                        .eq(ConcertPhoto::getConcertId, id)),
+                Boolean.TRUE.equals(concert.getIsShowcase()));
     }
 
     private static <T> Integer count(com.baomidou.mybatisplus.core.mapper.BaseMapper<T> mapper,

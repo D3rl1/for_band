@@ -74,7 +74,7 @@ class RecordingTests extends IntegrationTestBase {
         setMemberStatus(admin, honoraryId, "GRADUATED");
         memberService.update(honoraryId, new com.forband.member.dto.MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null,
-                LocalDate.now().plusYears(2), null, null, null, null, null), admin);
+                LocalDate.now().plusYears(2), null, null, null, null, null, null), admin);
 
         fileOfA = uploadAudio(memberAToken, "take1.m4a");
         recordingAId = createRecording(memberAToken, fileOfA, "第一段");

@@ -13,7 +13,7 @@
 <body>
 <div id="navbar"></div>
 
-<table class="tb">
+<table class="tb" id="sessions-table">
   <thead><tr><th>设备</th><th>IP</th><th>登录时间</th><th>最后活跃</th><th class="act">当前</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -61,6 +61,7 @@ async function load() {
     }
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('sessions-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
 // 「踢掉其他所有设备」放列表下方——它跟"某一台"不是一档操作，别混在同一列按钮里（docs/14 §14.6.4）

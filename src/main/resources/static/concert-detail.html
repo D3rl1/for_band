@@ -57,7 +57,7 @@
     <span class="lab mb-0">曲目单</span>
     <button id="edit-program" class="go go-ghost go-sm" type="button" hidden>设置曲目单</button>
   </div>
-  <table class="tb">
+  <table class="tb" id="program-table">
     <thead><tr><th>#</th><th>曲目</th><th>作曲</th><th>指挥</th></tr></thead>
     <tbody id="program"></tbody>
   </table>
@@ -181,6 +181,7 @@ async function load() {
     tr.children[3].textContent = p.conductor || '';
     ptbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('program-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 
   // 参演名单
   document.getElementById('cast-empty').hidden = detail.cast.length > 0;

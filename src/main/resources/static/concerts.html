@@ -39,11 +39,33 @@
   </div>
 </div>
 
+<!-- ⭐ 「我们的专场」的入口（docs/17 §17.5）：就是这一条文字，**不占侧栏菜单项**。
+     页面清单里它挂的是 `offMenuTitles`（`14` §14.5 / `refresh.sh` 的 `[4/5]` 要两边都对上）。
+     ⚠️ `href` 留着（入口体检认它），点击只拦默认行为 —— 先过一道确认，再演 A 段。 -->
+<p class="mb-3"><a class="sc-entry" href="/showcase.html">我们的专场 →</a></p>
+
+<!-- 入场编排 **A 段**（docs/14 §14.6.4）：黑幕从四面合拢 + 搜索框从下升起（**两件同时**），
+     **黑透之后才换纸**到 `showcase.html`，B 段在那儿接着演 ⇒ "换纸"那一下被藏在黑里。
+     ⚠️ 层与里面的框/遮罩和 B 段**共用同一套类**，两页接缝才对得上（尺寸、颜色、位置一模一样）。 -->
+<div class="sc-intro sc-intro-a blink" id="sc-intro" data-phase="pre">
+  <div class="sc-mask m-t"></div>
+  <div class="sc-mask m-b"></div>
+  <div class="sc-mask m-l"></div>
+  <div class="sc-mask m-r"></div>
+  <div class="sc-sbox">
+    <svg class="sc-sicon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>
+    </svg>
+    <div class="sc-swrap"><span class="sc-caret"></span></div>
+    <span class="sc-sline"></span>
+  </div>
+</div>
+
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h2 class="mb-0">演出</h2>
   <button id="new" class="go go-sm" type="button" hidden>新建演出</button>
 </div>
-<table class="tb">
+<table class="tb" id="concerts-table">
   <thead><tr><th>日期</th><th>演出名</th><th>地点</th><th>状态</th><th>曲目 · 参演 · 照片</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -87,6 +109,7 @@ async function load() {
     }
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('concerts-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
 async function openEditor(concert) {
@@ -136,6 +159,39 @@ document.getElementById('save').addEventListener('click', async () => {
   BAND.toast('已保存', 'success');
   load();
 });
+
+/* ---------- ⭐ 「我们的专场」入口：一道有仪式感的门槛 + 入场编排 A 段 ----------
+   （形态见 docs/14 §14.6.4；A/B 两段怎么拆、为什么拆，见 `17` §17.6）
+   ⚠️ 闸门**复用 `BAND.confirm`**（Bootstrap Modal：居中、Esc、点背景都能关），**别另造一套**；
+   它在 reduced-motion 下不播入场（Bootstrap 自己把 `.fade` 关掉了），正好满足规格那一条。
+   ⚠️ 绑定**在解析期做一次**：`load()` 每次筛选/保存都会被再调用一遍，绑在里面会攒监听。 */
+(function bindShowcaseEntry() {
+  const entry = document.querySelector('.sc-entry');
+  const layer = document.getElementById('sc-intro');
+  if (!entry || !layer) return;
+  entry.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const go = await BAND.confirm({
+      title: '是否要跳转到过去的时间线？',
+      body: '会带你回到历届专场，一年一年看下来。',
+      ok: '去吧',
+      cancel: '再想想',
+    });
+    if (!go) return;                       // 选"否"什么都不发生，留在原页
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      location.href = '/showcase.html';    // 降级：整段跳过，直接换页
+      return;
+    }
+    document.body.classList.add('cat-off'); // 猫让位：它 z-index 是最大整数，会从黑幕上跑过去
+    document.documentElement.style.overflow = 'hidden';
+    layer.classList.add('on');              // 这一层默认 `display:none`，点确认才上
+    // ⚠️ 必须**先逼一帧**把"合上之前"的状态画出来，否则浏览器把"上层 + 改终态"合成一步、过渡不跑
+    //（同一个坑本项目踩过：起点从没被画过一帧，见 debug_log 2026-09-27）
+    void layer.offsetWidth;
+    layer.classList.add('masked', 'risen'); // 黑幕合拢 + 搜索框升起（同时，400ms）
+    setTimeout(() => { location.href = '/showcase.html'; }, 420);   // 黑透了才换纸
+  });
+})();
 
 load();
 </script>

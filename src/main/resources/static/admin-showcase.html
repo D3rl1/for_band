@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>专场策展 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- ① 开新时间点：**建出来就是一条普通演出记录**，之后照常由 管理员/团长/指挥 用演出页的接口维护（docs/17 §17.3） -->
+<div class="cell mb-4">
+  <div class="lab">开一个新时间点</div>
+  <p class="chip">一个时间点 = 一个年份；这一年里可以有多场专场，它们的图会串成一个节点。</p>
+  <div class="row g-2">
+    <div class="col-12 col-md-4"><input id="s-name" class="w-100" maxlength="64" placeholder="专场名（如：2026 仲夏专场）*"></div>
+    <div class="col-6 col-md-2"><input id="s-date" type="date" class="w-100"></div>
+    <div class="col-6 col-md-2"><input id="s-venue" class="w-100" maxlength="64" placeholder="地点（可空）"></div>
+    <div class="col-12 col-md-2"><button id="s-open" class="go go-sm" type="button">开这个时间点</button></div>
+  </div>
+</div>
+
+<!-- ② 两栏：专场 / 其他演出 -->
+<h2 class="mt-4 mb-3">专场（会出现在时间线上）</h2>
+<div id="showcases"></div>
+<p id="sc-empty" class="chip" hidden>还没有专场——用上面那一栏开一个</p>
+
+<h2 class="mt-4 mb-3">其他演出（可以设为专场）</h2>
+<div id="others"></div>
+<p class="chip">「设为专场」只翻一个标记，**不会删演出档案**；撤错了还能再设回来。</p>
+
+<!-- ③ 某一场专场的策展 -->
+<div class="cell mb-4 mt-4" id="cur-box" hidden>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="lab mb-0" id="cur-title"></div>
+    <button id="cur-close" class="go go-ghost go-sm" type="button">收起</button>
+  </div>
+  <!-- ⚠️ 没加图的年份必须明确提示，不许静默（docs/17 §17.4） -->
+  <p class="chip warn" id="cur-hint" hidden></p>
+  <div id="cur-photos" class="d-flex flex-wrap gap-2"></div>
+  <p class="chip" id="cur-empty" hidden>这一场还没加图</p>
+
+  <div class="row g-2 mt-3">
+    <div class="col-12 col-md-5"><input id="cur-file" type="file" accept="image/*" multiple class="w-100"></div>
+    <div class="col-12 col-md-3"><button id="cur-upload" class="go go-sm" type="button">传新图并加入</button></div>
+  </div>
+
+  <div class="lab mt-4">从这场演出已有的晒图里挑（复用同一张图，不重复占磁盘）</div>
+  <div id="cur-cands" class="d-flex flex-wrap gap-2"></div>
+  <p class="chip" id="cand-empty" hidden>这场演出在「演出详情页」还没有照片</p>
+
+  <div class="lab mt-4">批量粘文案：按**当前顺序**、以空行分段，依次配给第 1、2、3… 张</div>
+  <textarea id="cur-notes" class="w-100" rows="6"
+    placeholder="第一张的文案&#10;&#10;第二张的文案&#10;&#10;第三张的文案"></textarea>
+  <div class="d-flex align-items-center gap-2 mt-2">
+    <button id="cur-apply" class="go go-sm" type="button">按顺序套上去</button>
+    <span class="chip mb-0">段数与图片数不一致会报错，不会错配</span>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let cur = null;           // 正在策展的那一场专场（整条 ConcertView：id / name / date）
+let curPhotos = [];       // 它当前策展的图（按顺序）—— 上移/下移、批量套文案都以此为准
+let thumbs = [];          // 本轮建过的 blob URL，重画前要 revoke（否则内存越用越多）
+
+function revokeThumbs() {
+  thumbs.forEach((u) => URL.revokeObjectURL(u));
+  thumbs = [];
+}
+
+/** 缩略图（走带 Bearer 的 blob 口子；裸 <img src="/api/files/…"> 永远 401）。 */
+async function thumbOf(fileId, cls) {
+  const box = document.createElement('div');
+  box.className = cls;
+  try {
+    const url = await BAND.fileBlobUrl(fileId);
+    thumbs.push(url);
+    box.style.backgroundImage = `url(${url})`;
+  } catch (e) { /* 取不到就留空底色 */ }
+  return box;
+}
+
+async function load() {
+  const me = await BAND.renderNav('admin-showcase.html');
+  if (!me) return;
+  const d = await BAND.must('/api/concerts?size=100');
+  renderRow(document.getElementById('showcases'), d.list.filter((c) => c.isShowcase), true);
+  renderRow(document.getElementById('others'), d.list.filter((c) => !c.isShowcase), false);
+  document.getElementById('sc-empty').hidden = d.list.some((c) => c.isShowcase);
+  if (cur) openCuration(d.list.find((c) => c.id === cur.id) || cur);
+}
+
+function renderRow(host, list, isShowcaseList) {
+  host.innerHTML = '';
+  for (const c of list) {
+    const el = document.createElement('div');
+    el.className = 'cell mb-2 d-flex justify-content-between align-items-center';
+    const tx = document.createElement('div');
+    tx.textContent = `${c.name} · ${c.date}${c.venue ? ' · ' + c.venue : ''}`;
+    const acts = document.createElement('div');
+    if (isShowcaseList) {
+      const curate = document.createElement('button');
+      curate.className = 'go go-sm me-1';
+      curate.textContent = '策展';
+      curate.addEventListener('click', () => openCuration(c));
+      const off = document.createElement('button');
+      off.className = 'go go-ghost go-sm';
+      off.textContent = '取消专场';
+      off.addEventListener('click', () => toggle(c, false));
+      acts.append(curate, off);
+    } else {
+      const on = document.createElement('button');
+      on.className = 'go go-ghost go-sm';
+      on.textContent = '设为专场';
+      on.addEventListener('click', () => toggle(c, true));
+      acts.append(on);
+    }
+    el.append(tx, acts);
+    host.appendChild(el);
+  }
+}
+
+async function toggle(c, isShowcase) {
+  if (isShowcase && !await BAND.confirm({
+    title: `把「${c.name}」设为专场？`,
+    body: '它会成为时间线上的一个时间点（那一年还要有策展图才会出现）。不删任何档案。',
+  })) return;
+  await BAND.must(`/api/admin/showcase/${c.id}`, { method: 'PUT', body: { isShowcase } });
+  BAND.toast(isShowcase ? '已设为专场' : '已取消专场', 'success');
+  load();
+}
+
+// ---------- 策展 ----------
+
+async function openCuration(c) {
+  cur = c;
+  const box = document.getElementById('cur-box');
+  box.hidden = false;
+  document.getElementById('cur-title').textContent = `策展：${c.name}`;
+  await loadCuration();
+  box.scrollIntoView({ block: 'start' });
+}
+
+/**
+ * 这一场当前策展了哪些图：走**公开的** `years/{year}` 再按 `concertId` 筛 ——
+ * 规格的策展端点只有 6 条（`docs/17` §17.3），别为管理页单开一条"读某场策展图"的。
+ */
+async function loadCuration() {
+  revokeThumbs();
+  const [yearPhotos, cands] = await Promise.all([
+    BAND.must(`/api/showcase/years/${cur.date.slice(0, 4)}`),
+    BAND.must(`/api/admin/showcase/${cur.id}/candidates`),
+  ]);
+  curPhotos = yearPhotos.filter((p) => p.concertId === cur.id);
+  await renderPhotos(curPhotos);
+  await renderCandidates(cands);
+  await renderYearHint(curPhotos.length);
+  document.getElementById('cur-empty').hidden = curPhotos.length > 0;
+}
+
+async function renderPhotos(list) {
+  const host = document.getElementById('cur-photos');
+  host.innerHTML = '';
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const card = document.createElement('div');
+    card.className = 'cell';           // 方块封面 = 顺序里第一张（另有"第 1 张"角标，不另设封面字段）
+    card.append(await thumbOf(p.fileId, 'sc-thumb'));
+    const cap = document.createElement('div');
+    cap.className = 'chip mt-1';
+    cap.textContent = i === 0 ? '第 1 张（方块封面）' : `第 ${i + 1} 张`;
+    const note = document.createElement('textarea');
+    note.className = 'w-100 mt-1';
+    note.rows = 2;
+    note.maxLength = 2000;
+    note.placeholder = '这一张的策展文案（可空）';
+    note.value = p.note || '';
+    note.addEventListener('change', async () => {
+      await BAND.must(`/api/admin/showcase/${id()}/photos/${p.photoId}`,
+        { method: 'PUT', body: { note: note.value } });
+      BAND.toast('文案已保存', 'success');
+    });
+    const acts = document.createElement('div');
+    acts.className = 'd-flex gap-1 mt-1';
+    const up = mk('上移', i === 0, () => movePhoto(i, i - 1));
+    const down = mk('下移', i === list.length - 1, () => movePhoto(i, i + 1));
+    const del = mk('移出专页', false, async () => {
+      if (!await BAND.confirm({
+        title: '把这张移出专页？',
+        body: '只解除策展关系——照片本体还在（晒图墙上那张不受影响）。',
+      })) return;
+      await BAND.must(`/api/admin/showcase/${id()}/photos/${p.photoId}`, { method: 'DELETE' });
+      BAND.toast('已移出', 'success');
+      loadCuration();
+    });
+    acts.append(up, down, del);
+    card.append(cap, note, acts);
+    host.appendChild(card);
+  }
+}
+
+function mk(label, disabled, onClick) {
+  const b = document.createElement('button');
+  b.className = 'go go-ghost go-sm';
+  b.textContent = label;
+  b.disabled = disabled;
+  if (!disabled) b.addEventListener('click', onClick);
+  return b;
+}
+
+function id() {
+  return cur.id;
+}
+
+/** 上移 / 下移 = 把整批顺序重算一遍（whole-replace）。 */
+async function movePhoto(from, to) {
+  const ids = curPhotos.map((p) => p.photoId);
+  const [moved] = ids.splice(from, 1);
+  ids.splice(to, 0, moved);
+  await BAND.must(`/api/admin/showcase/${id()}/photos/order`, { method: 'PUT', body: { photoIds: ids } });
+  loadCuration();
+}
+
+async function renderCandidates(list) {
+  const host = document.getElementById('cur-cands');
+  host.innerHTML = '';
+  document.getElementById('cand-empty').hidden = list.length > 0;
+  for (const c of list) {
+    const card = document.createElement('div');
+    card.className = 'cell';
+    card.append(await thumbOf(c.fileId, 'sc-thumb'));
+    const add = document.createElement('button');
+    add.className = 'go go-sm mt-1';
+    add.textContent = '加入专页';
+    add.addEventListener('click', async () => {
+      await BAND.must(`/api/admin/showcase/${id()}/photos`, { method: 'POST', body: { fileId: c.fileId } });
+      BAND.toast('已加入', 'success');
+      loadCuration();
+    });
+    card.appendChild(add);
+    host.appendChild(card);
+  }
+}
+
+/** ⚠️ 没加图的年份不上时间线（docs/17 §17.4）——管理页必须说出来，别让人以为存下来了。 */
+async function renderYearHint(photoCount) {
+  const hint = document.getElementById('cur-hint');
+  const year = cur.date.slice(0, 4);
+  const timeline = await BAND.must('/api/showcase/timeline');
+  if (timeline.some((n) => String(n.year) === year)) {
+    hint.hidden = true;
+    return;
+  }
+  hint.hidden = false;
+  hint.textContent = photoCount === 0
+    ? `这一场还没加图；${year} 年也还没有别的专场加图 —— 这一年不会出现在时间线上。`
+    : `${year} 年还没有别的专场加图（这一场加图之后就会出现）。`;
+}
+
+// ---------- 三个写操作 ----------
+
+document.getElementById('s-open').addEventListener('click', async () => {
+  const name = document.getElementById('s-name').value.trim();
+  const date = document.getElementById('s-date').value;
+  const venue = document.getElementById('s-venue').value.trim() || null;
+  if (!name || !date) {
+    BAND.toast('专场名与日期都要填');
+    return;
+  }
+  await BAND.must('/api/admin/showcase', { method: 'POST', body: { name, date, venue } });
+  document.getElementById('s-name').value = '';
+  document.getElementById('s-venue').value = '';
+  BAND.toast('已开这个时间点', 'success');
+  load();
+});
+
+document.getElementById('cur-upload').addEventListener('click', async () => {
+  const files = [...document.getElementById('cur-file').files];
+  if (!files.length) {
+    BAND.toast('先选图片');
+    return;
+  }
+  for (const f of files) {
+    const compressed = await BAND.compressImage(f);
+    const uploaded = await BAND.uploadFile(compressed);
+    await BAND.must(`/api/admin/showcase/${id()}/photos`, { method: 'POST', body: { fileId: uploaded.id } });
+  }
+  document.getElementById('cur-file').value = '';
+  BAND.toast(`已加入 ${files.length} 张`, 'success');
+  loadCuration();
+});
+
+document.getElementById('cur-apply').addEventListener('click', async () => {
+  const raw = document.getElementById('cur-notes').value;
+  // 以**空行**分段（段内的换行留给文案自己）
+  const segs = raw.split(/\r?\n\s*\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0);
+  if (segs.length !== curPhotos.length) {
+    // ⚠️ 宁可报错：错配了没人会发现（docs/17 §17.5）
+    BAND.toast(`分了 ${segs.length} 段、这一场有 ${curPhotos.length} 张图——对不上，先改好再来`);
+    return;
+  }
+  for (let i = 0; i < curPhotos.length; i++) {
+    await BAND.must(`/api/admin/showcase/${id()}/photos/${curPhotos[i].photoId}`,
+      { method: 'PUT', body: { note: segs[i] } });
+  }
+  BAND.toast('文案已按顺序配好', 'success');
+  loadCuration();
+});
+
+document.getElementById('cur-close').addEventListener('click', () => {
+  document.getElementById('cur-box').hidden = true;
+  cur = null;
+  revokeThumbs();
+});
+
+load();
+</script>
+</body>
+</html>

@@ -260,6 +260,7 @@ CREATE TABLE IF NOT EXISTS concert (
     summary        TEXT         NULL COMMENT '演出总结 / 复盘',
     note           TEXT         NULL,
     status         VARCHAR(12)  NOT NULL COMMENT 'PLANNED 计划 / DONE 已完成 / CANCELED 已取消',
+    is_showcase    TINYINT      NOT NULL DEFAULT 0 COMMENT '1 = 这是一场「专场」，在「我们的专场」时间线上占一个节点（docs/17）',
     created_by     BIGINT       NOT NULL COMMENT 'FK→member',
     updated_by     BIGINT       NULL COMMENT 'FK→member',
     created_at     DATETIME     NOT NULL,
@@ -351,6 +352,23 @@ CREATE TABLE IF NOT EXISTS profile_visit (
     UNIQUE KEY uk_viewer_host_date (viewer_id, host_id, visit_date),
     KEY idx_host_date (host_id, visit_date)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '主页访客记录';
+
+-- ㉔ showcase_photo 专场策展图（docs/13 §13.3㉔，期 1.7 建）。业务规则见 docs/17。
+-- ⚠️ 与 ⑮ concert_photo（演出页的晒图墙，全员可传、不排序）是**两件事**：这张表是**专页的门面**，
+--    **仅管理员**策展、**有顺序**、**有独家长文案**。允许复用同一张图（`file_id` 指向同一个 file，不重复占磁盘）。
+-- ⚠️⚠️ 本表的 `file_id` 必须被文件下载规则认领（`ConcertPhotoFileAccessRule`，与 `concert_photo.file_id`、
+--    `concert.poster_file_id` 一起），否则**专页的图只有管理员本人看得到**（交接单 #70 的同一个坑）。
+CREATE TABLE IF NOT EXISTS showcase_photo (
+    id         BIGINT   NOT NULL AUTO_INCREMENT,
+    concert_id BIGINT   NOT NULL COMMENT 'FK→concert：哪一场专场',
+    file_id    BIGINT   NOT NULL COMMENT 'FK→file：图片本体（统一文件表，docs/08 §8.5）',
+    sort_no    INT      NOT NULL COMMENT '展示顺序（专页轮播按它排）。本项目唯一有排序语义的图',
+    note       TEXT     NULL COMMENT '策展文案（外部导入的长文字），聚焦单图时显示全文',
+    created_by BIGINT   NOT NULL COMMENT 'FK→member：谁加进来的',
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_concert_id (concert_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '专场策展图';
 
 -- 存量库补列（MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守护，保证本脚本可重复执行）。
 DELIMITER $$
@@ -450,4 +468,24 @@ BEGIN
 END$$
 CALL band_add_member_profile_columns()$$
 DROP PROCEDURE band_add_member_profile_columns$$
+
+-- 同上：存量库补 concert.is_showcase（docs/13 §13.3⑫，期 1.7）。
+-- ⚠️ 这是本脚本**第一个带默认值的 NOT NULL 迁移**（前三个都只加可空列）：`DEFAULT 0` 对已有行生效，
+--    所以**上线前建的老演出全是 0**、不会被误当成专场（这正是这条迁移要的结果）。
+-- ⚠️ 表本身（showcase_photo）不用过程——它是新表，`CREATE TABLE IF NOT EXISTS` 已幂等。
+DROP PROCEDURE IF EXISTS band_add_concert_showcase_column$$
+CREATE PROCEDURE band_add_concert_showcase_column()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'concert'
+          AND COLUMN_NAME = 'is_showcase'
+    ) THEN
+        ALTER TABLE concert
+            ADD COLUMN is_showcase TINYINT NOT NULL DEFAULT 0 COMMENT '1 = 这是一场「专场」，在「我们的专场」时间线上占一个节点（docs/17）' AFTER status;
+    END IF;
+END$$
+CALL band_add_concert_showcase_column()$$
+DROP PROCEDURE band_add_concert_showcase_column$$
 DELIMITER ;

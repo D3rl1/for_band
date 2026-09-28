@@ -22,5 +22,8 @@ public record MemberUpdateRequest(
         String avatar,
         @Size(max = 100) String intro,
         @Size(max = 128) String contact,
-        LocalDate birthday) {
+        LocalDate birthday,
+        // ⚠️ 清空声部必须带这个标记（docs/03 §3.4 边界②）：`sectionId` 为 null 在本接口一律当"未提供"
+        // （`updateById` 忽略 null 字段），只发 `sectionId: null` 会被静默忽略 ⇒ 界面上"选无声部"点了没反应。
+        Boolean clearSection) {
 }

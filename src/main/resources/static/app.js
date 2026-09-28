@@ -1,5 +1,146 @@
 'use strict';
 
+/**
+ * 「界面的活性」（`docs/14` §14.6.4 那四样 + §14.6.6 **第七条留痕**）。
+ * 定档样张 `design-samples/alive-mock.html` 是用户拍板过的真值；这里只搬算法、不带样张的档位开关与重播按钮。
+ *
+ * ⚠️ **三条硬约束**：
+ * ① **起点必须先被浏览器真的画过一帧**：**同步**写起点 → **双** `requestAnimationFrame` → 再改终态。
+ *    少这一步的症状是"看着没响应 / 没有生长"（浏览器把两步合成一步）。本项目第二次踩，第一次是专页背景交叉淡入。
+ * ② **只在"首次出现"播一次**：`played` 记的是**常驻容器**（不是里面的数字元素——那些节点会被重渲染换掉），
+ *    播过就什么都不做 ⇒ 筛选 / 翻页 / 重展开导致的重渲染**天然直接给终值**。
+ * ③ **启动间隔与并发峰值由队列自己记**（`window.__alive`）：Windows 上窗口被遮挡时 Chromium 会把 rAF 饿死
+ *    （实测帧间隔 400–1100ms），探针逐帧采样量出来全是帧量化的假象。
+ */
+const ALIVE = (() => {
+  const MAX_RUN = 5;      // 同一时刻在滚的上限（第 6 个排队等前面的滚完）
+  const STAGGER = 40;     // 相邻启动的错开间隔（ms）
+  const DUR = 700;        // 单个数字的时长（easeOutCubic）
+  const ROW_STAGGER = 40; // 列表前 5 行的错开间隔
+
+  /* 给探针读的钩子：`starts`/`peak` 是规格点名要的两个量（不许逐帧采样）；
+     `running`/`queued` 让探针能等"队列真的排空"，而不是猜一个时间——
+     ⚠️ 队列在两波之间会停顿几百毫秒（rAF 被遮挡时更久），猜时间会把中间值当成终值。 */
+  const stats = { starts: [], peak: 0, running: 0, queued: 0 };
+  window.__alive = stats;
+
+  const played = new WeakSet();
+  /* ⚠️ 键用**元素**、不用 `el.id`：拆出来的 `<span>` 没有 id，用 id 会让它们全挤在一个键上。 */
+  const running = new Map();
+  const queue = [];
+  let runningCount = 0;
+  let lastStart = -1e9;
+  let pumpTimer = null;
+
+  const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fmt = (v, dec, suf) => v.toFixed(dec) + suf;
+
+  /**
+   * 从元素**原文**反解 `to` / 小数位 / 后缀 —— 终值不自己算，所以精度天然与 `ratePct` 等
+   * 现成格式化函数的输出一致（规格要求"不许自己再 `Math.round` 一遍"）。
+   * 非数字（`—`、日期、分页文字、字节量级）返回 null ⇒ **不数**。
+   */
+  function specOf(el) {
+    const raw = el.dataset.final;
+    if (raw === undefined) return null;
+    const suf = raw.endsWith('%') ? '%' : '';
+    const num = suf ? raw.slice(0, -1) : raw;
+    if (!/^-?\d+(\.\d+)?$/.test(num)) return null;
+    return { to: Number(num), dec: num.includes('.') ? num.split('.')[1].length : 0, suf };
+  }
+
+  function settle(el) {
+    el.textContent = el.dataset.final;   // ⚠️ 逐字还原原文，不自算终值
+    running.delete(el);
+    runningCount--;
+    stats.running = runningCount;
+    pump();
+  }
+
+  function start(el) {
+    const spec = specOf(el);
+    if (!spec) { settle(el); return; }
+    const t0 = performance.now();
+    const tick = (now) => {
+      /* ⚠️ **两头都夹**：rAF 回调收到的 `now` 可能早于上面那句 `performance.now()` ⇒ `p` 变负
+         ⇒ `1-(1-p)³` 也变负 ⇒ 第一帧滚出一个负数（样张实测滚出过 `-6%`）。 */
+      const p = Math.max(0, Math.min(1, (now - t0) / DUR));
+      const txt = fmt(spec.to * (1 - Math.pow(1 - p, 3)), spec.dec, spec.suf);   // easeOutCubic
+      if (el.textContent !== txt) el.textContent = txt;   // 只在真的变了才写，少触发布局
+      if (p < 1) running.set(el, requestAnimationFrame(tick));
+      else settle(el);
+    };
+    running.set(el, requestAnimationFrame(tick));
+  }
+
+  /** 拉队列：**错开 STAGGER 启动、同一时刻最多 MAX_RUN 个在滚**；谁滚完谁让位。 */
+  function pump() {
+    if (pumpTimer) { clearTimeout(pumpTimer); pumpTimer = null; }
+    stats.queued = queue.length;
+    while (queue.length && runningCount < MAX_RUN) {
+      const wait = lastStart + STAGGER - performance.now();
+      if (wait > 0) {
+        pumpTimer = setTimeout(pump, Math.ceil(wait));
+        return;
+      }
+      lastStart = performance.now();
+      runningCount++;
+      stats.running = runningCount;
+      const el = queue.shift();
+      stats.queued = queue.length;
+      stats.starts.push({ t: Math.round(performance.now()) });
+      stats.peak = Math.max(stats.peak, runningCount);
+      start(el);
+    }
+    stats.queued = queue.length;
+    stats.running = runningCount;
+  }
+
+  function play(...roots) {
+    for (const root of roots) {
+      if (!root || played.has(root)) continue;
+      const numbers = [...root.querySelectorAll('[data-count]')];
+      const dots = [...root.querySelectorAll('.penta .pv')];
+      const lit = dots.map((d) => d.classList.contains('on'));   // ⚠️ 要在摘掉之前记下"哪些该亮"
+      const bars = [...root.querySelectorAll('.attbar b')];
+      const rows = [...root.querySelectorAll('.tb tbody tr')];
+      // 空态（还没数据）：**不占位**，将来有数据时仍能播
+      if (!numbers.length && !dots.length && !bars.length && !rows.length) continue;
+      played.add(root);
+
+      let done = false;
+      const finalize = () => {
+        if (done) return;
+        done = true;
+        numbers.forEach((el) => { if (specOf(el)) queue.push(el); });
+        pump();
+        dots.forEach((d, i) => { if (lit[i]) d.classList.add('on'); });
+        bars.forEach((b) => b.classList.add('done'));
+        rows.forEach((tr, i) => {
+          if (reduced()) tr.classList.add('in');
+          else setTimeout(() => tr.classList.add('in'), i < 5 ? i * ROW_STAGGER : 0);
+        });
+      };
+
+      if (reduced()) { finalize(); continue; }   // 降级是"减少不是删掉"：全部直接给终态，功能一样不缺
+
+      // ① **同步**写到"起点"（必须在首绘之前，双 rAF 之后才改终态）
+      numbers.forEach((el) => {
+        if (el.dataset.final === undefined) el.dataset.final = el.textContent;
+        const spec = specOf(el);
+        if (spec) el.textContent = fmt(0, spec.dec, spec.suf);
+      });
+      dots.forEach((d) => d.classList.remove('on'));   // 标记里自带 `.on`，不在首绘前摘掉就"一进来就是满的"
+      rows.forEach((tr) => tr.classList.add('ar'));    // ⚠️ 起点类下到**行**：`tbody` 级会连后来插入的行一起藏住
+      // ②③ 双 rAF（首次绘制那一帧把起点真的画出来）→ 改终态
+      requestAnimationFrame(() => requestAnimationFrame(finalize));
+      setTimeout(finalize, 900);   // 兜底：万一两次 rAF 之间抛错，点阵 / 条不会永远停在起点
+    }
+  }
+
+  return { play };
+})();
+
 const BAND = {
   token: () => localStorage.getItem('band_token'),
   saveToken: (t) => localStorage.setItem('band_token', t),
@@ -664,6 +805,7 @@ const BAND = {
     ['stats.html', '考勤统计', '计', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
     ['approve-leave.html', '请假审批', '批', ['ADMIN', 'LEADER', 'SECTION_LEADER']],
     ['admin-events.html', '活动管理', '理', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER']],
+    ['admin-showcase.html', '专场策展', '专', ['ADMIN']],
     ['admin-members.html', '团员管理', '员', ['ADMIN']],
     ['admin-feedback.html', '反馈管理', '馈', ['ADMIN']],
     ['admin-notes.html', '更新公告', '告', ['ADMIN']],
@@ -678,6 +820,8 @@ const BAND = {
     'piece-detail.html': '曲目详情',
     'concert-detail.html': '演出详情',
     'member-detail.html': '团员主页',
+    // 「我们的专场」的入口是 concerts.html 顶部那个链接，**不占菜单项**（docs/17 §17.5）
+    'showcase.html': '我们的专场',
   },
 
   /**
@@ -965,9 +1109,9 @@ const BAND = {
         const empty = !noAttend && k.rehearsal.expected === 0 && k.sectionClass.expected === 0;
         nums.innerHTML = empty
           ? '<p class="p-empty">完成第一次签到后，这里会出现你的五声点阵</p>'
-          : `<div class="p-num"><b>${this.ratePct(k.rehearsal.rate, k.rehearsal.expected)}</b><span>排练出勤 · 请假 ${k.rehearsal.leave}</span></div>
-             <div class="p-num"><b>${this.ratePct(k.sectionClass.rate, k.sectionClass.expected)}</b><span>声部课出勤 · 请假 ${k.sectionClass.leave}</span></div>
-             <div class="p-num"><b>${k.rehearsal.present + k.sectionClass.present}</b><span>参加场次</span></div>
+          : `<div class="p-num"><b data-count>${this.ratePct(k.rehearsal.rate, k.rehearsal.expected)}</b><span>排练出勤 · 请假 ${k.rehearsal.leave}</span></div>
+             <div class="p-num"><b data-count>${this.ratePct(k.sectionClass.rate, k.sectionClass.expected)}</b><span>声部课出勤 · 请假 ${k.sectionClass.leave}</span></div>
+             <div class="p-num"><b data-count>${k.rehearsal.present + k.sectionClass.present}</b><span>参加场次</span></div>
              <div class="p-num"><b>${me.joinedAt ? this.daysSince(me.joinedAt) : '—'}</b><span>入团天数</span></div>
              <div class="p-num"><b id="p-rec-count">—</b><span>录音条数</span></div>`;
       }
@@ -1001,6 +1145,10 @@ const BAND = {
         }
       }
     } catch (e) { /* 流水失败不阻断 */ }
+    /* 「界面的活性」：这三个数播一次（上面标了 `data-count`）。
+       ⚠️ 「入团天数」属"日期与时间"、录音条数初值是 `—`，按规格 ③ **都不数**，所以没标。
+       ⚠️ 键用**常驻容器 `nums`**（面板每次展开都重建 innerHTML，用里面的 `<b>` 当键会每次都重播）。 */
+    this.alive(nums);
   },
 
   /** 欢迎过渡（docs/14 §14.6.4）：登录成功那次，黑幕上头像与欢迎行飞往页面真实位置。
@@ -1133,9 +1281,25 @@ const BAND = {
     });
   },
 
+  /**
+   * 猫可以**晚一点**来（`docs/14` §14.6.4）：`showcase.html` 的入场编排（约 6s）与全屏看图期间
+   * 必须把它按住——猫的 `z-index` 是 `2147483647`、`position:fixed`，**抬层级打不过它**。
+   * `catHold = true` 期间 `loadCat()` 只记一笔不加载；`releaseCat()` 把它放出来（幂等）。
+   * ⚠️ 用的人要在**每一条**出口都调 `releaseCat()`（收尾 / 跳过 / 降级），漏一条那条路上就永远没有猫。
+   */
+  catHold: false,
+  catPending: false,
+  releaseCat() {
+    this.catHold = false;
+    if (!this.catPending) return;
+    this.catPending = false;
+    this.loadCat();
+  },
+
   /** 萌宠 oneko（docs/14 §14.6.4「页面萌宠」）：登录后所有页、仅桌面。
      matchMedia 不满足时**连脚本都不插**（不是加载了再藏）——触屏没有光标可追。 */
   loadCat() {
+    if (this.catHold) { this.catPending = true; return; }
     if (!window.matchMedia
         || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (document.getElementById('oneko')) return;
@@ -1143,6 +1307,40 @@ const BAND = {
     s.src = '/vendor/oneko/oneko.js';
     s.dataset.cat = '/vendor/oneko/oneko.gif';
     document.body.appendChild(s);
+  },
+
+  /**
+   * 节拍器的一声（练习录音页）：**用户主动发起、持续可控的声音** —— `docs/14` §14.6.6 那张表
+   * 把它和"确认类声音"分开的正是这一点，也是**第四条留痕**讲的"拍点指示不算 idle 动画"的同一条界线。
+   * <p>
+   * ⚠️ **不受 `band_sound` 约束**（**显式例外**，不是漏写）：一个开了却不出声的节拍器，看起来就是坏的。
+   * ⚠️ **复用唯一的 `BAND._ac`** —— 全页只允许一个 `AudioContext`，这里绝不 `new` 第二个。
+   * ⚠️ 包络与 `chime()` 同一路子：**指数衰减**（线性到 0 会爆音）。**重拍高且响、弱拍低**。
+   * @param {boolean} accent 是不是每小节的第 1 拍
+   * @param {number} [when] 排在音频时钟的哪个时刻（lookahead 调度用）；不传＝马上
+   * @returns {number|null} 实际排出去的时刻（秒）；拿不到音频就 `null`
+   */
+  tick(accent, when) {
+    try {
+      if (!this._ac) {
+        this._ac = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ac = this._ac;
+      if (ac.state === 'suspended') ac.resume();
+      const t = Math.max(when || 0, ac.currentTime);
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = accent ? 1600 : 1000;
+      // 起手先给一个极小值再指数爬到峰值：`exponentialRamp` 不接受 0，且这样不会有"咔"的起音
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(accent ? 0.34 : 0.17, t + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.08);
+      return t;
+    } catch (e) { return null; }
   },
 
   /** 签到成功的"确认"声：现场合成，单 AudioContext，指数衰减（§14.6.6）。 */
@@ -1170,7 +1368,17 @@ const BAND = {
     } catch (e) { /* 音频不可用即静默：印章与文字是视觉等价物 */ }
   },
 
+  /**
+   * 「界面的活性」的唯一入口（`docs/14` §14.6.4；算法与取值见 `ALIVE` 那段注释）。
+   * 参数是**常驻容器**（重渲染不重建的那些节点）；数据写完**之后**才调用 ——
+   * 早调会快照到 `—` / 空点阵，而"播过"的标志一置位就**再也不播**了。
+   */
+  alive(...roots) {
+    ALIVE.play(...roots);
+  },
+
   kindLabel: (kind) => ({ REHEARSAL: '排练', SECTION_CLASS: '声部课', DRESS_REHEARSAL: '彩排' }[kind] || kind),
+
   statusLabel: (s) => ({ ACTIVE: '在团', PAUSED: '休团', LEFT: '退团', GRADUATED: '毕业' }[s] || s),
   roleLabel: (r) => ({ ADMIN: '管理员', LEADER: '团长', CONDUCTOR: '指挥', SECTION_LEADER: '声部长', MEMBER: '团员', HONORARY: '荣誉团员' }[r] || r),
   /** 分母为 0（指挥 / 荣誉团员等不参与考勤的人）显示 —，不能显示 0%（docs/05 §5.4）。 */

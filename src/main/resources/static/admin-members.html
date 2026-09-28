@@ -42,7 +42,7 @@
   <h2 class="mb-0">成员列表</h2>
   <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
 </div>
-<table class="tb">
+<table class="tb" id="admin-members-table">
   <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -70,6 +70,27 @@
       <div class="modal-footer py-1">
         <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
         <button class="go go-sm" id="hon-save">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="edit-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body">
+        <p id="edit-title" class="big my-2"></p>
+        <label class="chip mb-1" for="edit-role">角色</label>
+        <select id="edit-role" class="w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-section">声部</label>
+        <select id="edit-section" class="w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-status">状态</label>
+        <select id="edit-status" class="w-100"></select>
+        <p class="chip mt-2">改状态为非「在团」会立即吊销他的登录态。</p>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
+        <button class="go go-sm" id="edit-save">保存</button>
       </div>
     </div>
   </div>
@@ -127,6 +148,11 @@ async function loadRows() {
     });
     tr.children[6].appendChild(joinedInput);
     const action = tr.children[7];
+    // 编辑（docs/03 §3.4 + docs/14 §14.5.1，#79）：角色 / 声部 / 状态。换届、毕业/退团都走它
+    const editBtn = document.createElement('button');
+    editBtn.className = 'go go-ghost go-sm me-1';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => openEditModal(m));
     const resetBtn = document.createElement('button');
     resetBtn.className = 'go go-ghost go-sm me-1';
     resetBtn.textContent = '重置密码';
@@ -153,7 +179,7 @@ async function loadRows() {
       BAND.toast('已更新', 'success');
       loadRows();
     });
-    action.append(resetBtn, kickBtn, toggleBtn);
+    action.append(editBtn, resetBtn, kickBtn, toggleBtn);
     // 荣誉团员（docs/03 §3.4）：仅已毕业可授予；有效期必填，默认毕业后 2 年；续期走同一入口
     if (m.status === 'GRADUATED' && m.role !== 'HONORARY') {
       const grantBtn = document.createElement('button');
@@ -170,6 +196,7 @@ async function loadRows() {
     }
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('admin-members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
 function showPassword(pw) {
@@ -204,6 +231,67 @@ document.getElementById('hon-save').addEventListener('click', async () => {
   bootstrap.Modal.getInstance(document.getElementById('hon-modal')).hide();
   BAND.toast('已保存', 'success');
   loadRows();
+});
+
+// ---------- 编辑弹窗（docs/03 §3.4「管理端『编辑团员』弹窗」，#79）----------
+const EDIT_ROLE_OPTIONS = [
+  ['MEMBER', '团员'], ['SECTION_LEADER', '声部长'], ['CONDUCTOR', '指挥'], ['LEADER', '团长'],
+];
+const EDIT_STATUS_OPTIONS = ['ACTIVE', 'PAUSED', 'LEFT', 'GRADUATED'];
+
+let editMember = null;
+
+function openEditModal(m) {
+  editMember = m;
+  document.getElementById('edit-title').textContent = m.name;
+  // 当前是荣誉团员时角色栏只给两项（docs/03 §3.4 边界③）：它必须配 honorary_until，授予/续期走既有入口
+  const roleOptions = m.role === 'HONORARY'
+    ? [['HONORARY', '荣誉团员（当前）'], ['MEMBER', '团员（撤销荣誉）']]
+    : EDIT_ROLE_OPTIONS;
+  const roleSel = document.getElementById('edit-role');
+  roleSel.innerHTML = roleOptions.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  roleSel.value = m.role;
+  const secSel = document.getElementById('edit-section');
+  secSel.innerHTML = '<option value="">无声部</option>'
+    + sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  secSel.value = m.sectionId == null ? '' : String(m.sectionId);
+  const stSel = document.getElementById('edit-status');
+  stSel.innerHTML = EDIT_STATUS_OPTIONS
+    .map((v) => `<option value="${v}">${BAND.statusLabel(v)}</option>`).join('');
+  stSel.value = m.status;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('edit-modal')).show();
+}
+
+document.getElementById('edit-save').addEventListener('click', async () => {
+  const m = editMember;
+  const body = {};   // 部分更新：只提交改动过的字段（docs/03 §3.4）
+  const role = document.getElementById('edit-role').value;
+  if (role !== m.role) body.role = role;
+  const rawSection = document.getElementById('edit-section').value;
+  const sectionId = rawSection ? Number(rawSection) : null;
+  if (sectionId !== (m.sectionId == null ? null : m.sectionId)) {
+    // 清空声部必须带显式标记——只发 sectionId:null 会被后端当"未提供"（docs/03 §3.4 边界②）
+    if (sectionId === null) body.clearSection = true;
+    else body.sectionId = sectionId;
+  }
+  const status = document.getElementById('edit-status').value;
+  if (status !== m.status) {
+    if (status !== 'ACTIVE'
+        && !confirm(`${m.name} → ${BAND.statusLabel(status)}？\n他会被立即踢下线、不能再登录。`)) return;
+    body.status = status;
+  }
+  if (!Object.keys(body).length) {
+    bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
+    return;
+  }
+  try {
+    await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body });
+  } catch (e) {
+    return;   // 失败不关浮层：BAND.must 已 toast 后端消息原文，改完可直接再点保存（docs/14 §14.5.1）
+  }
+  bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
+  BAND.toast('已保存', 'success');
+  loadRows();   // 后端可能有连带改动：清 honorary_until、写 left_at、吊销 token
 });
 
 // 导出走 fetch 而不是 <a href>：裸链接不带 Authorization 头，永远是 401

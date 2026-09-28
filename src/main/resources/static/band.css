@@ -103,6 +103,19 @@
   src: url("vendor/wenkai/wenkai-name-subset.woff2") format("woff2");
 }
 
+/* 寄语字体（`docs/14` §14.6.5「寄语字体」，专页底部那一句）：
+   **另一档子集、另一个家族名**（`BandMotto`）—— 字符集 = **那句话的全部字符（含标点）**，本次 15 字、**4.7 KB**。
+   ⚠️ **绝不能复用 `BandName`**：那是按名册姓名裁的（114 字），那句话里的字大多不在里面
+   ⇒ 套上去会变成"少数几个字楷体、其余全黑体"的**花脸**。
+   ⚠️ 那句话一改就得重跑 `tools/build_name_font.py --motto "…"`（漏了只是回退黑体、**不报错**）。
+   字重同样**刻意声明 600**（源是 Medium(500)，声明 500 会触发中文伪合成）；同样**不写 `unicode-range`**。
+   来源 / SHA256 / 字符集清单见 `vendor/wenkai/SOURCE.md`。 */
+@font-face {
+  font-family: "BandMotto";
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url("vendor/wenkai/wenkai-motto-subset.woff2") format("woff2");
+}
+
 /* ============ §3 基础排版 ============ */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -641,7 +654,15 @@ html.wel-armed .wel { display: flex; }
 }
 .tb td { padding: 16px 22px 16px 0; }
 .tb th:last-child, .tb td:last-child { padding-right: 0; }
-.tb tbody tr { transition: background-color var(--t-fast) ease-out; }
+/* 「列表逐行入场」（docs/14 §14.6.4「界面的活性」③）：把 opacity/transform **并进**上面那条 hover 过渡，
+   不是替换它。⚠️ 起点类 `.ar` 由 `BAND.alive()` **同步**加在**行**上（加了它才有 opacity:0），
+   所以没有 `.ar` 的行（比如后来才插入的）天然是可见的——**别把起点提到 `.tb tbody` 一级**。 */
+.tb tbody tr {
+  transition: background-color var(--t-fast) ease-out,
+              opacity 260ms var(--ease), transform 260ms var(--ease);
+}
+.tb tbody tr.ar { opacity: 0; transform: translateY(10px); }
+.tb tbody tr.ar.in { opacity: 1; transform: none; }
 .tb tbody tr:hover td { background: var(--cell); }
 
 /* ============ §7.5 表单控件与行内小件（实现期追加，令牌内取值） ============ */
@@ -683,10 +704,33 @@ input:focus, select:focus, textarea:focus {
 /* 五声音阶点阵：出勤不用百分比，用宫商角徵羽点亮几档 */
 .penta { display: flex; gap: 12px; align-items: flex-end; }
 .penta .pv { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.penta .pv i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--pale); display: block; }
-.penta .pv.on i { border-color: var(--wood); background: var(--wood); }
+.penta .pv i { position: relative; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--pale); display: block; }
+/* 「点阵逐点点亮」：点亮走**内层伪元素的 opacity**（`docs/14` §14.6.4「界面的活性」②）。
+   ⚠️ `.pv.on i` 原来那句 `background: var(--wood)` **必须去掉**——填充职责搬到 `::after`，
+   描边仍由 `.on` 立刻给出（它不需要过渡）。留着 background 的话点亮是瞬间填充、看不出生长，
+   而 `background` 本身也不在 §14.6.6 的白名单里（能过渡的只有 transform / opacity / filter）。 */
+.penta .pv i::after {
+  content: ""; position: absolute; inset: 1.5px; border-radius: 50%;
+  background: var(--wood); opacity: 0;
+  transition: opacity var(--t-base) var(--ease);
+}
+.penta .pv.on i::after { opacity: 1; }
+.penta .pv.on i { border-color: var(--wood); }
 .penta .pv em { font-size: 10px; font-style: normal; letter-spacing: .08em; color: var(--mid); }
 .penta .pv.on em { color: var(--deep); }
+
+/* 出勤横条 `.attbar`（docs/14 §14.6.4「界面的活性」④，2026-09-27 新增组件）：真站原本没有任何进度条。
+   只放在"出勤率是主角数字（`.big`）"的地方（stats 每张卡 / events 的 `#att-big` 下方）。
+   ⚠️ 只动 `transform`：`transform-origin: left center` + `scaleX`，**绝不动 `width`**。
+   ⚠️ 常态木色；"异常才朱砂"那一档**判据未定 ⇒ 留白**（见 交接单 §三）。
+   ⚠️ `--r`（比例）由页面内联给出——它是**数据**不是样式，与"别用内联 `style=` 定颜色"那条禁令不冲突。 */
+.attbar { height: 8px; border-radius: 99px; background: var(--pale); overflow: hidden; margin-top: 8px; }
+.attbar b {
+  display: block; height: 100%; border-radius: 99px; background: var(--wood);
+  transform-origin: left center; transform: scaleX(0);
+  transition: transform 520ms var(--ease);
+}
+.attbar b.done { transform: scaleX(var(--r, 0)); }
 
 /* 这周的谱：横轴是星期，块的高低 = 活动类型；空白的日子是简谱的休止符「0」 */
 .score {
@@ -720,10 +764,353 @@ input:focus, select:focus, textarea:focus {
   to { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1) rotate(-2.5deg); }
 }
 
+/* ============ §9.6 我们的专场专页（showcase.html，期 1.7） ============
+   ⚠️⚠️ **只此一页允许"图片驱动的深色底"**（`docs/14` §14.6.4 的决策留痕，明写背离
+   §14.6.2 第 3 条「底色是暖中性白」）。理由：这一页的**内容本身就是照片**，
+   "图片驱动"在这里是**内容**不是装饰。代价已知情接受（全屏图 + 模糊更吃性能、
+   也打破了"一眼是同一个系统"的统一感）。三条边界写死：① **只此一页**，别的页面不许照抄；
+   ② 前景一律走浅色 `--silk` + 压暗层保对比度；③ 字体系统不改（西文/数字仍 plex）。
+   规则与几何在 `17` §17.4 / §17.6，本节只管形态。
+   ⚠️ `showcase.html` 的 `<head>` 里那行 `html{background:#2A1D14}` **别删**——
+   它是不闪白的前提（换纸时首帧必须是黑的），刻意写在 `<link>` 之前。 */
+/* ⚠️ 底**必须是透明的**（不能是 `--shell`）：背景照片层走 `z-index:-1`（负层在
+   "在流内容的背景"之下），body 要是画了不透明底色，照片就被它整个盖住、只剩一片深木色。
+   黑底那份改由 `<head>` 里的 `html{background:…}` 兜（同一块深木，闪不出来）。 */
+body.page-showcase { background: transparent; }
+
+/* 背景层是 `position:fixed; inset:0`。⚠️ **它必须是负层**（`z-index:-1`）：
+   ① 写成 `z-index:0` 它就会盖住**在流内容**——实测页头（欢迎行 + 页标题）整块被照片埋掉，
+      只剩 `.sc-tl`（自己带 `position:relative`）露在外面；
+   ② 负层天然排在别的 positioned 元素下面，不必再去抬谁。
+   ⚠️ 轮播 / 专注层（书面值 600 / 650）仍要**追加到 `body` 上**——那一层要在整页之上。 */
+.sc-bgwrap { z-index: -1; }
+
+/* ⭐ **这一页不要侧的栏，也不要页头**（2026-09-28 用户定：他要正文占满整幅、页面越干净越好）。
+   ⚠️ 一条规则两处生效：桌面那根 92px 图标柱与手机上那条顶栏**都是 `mountSkeleton` 搭进 `.nav-slot` 的**
+   ⇒ 不必写两遍、也不必写媒体查询。⚠️ 藏了它俩之后，这一页的进出门只剩：
+   `concerts.html` 的入口（进）与页尾那行「回归现实」（出）。
+   ⚠️ 页头里那两个入口（反馈 / 更新）与右上角声部随之不显示——**这是有意的**（沉浸页）。
+   ⚠️ `playWelcome()` 的落点量的是「侧栏头像」与「页头欢迎行」，两个都藏了 ⇒ 登录后直接落在这一页时，
+   它走代码里那条"找不到落点就 `finish(0)`"的早退分支、黑幕直接淡掉（**不会卡黑屏**）。 */
+body.page-showcase .nav-slot { display: none; }
+body.page-showcase .head { display: none; }
+
+/* 正文拉满，且**左右内边距对称**：`.main` 自己的是 `36/46/44/34`（左窄右宽），
+   不对称会把中轴**推离视口中线 6px**；这一页的规矩是"中轴钉在**页面**水平正中"（探针按 `vw/2` 量）。
+   侧栏没了以后正文天然占满，这里只是把左右拉齐、并把留白收窄一点（"把屏幕拉伸开"）。 */
+body.page-showcase .main { padding: 36px 24px 44px; }
+
+/* ---- `concerts.html` 顶部那个入口（`17` §17.5）：**文字入口**，不占侧栏菜单项。
+   长得像一句话、不像按钮——它通向的是一段有仪式感的过程，不是一次普通跳转。 */
+.sc-entry {
+  color: var(--wood); text-decoration: none; font-size: 14px;
+  border-bottom: 1px solid var(--pale); padding-bottom: 1px;
+}
+.sc-entry:hover { color: var(--deep); border-bottom-color: var(--wood); }
+
+/* ---- 退出：「回归现实」（`17` §17.4「退出」）----
+   ⭐ **2026-09-28 改成页尾一行**（用户定：放在寄语下面，不固定）。所以这里没有 `position`、
+   没有 `z-index` —— 它在**在流**里，被任何全屏浮层（轮播 600 / 专注 650 / 编排 900）盖住是**天然的**。
+   ⚠️ 代价要说清：规格原文要求 `fixed` 的理由是"这一页很长，滑到 2024 年想走不该先滚回顶上"——
+   **这一条被推翻了**（想走得滑到底）。浏览器后退键仍在，规格侧的改文见 `交接单` §三 `#88`。 */
+.sc-back {
+  display: block; width: fit-content; margin: 0 auto 44px; padding-bottom: 2px;
+  font-size: 13px; letter-spacing: .08em; text-decoration: none;
+  color: rgba(247, 243, 236, .75); border-bottom: 1px solid rgba(247, 243, 236, .35);
+}
+.sc-back:hover { color: var(--silk); border-bottom-color: var(--silk); }
+
+/* ---- 背景：全屏固定的图片层，**越过屏幕中线**就换（`17` §17.4）---- */
+.sc-bgwrap { position: fixed; inset: 0; overflow: hidden; background: var(--shell); }
+/* 两层叠着 = 交叉淡入（新图淡入、旧图淡出）—— 这一下是这一页"高级感"的主要来源，**不是硬切**。
+   `transform` 里顺带放大一点点：免得模糊糊到边缘、露出底色。 */
+.sc-bg {
+  position: absolute; inset: 0; opacity: 0;
+  background: var(--shell) center / cover no-repeat;
+  filter: blur(14px) brightness(.62); transform: scale(1.1);
+  transition: opacity 620ms var(--ease);
+}
+.sc-bg.on { opacity: 1; }
+.sc-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(rgba(20, 14, 10, .5), rgba(20, 14, 10, .74));
+}
+
+/* ---- 时间线：一条淡白线钉在页面水平正中 + 年份左右交替 + 图在年份上方（`17` §17.4）---- */
+.sc-tl { position: relative; padding: 5vh 0 2vh; color: var(--silk); }
+.sc-axis {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; margin-left: -.5px;
+  background: linear-gradient(transparent, rgba(247, 243, 236, .5) 10%,
+                             rgba(247, 243, 236, .5) 90%, transparent);
+}
+/* 节点：初始 `opacity:0` + 下移 26px，进视口回原位（**A · 上浮**，`17` §17.6 定档）。
+   ⚠️ 只动 `transform` / `opacity`（§14.6.6 的硬线）。260ms 是定的档。 */
+.sc-stop {
+  /* ⚠️ **宽度夹了一个上限**（2026-09-28 用户："方块太大、太占屏幕"）：正文拉满整幅之后
+     节点本来是 `50% - 22px`（1280 宽下 594px），太大了 ⇒ 夹到 **480**（`aspect-ratio: 11/5`
+     ⇒ 480×218，正是用户挑的那组数）。窄屏本来就不足 480 ⇒ `min()` 取前者、与从前一模一样。
+     ⚠️ **夹宽度不能只改这一行**：见下面 `nth-of-type` 那两条 —— 靠中轴那一侧必须**永远离中轴 22px**，
+     否则方块被推到容器边上、中轴与方块之间空出一段、那根短横线就接不上轴了。 */
+  --sc-node-w: min(calc(50% - 22px), 480px);
+  position: relative; display: block; width: var(--sc-node-w); margin: 0 0 26vh;
+  padding: 0; border: 0; background: none; font: inherit; color: inherit;
+  text-align: right; cursor: pointer;
+  opacity: 0; transform: translateY(26px);
+  transition: opacity 260ms var(--ease), transform 260ms var(--ease);
+}
+.sc-stop.in { opacity: 1; transform: none; }
+/* ⭐ 左右交替：第 1 个在左、第 2 个在右……
+   ⚠️ 必须用 `nth-of-type`：中轴 `.sc-axis` 是同一个容器的**第 1 个子元素**，
+   用 `nth-child` 会让奇偶整体错开一位（中轴是 div、节点是 button，`of-type` 正好把两者分开）。
+   ⚠️ 贴中轴靠的是**算出来的 margin-left**（不是 `auto`）：`auto` 会先把方块推到容器边上，
+   夹了宽度之后中轴与方块之间就会空出一段（见上面 `--sc-node-w` 那条注释）。
+   两条的口径一致：**靠轴那一侧的边缘离中轴 22px = 那根短横线的长度**。
+   ⚠️ 手机段（§10）用同样的选择器把 `width` 与 `margin` 一起改掉了，且在本文之后 ⇒ 那里照旧是单列铺满。 */
+.sc-stop:nth-of-type(odd) { margin-left: calc(50% - 22px - var(--sc-node-w)); }
+.sc-stop:nth-of-type(even) { margin-left: calc(50% + 22px); text-align: left; }
+/* 从节点伸到中轴的一根短横线 + 轴上的小点 */
+.sc-stop::before, .sc-stop::after { content: ""; position: absolute; bottom: 30px; }
+.sc-stop::before { height: 1px; width: 22px; background: rgba(247, 243, 236, .5); }
+.sc-stop::after {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--silk);
+  box-shadow: 0 0 0 3px rgba(247, 243, 236, .18);
+}
+.sc-stop:nth-of-type(odd)::before { right: -22px; }
+.sc-stop:nth-of-type(odd)::after { right: -26px; bottom: 27px; }
+.sc-stop:nth-of-type(even)::before { left: -22px; }
+.sc-stop:nth-of-type(even)::after { left: -26px; bottom: 27px; }
+
+/* 节点上的图：**用比例、不用固定高**。侧栏藏掉之后正文宽了一整圈（原容器 880px、现在≈全屏），
+   还按 `190px` 会把照片裁成 3:1 的横条；`11/5` 正是定稿那次那 418×190 的形状，
+   手机上（节点 ≈332px 宽）算出来 ≈151px，与原来那个 `150px` 基本一致。
+   `max-height` 只是防超宽屏把图撑成海报（这时候比例会被压扁一点，可接受）。 */
+.sc-stop-img {
+  aspect-ratio: 11 / 5; max-height: 340px;
+  border-radius: 12px; margin-bottom: 14px;
+  background: var(--shell) center / cover no-repeat;
+}
+.sc-yr { font-size: 27px; font-weight: 600; letter-spacing: .1em; line-height: 1.2;
+  color: var(--silk); font-variant-numeric: tabular-nums; }
+.sc-nm { font-size: 13px; color: rgba(247, 243, 236, .62); margin-top: 2px; }
+
+.sc-empty { text-align: center; font-size: 14px; color: rgba(247, 243, 236, .62); padding: 10vh 0; }
+/* 底部寄语：居中、**安静**（不是主角格那种体量）。字体见 §14.6.5「寄语字体」 */
+.sc-motto {
+  margin: 46px 0 60px; text-align: center; opacity: .92;
+  font-family: "BandMotto", var(--font-ui); font-weight: 600;
+  font-size: 19px; line-height: 1.8; letter-spacing: .06em; color: var(--silk);
+}
+
+/* ---- 入场编排（`docs/14` §14.6.4「我们的专场专页」）：黑幕合拢 → 搜索框升起 → 打字 → 模拟搜索
+   → 飞到标题 → 揭幕。⚠️ 整段约 6s，**远超** §14.6.6 的"页面切换 300–500ms" ⇒ 那边开了
+   **第六条留痕**；写死的边界是：**可跳过** / **只此一处** / reduced-motion **整段跳过**
+   （这段里没有任何功能，纯装饰——"减少"原则保护的是功能，跳过它一个功能都不少）。
+   ⚠️ **拆两页演**：A 段（合拢 + 升起）跑在 `concerts.html`，**黑透之后才换纸**；
+   B 段在 `showcase.html` 接着演 ⇒ 这一页的遮罩**首帧就必须是合上的**（见下面的 `sc-intro-on`）。
+   ⚠️ `z-index` 用**书面值 900**（> 轮播 600 / 专注 650，< toast 2000）。 */
+.sc-intro {
+  position: fixed; inset: 0; z-index: 900; overflow: hidden; display: none;
+  /* ⚠️ 层本身**不接点击**：否则它会把整个视口都算作"命中自己"，也没法判断"黑幕合上没有"。
+     接点击的是黑幕与搜索框；"点任意处跳过"挂在 document 上。 */
+  pointer-events: none;
+  --sc-fly: 1100ms;
+}
+/* 显示的两条路：B 段由**解析期挂在 `documentElement` 上**的 `sc-intro-on` 打开
+   （读到这里时首帧还没画 ⇒ **首帧就是黑的**，A 段换纸那一下被藏在黑里）；
+   A 段由 JS 在点了确认之后加 `on`。⚠️ JS 完全没跑 ⇒ 一直是 `display:none`、页面直接可用。 */
+.sc-intro-on .sc-intro-b, .sc-intro-a.on { display: block; }
+
+/* 四块黑幕从四周合拢（先各自平移到视口外，加 `masked` 后回到 0） */
+.sc-mask {
+  position: absolute; inset: 0; background: var(--shell); pointer-events: auto;
+  transition: transform 400ms var(--ease);
+}
+.sc-mask.m-t { transform: translateY(-100%); }
+.sc-mask.m-b { transform: translateY(100%); }
+.sc-mask.m-l { transform: translateX(-100%); }
+.sc-mask.m-r { transform: translateX(100%); }
+.sc-intro.masked .sc-mask { transform: none; }
+/* ⚠️ B 段"接上 A 段"的那一刻**不许有过渡**：那是"已经合上了"的结果，不是动画出来的
+   （不带这条的话，`display:none → block` 那一下可能被浏览器补一段过渡，露出底下的页面）。
+   `sc-intro-pre` **整段编排期间都留着**：这一页的遮罩从头到尾都不该动，淡出走的是整层的 `opacity`。 */
+.sc-intro-pre .sc-mask { transition: none; }
+
+/* 搜索框：白色圆角条，从下方升起（与黑幕**同时**，两件一起 400ms） */
+.sc-sbox {
+  position: absolute; left: 50%; top: 50%;
+  --sc-sw: min(72vw, 520px); --sc-sh: 60px;
+  width: var(--sc-sw); height: var(--sc-sh);
+  margin: calc(var(--sc-sh) / -2) 0 0 calc(var(--sc-sw) / -2);
+  display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  background: #fff; border-radius: 999px; box-shadow: 0 18px 50px rgba(0, 0, 0, .42);
+  pointer-events: auto;
+  transform: translateY(300%);
+  transition: transform 400ms var(--ease), opacity 400ms var(--ease);
+  will-change: transform;
+}
+.sc-intro.risen .sc-sbox { transform: none; }
+.sc-intro.flying .sc-sbox { transition: transform var(--sc-fly) var(--ease), opacity 400ms linear; }
+.sc-intro.sc-gone .sc-sbox { opacity: 0; }
+/* 整层淡出（规格写的是"框与黑幕淡出"；样张是 `display:none` 硬切，这里补上那一档） */
+.sc-intro.sc-gone { opacity: 0; transition: opacity 400ms linear; }
+
+.sc-sicon { flex: 0 0 auto; width: 20px; height: 20px; stroke: var(--mid); fill: none;
+  stroke-width: 2; transition: stroke 240ms linear; }
+.sc-intro.searching .sc-sicon { stroke: var(--cinna); }        /* 模拟搜索：放大镜亮一下 */
+
+.sc-swrap { position: relative; flex: 1 1 auto; height: 100%; }
+/* ⚠️ 打字的做法：整串字**一开始就排好**（每个字一个 span），打字 = 逐个把 `opacity` 从 0 变 1。
+   **不许靠改文字宽度**——那是布局属性，违反"只动 transform / opacity / filter"。 */
+.sc-stext { position: absolute; left: 0; top: 0; height: 100%; display: flex; align-items: center;
+  font-size: 19px; color: var(--deep); letter-spacing: .04em; pointer-events: none; }
+.sc-stext .sc-ch { opacity: 0; transition: opacity 90ms linear; }
+.sc-stext .sc-ch.on { opacity: 1; }
+.sc-caret { position: absolute; left: 0; top: 50%; width: 2px; height: 20px; margin-top: -10px;
+  background: var(--deep); will-change: transform; }
+/* ⚠️ 光标**只在编排期间闪**（编排一结束就不再挂这个类）——不然就是一个常驻的 idle 循环动画 */
+.sc-intro.blink .sc-caret { animation: scCaretBlink 900ms steps(1, end) infinite; }
+@keyframes scCaretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+/* ⭐ 模拟搜索：框下走一条细进度线 */
+.sc-sline {
+  position: absolute; left: 18px; right: 18px; bottom: 6px; height: 2px;
+  background: var(--cinna); border-radius: 2px;
+  transform-origin: left center; transform: scaleX(0);
+  opacity: 0; transition: opacity 160ms linear;
+}
+.sc-intro.searching .sc-sline {
+  opacity: .85; transform: scaleX(1);
+  transition: transform 600ms linear, opacity 160ms linear;
+}
+.sc-skip { position: absolute; left: 0; right: 0; bottom: 22px; text-align: center;
+  color: rgba(247, 243, 236, .42); font-size: 12px; letter-spacing: .12em; }
+
+/* 猫让位（**同一个坑第三次**，前两次见 §14.6.4「更新公告弹层」的四者顺序 与 §14.6.6 第一条留痕）：
+   `oneko` 是 `position:fixed` + `z-index: 2147483647` ⇒ **抬层级打不过它**，只能在浮层开着时把它
+   **藏起来**。`body.cat-off` 由页面在"入场编排 / 轮播 / 专注单图"打开期间加上。 */
+body.cat-off #oneko { display: none; }
+
+/* ---- 弧带轮播 + 专注单图（`docs/17` §17.6）----
+   ⚠️⚠️ **"椭圆"是"裁"出来的、不是"排"出来的**（这条是本页最要紧的认识，白做过两轮）：
+   照片**全部同尺寸、一律直立**排成一条普通横带，真正让它看起来是弧的，是带子上一层
+   **上下双弧的遮罩** —— 同一根直带子被裁弯了。**排布是平的，"弧"是裁剪的错觉。**
+   一开始按"每张摆到椭圆轨迹上 + 逐张缩放 + 前后景深"做，用户对照参考后判为"不是我想要的效果"。
+   ⚠️ **弧的形态：中轴满高、两翼对称收窄**（2026-09-27 改过一次、**方向反了过来**）：老版把"腰"
+   放在**屏幕正中** ⇒ 正中间那张被上下各削 ~25%、两翼陡起把侧边照片斜切一刀，用户判为
+   "**这中间的形状不知道被扭曲成啥样了**"。**中段本来放的就是主角照片，把中段压掉等于切主角。**
+   几何：`viewBox 0 0 1000 400` + `preserveAspectRatio="none"`；完整窗口 x∈[240,760]
+   （中间 **52%** 宽、**满高**）；两翼到 x=0/1000 收到 **82 单位**（带高的 20.5%）；
+   卡片宽 `min(46vw,400px)`（最宽时正好占 46% 屏宽 ⇒ 任何屏宽下中间那张都整个落在窗口里）。
+   ⚠️ 掩膜**固定在屏幕上、不随带子平移** ⇒ 跨在收窄段上的侧边照片**左右两端被削的深度不等**、
+   仍有一点点斜切 —— 那是"带子弯开去"本身带的、不是 bug，现在又浅又缓。
+   ⚠️ `mask` **不进命中测试**（Chromium 是绘制期效果）⇒ "那道弧真的在裁"只能用**像素取样**验。 */
+.sc-stage {
+  position: fixed; inset: 0; z-index: 600; overflow: hidden;
+  background: rgba(20, 14, 10, .93); opacity: 0; pointer-events: none;
+  transition: opacity 220ms linear;
+  /* ⚠️ 拖动面必须禁掉文字选中与原生拖拽：否则浏览器会把指针序列抢去划选文字，
+     表现是"只收到一两次 `pointermove` 就断了"，而且**不报任何错**。 */
+  user-select: none; -webkit-user-select: none; cursor: grab;
+  --sc-card-w: min(46vw, 400px);
+  --sc-card-h: min(26vw, 300px);
+  --sc-gap: 22px;
+  --sc-band-h: calc(var(--sc-card-h) / .72);   /* 卡片占带高 72% ⇒ 上下各留 14% */
+  --sc-arc: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 400' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0,82 C76,45 152,0 240,0 L760,0 C848,0 924,45 1000,82 L1000,318 C924,355 848,400 760,400 L240,400 C152,400 76,355 0,318 Z'/%3E%3C/svg%3E");
+}
+.sc-stage.open { opacity: 1; pointer-events: auto; }
+.sc-stage.dragging { cursor: grabbing; }
+/* 关闭按钮与底部提示**摆在不同位置**（别靠抬层级去抢） */
+.sc-stage .sc-cls {
+  position: absolute; top: 14px; right: 16px; z-index: 700;
+  font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--silk); border: 1px solid rgba(247, 243, 236, .5);
+}
+.sc-stage .sc-tip { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center;
+  color: rgba(247, 243, 236, .6); font-size: 12px; }
+
+/* 带子：一条平带子 + 一道弧形遮罩；FLIP（方块 → 轮播）作用在**外壳**上，连那道弧一起长出来 */
+.sc-bandwrap {
+  position: absolute; left: 0; right: 0; top: 50%; height: var(--sc-band-h);
+  margin-top: calc(var(--sc-band-h) / -2); will-change: transform, opacity;
+  transition: transform 420ms var(--ease), opacity 320ms var(--ease);
+}
+.sc-band {
+  position: absolute; inset: 0; overflow: hidden;
+  -webkit-mask: var(--sc-arc) center / 100% 100% no-repeat;
+          mask: var(--sc-arc) center / 100% 100% no-repeat;
+}
+/* ⚠️ 整条带子靠 `translateX` 平移（**不许用 `left`** —— 全站硬规矩：只动 transform / opacity / filter）；
+   ⚠️ `touch-action: pan-y` 别漏：横向归自己、纵向留给页面滚动 */
+.sc-strip {
+  position: absolute; height: 100%; display: flex; align-items: center; gap: var(--sc-gap);
+  touch-action: pan-y; will-change: transform;
+}
+/* 卡片：**同宽同高、无缩放无旋转** —— 弧是遮罩的事，不是卡片的事 */
+.sc-ph {
+  flex: 0 0 auto; width: var(--sc-card-w); height: var(--sc-card-h);
+  border-radius: 12px; background: var(--shell) center / cover no-repeat;
+  position: relative; overflow: hidden;
+}
+.sc-ph .sc-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 10px; font-size: 11px;
+  color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .55));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- 专注单图：点一张 → 放大 + 文案全文（⚠️ 退出回到**刚才那张**） ---- */
+.sc-focus {
+  position: fixed; inset: 0; z-index: 650; background: rgba(12, 8, 6, .97);
+  display: flex; align-items: center; justify-content: center; gap: 26px; flex-wrap: wrap;
+  padding: 26px; opacity: 0; pointer-events: none; transition: opacity 240ms linear;
+}
+.sc-focus.open { opacity: 1; pointer-events: auto; }
+.sc-focus .sc-big {
+  width: min(62vw, 620px); height: min(58vh, 420px); border-radius: 14px;
+  background: var(--shell) center / cover no-repeat;
+  transform: scale(.94); transition: transform 260ms var(--ease);
+}
+.sc-focus.open .sc-big { transform: scale(1); }
+.sc-focus .sc-note { max-width: 330px; color: var(--silk); font-size: 14px; line-height: 1.9;
+  white-space: pre-wrap; }
+.sc-focus .sc-who { font-size: 12px; color: rgba(247, 243, 236, .55); letter-spacing: .14em;
+  margin-bottom: 8px; }
+.sc-focus .sc-cls {
+  position: absolute; top: 14px; right: 16px; z-index: 700;
+  font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--silk); border: 1px solid rgba(247, 243, 236, .5);
+}
+
+/* ---- 节拍器（练习录音页，`docs/08` §8.4）：面板 + 拍点指示 ----
+   ⚠️ **拍点指示不是 idle 动画**（`docs/14` §14.6.6 第四条留痕）：它由用户主动开始/停止、
+   每闪一下对应**一拍**、只动 `transform`/`opacity`。**它不能当"可以加 idle 动画"的先例。**
+   ⚠️ reduced-motion 下**只降级视觉、绝不静音**（降级管的是动画，不是音频）——见 §11。 */
+.metro { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--pale); }
+.metro .lab .chip { font-weight: 400; }
+.metro-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin: 10px 0 12px; }
+.metro-f { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mid); margin: 0; }
+.metro-f input[type="number"] { width: 74px; }
+.metro-ck input { margin-right: 4px; }
+/* 一拍一个点：常态是细描边的空点，当前拍实心、**重拍（第一个点）更大更深** */
+.metro-dots { display: flex; gap: 10px; align-items: center; height: 22px; }
+.metro-dots i {
+  display: block; width: 11px; height: 11px; border-radius: 50%;
+  border: 1.5px solid var(--pale); background: transparent;
+  transform: scale(1); transition: transform var(--t-fast) ease-out, background-color var(--t-fast) ease-out;
+}
+.metro-dots i:first-child { width: 14px; height: 14px; border-color: var(--edge); }
+.metro-dots i.on { background: var(--wood); border-color: var(--wood); transform: scale(1.25); }
+.metro-dots i:first-child.on { background: var(--cinna); border-color: var(--cinna); }
+#m-hint { margin-top: 10px; }
+
 /* ============ §10 手机 ============ */
+/* ⚠️ **本节即将被重写**：手机端形态已 **2026-09-28 定稿 = 抽屉（汉堡）**，
+   规格见 `docs/14` §14.6.4「**手机端（≤720px）**」（含分组归属表 / 当前项高亮 / 密度 / 卡片行 / 四样手感）。
+   本节下面那块是**旧形态**，实现方按新规格改；**旧文与旧理由保留不删**（见下面第一句注释）。
+   ⚠️ 与形态无关、**无论怎么改都成立**的一条：`.railwrap` 的 `position: static`（见本节末尾那条注释）。 */
 @media (max-width: 720px) {
   /* 手机端形态待定（docs/00 T9），先照旧：顶部一条横排、常显、不裁切。
-     悬停展开在触屏上不生效，预留位在窄屏上没有意义，全部放开。 */
+     悬停展开在触屏上不生效，预留位在窄屏上没有意义，全部放开。
+     ——【2026-09-28 留痕】T9 已结案，形态定为**抽屉**；这段话与它下面的规则是**旧形态**，别当成依据。 */
   .layout { display: block; }
   .nav-slot { display: block; }
   /* ⚠️ `position: static` 不能少（docs/14 §14.6.4「移动端」）：手机段给了 `height: auto`，
@@ -748,12 +1135,64 @@ input:focus, select:focus, textarea:focus {
   .cell.hero, .cell.wide, .cell.s1, .cell.s2 { grid-area: auto; }
   .hero h2 { font-size: 27px; }
   .tb th, .tb td { padding-right: 14px; }
+
+  /* ---- 专场专页（`docs/14` §14.6.4）：这一页是"手机上看得多"的页面 ----
+     中轴**靠左**、节点单列铺满（左右交替在半屏宽下会把图和年份都挤成一条）。
+     ⚠️ 这是手机上唯一一处偏离"中线钉在正中"的地方，形态写在 `docs/14`，不是实现方自选。 */
+  body.page-showcase .main { padding: 22px 16px 30px; }
+  .sc-tl { padding: 3vh 0 0; }
+  .sc-axis { left: 18px; }
+  /* ⚠️ 宽度要**显式**写出来（`calc(100% - 26px)`），不能写 `width:auto`：
+     `<button>` 的 `auto` 是"贴内容"（实测缩到 64px），这一格是**铺满**。 */
+  .sc-stop, .sc-stop:nth-of-type(odd), .sc-stop:nth-of-type(even) {
+    width: calc(100% - 26px); margin: 0 0 16vh 26px; text-align: left;
+  }
+  .sc-stop:nth-of-type(odd)::before, .sc-stop:nth-of-type(even)::before { right: auto; left: -26px; }
+  .sc-stop:nth-of-type(odd)::after, .sc-stop:nth-of-type(even)::after { right: auto; left: -30px; }
+  .sc-stop-img { max-height: none; }        /* 手机上按比例算出来就≈151px，不需要那个上限 */
+  .sc-yr { font-size: 23px; }
+  .sc-motto { margin: 30px 0 34px; font-size: 17px; }
+  .sc-back { margin-bottom: 30px; }         /* 手机也是页尾一行（顶栏在这一页已经不显示了） */
+
+  /* ---- 节拍器（`docs/14` §14.6.4「练习录音页」）：手机上**单列铺开、按钮整行** ---- */
+  .metro-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .metro-f { justify-content: space-between; }
+  .metro-f input[type="number"] { width: 96px; }
+  .metro-ck { justify-content: flex-start; }
+  #m-toggle { width: 100%; }
+}
+
+/* ---- 专场策展页（`admin-showcase.html`）：候选 / 已选图的缩略图方块 ----
+   方块封面 = 顺序里第一张（页面上给它标「第 1 张（方块封面）」，不另设"指定封面"字段）。 */
+.sc-thumb {
+  width: 132px; height: 88px; border-radius: 10px;
+  background: var(--pale) center / cover no-repeat;
 }
 
 /* ============ §11 降级 ============ */
 @media (prefers-reduced-motion: reduce) {
   .railwrap { transition-duration: 0s; }
+  /* `.tb tbody tr` 已在下面那条里；这里再补「界面的活性」新加的两处过渡（点阵内层 / 出勤横条）。
+     ⚠️ 正常情况下 JS 侧已经保证 reduced 下直接给终态（`ALIVE.play` 的降级分支），这里是兜底。 */
   .go, .tb tbody tr { transition: none; }
+  .penta .pv i::after, .attbar b { transition: none; }
+  /* 专场专页（`17` §17.6）：节点**不做浮现**（直接把终态给它，别再等视口）；
+     背景图**仍然在、仍然要换**，只是不做那 620ms 的交叉淡入 —— 降级是"减少"不是"删掉"。 */
+  .sc-stop { opacity: 1; transform: none; transition: none; }
+  .sc-bg { transition: none; }
+  /* 入场编排是**整段跳过**（不是"减少"）：这一段里没有任何功能、纯装饰，
+     而"减少"原则保护的是功能 ⇒ 一帧黑幕都不出（`17` §17.6 / §14.6.6 第六条留痕）。
+     ⚠️ JS 侧也会早退，这条是兜底（防"日后有人动了那个早退条件"）。 */
+  .sc-intro { display: none !important; }
+  /* 节拍器的**拍点指示**改成**瞬时变色**（不做缩放/闪烁）——
+     ⚠️ **但声音不许静音**：降级管的是动画，不是音频（`docs/14` §14.6.6 降级清单 ⑥）。 */
+  .metro-dots i { transition: none; }
+  .metro-dots i.on { transform: none; }
+  /* 轮播 / 专注单图：**仍然能开、仍然能拖**（功能一样不缺），只是不做那几段过渡
+     —— 降级是"减少"不是"删掉"（`17` §17.6 结尾）。FLIP 的淡入也变直接到位。 */
+  .sc-stage, .sc-focus, .sc-bandwrap, .sc-focus .sc-big { transition: none; }
+  .sc-bandwrap { opacity: 1 !important; }
+  .sc-focus .sc-big { transform: none !important; }
   /* 跨文档页面过渡也要降级（docs/14 §14.6.6：reduced-motion 必须降级） */
   ::view-transition-group(*),
   ::view-transition-old(*),

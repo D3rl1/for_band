@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我们的专场 · 乐团管理系统</title>
+<!-- ⚠️ **先铺黑底**（docs/14 §14.6.4）：入场编排是拆两页的，A 段在 concerts.html 上把黑幕合拢、
+    黑透之后才换纸到这一页 —— 首页首帧若不是黑的，换纸那一下就会**闪一下白**，整段就散了。
+     写在 `<link>` 之前，保证第一帧就生效。 -->
+<style>html { background: #2A1D14; }</style>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/app.js"></script>
+<script>
+/* 入场编排里**必须在解析期做完的两件事**（黑幕要首帧就在、猫要等编排结束再出现）：
+   ⚠️ `<head>` 脚本**不能碰 `document.body`**（解析期它是 `null`，一碰就抛异常、整个脚本静默中断
+   —— 本项目栽过一次，症状离得极远）。所以这里只动 `documentElement`。 */
+document.documentElement.classList.add('sc-intro-on');
+BAND.catHold = true;      // 猫的 z-index 是 2147483647，编排期间不让它加载（见 app.js 的 catHold）
+// 安全阀：主脚本万一抛异常，12 秒后也要把黑幕撤掉、把猫放出来 —— 否则用户被锁在黑屏里。
+setTimeout(function () {
+  document.documentElement.classList.remove('sc-intro-on');
+  document.body.classList.remove('cat-off');
+  if (typeof BAND !== 'undefined') BAND.releaseCat();
+}, 12000);
+</script>
+</head>
+<body class="page-showcase">
+<div id="navbar"></div>
+
+<!-- ⭐ 入场编排 B 段（**A 段在 `concerts.html` 上把黑幕合拢 + 搜索框升起，黑透之后才换纸到这一页**）。
+     ⚠️ 首帧就必须是"黑幕已合上 + 框已在中位" ⇒ 这里**静态**写着 `sc-intro-pre masked risen`
+     （配合 `<head>` 里解析期加的 `sc-intro-on`），B 段只演"打字及其后"。
+     ⚠️ 一个可选的小台阶都没有：`sc-intro-on` 不在 ⇒ 这一层 `display:none`、页面直接可用（优雅降级）。 -->
+<div class="sc-intro sc-intro-b sc-intro-pre masked risen blink" id="sc-intro" data-phase="pre">
+  <div class="sc-mask m-t"></div>
+  <div class="sc-mask m-b"></div>
+  <div class="sc-mask m-l"></div>
+  <div class="sc-mask m-r"></div>
+
+  <div class="sc-sbox">
+    <svg class="sc-sicon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>
+    </svg>
+    <div class="sc-swrap">
+      <!-- ⚠️ 整串字**一开始就排好**（每字一个 span），打字 = 逐个把 `opacity` 从 0 变 1 ——
+           **不许靠改文字宽度**（那是布局属性，违反"只动 transform / opacity / filter"） -->
+      <span class="sc-stext" id="sc-t1"><span class="sc-ch">专</span><span class="sc-ch">场</span></span>
+      <span class="sc-stext" id="sc-t2"><span class="sc-ch">我</span><span class="sc-ch">们</span><span class="sc-ch">的</span><span class="sc-ch">专</span><span class="sc-ch">场</span></span>
+      <span class="sc-caret" id="sc-caret"></span>
+    </div>
+    <span class="sc-sline" id="sc-sline"></span>
+  </div>
+
+  <div class="sc-skip">点任意处 / Esc 跳过</div>
+</div>
+
+<!-- ⭐ 退出：「回归现实」（docs/17 §17.4「退出」）——**一个普通链接**回网站首页，
+     不需要 JS / 端点 / 权限。⚠️ 位置在**页面最下方**（寄语下面），见文件末尾那一行：
+     2026-09-28 用户定"放到最下方"，所以它**不在**这里、也不固定。 -->
+
+<!-- 背景层：当前年份那张图的**放大版**（全屏固定 + 压暗 + 轻微模糊）。
+     ⚠️ 两层叠着做**交叉淡入**，不是硬切 —— `data-year` 是"现在显示的是哪一年"的唯一判据。 -->
+<div class="sc-bgwrap" id="sc-bg" data-year="">
+  <div class="sc-bg" id="sc-bg1"></div>
+  <div class="sc-bg" id="sc-bg2"></div>
+  <div class="sc-scrim"></div>
+</div>
+
+<!-- 时间线：一个时间点 = 一个年份（节点由 JS 按 docs/17 §17.3 的 timeline 建）。
+     ⚠️ 中轴是容器的第一个子元素 ⇒ 左右交替必须用 `nth-of-type`（见 band.css）。 -->
+<div class="sc-tl" id="sc-tl">
+  <div class="sc-axis"></div>
+</div>
+<p class="sc-empty" id="sc-empty" hidden>还没有上时间线的专场。</p>
+
+<p class="sc-motto">我们的故事尚未完结，敬请期待…</p>
+
+<!-- ⭐ 退出：「回归现实」（`docs/17` §17.4「退出」，2026-09-28 改成页尾一行）——
+     **一个普通链接**回网站首页（不需要 JS / 端点 / 权限）；放在寄语下面，**在流**、不固定
+     （所以任何全屏浮层——轮播 600 / 专注 650 / 编排 900——天然把它盖住，不用管层级）。 -->
+<a class="sc-back" href="/index.html">回归现实</a>
+
+<!-- 轮播层（docs/17 §17.6）：点时间线上的方块 → **整条带子从那张封面长出来、落到屏幕中央**。
+     ⚠️ 它与专注层在脚本开头被**移到 `body` 上**（照 `announce()` 的先例）：全屏浮层不参与正文流，
+     层级也不用跟侧栏那条 `z-index: 2` 纠缠。 -->
+<div class="sc-stage" id="sc-stage">
+  <button class="sc-cls" id="sc-stage-close" type="button">关闭</button>
+  <div class="sc-bandwrap" id="sc-bandwrap">
+    <div class="sc-band"><div class="sc-strip" id="sc-strip"></div></div>
+  </div>
+  <div class="sc-tip">← 左右拖动 / 滑动 →　·　轻点一张看文案</div>
+</div>
+
+<!-- 专注单图（点轮播里的一张 → 放大 + 文案全文；**退出回到刚才那张**） -->
+<div class="sc-focus" id="sc-focus">
+  <button class="sc-cls" id="sc-focus-close" type="button">关闭</button>
+  <div class="sc-big" id="sc-big"></div>
+  <div class="sc-note"><div class="sc-who">策展文案</div><div id="sc-note-tx"></div></div>
+</div>
+
+<script>
+'use strict';
+
+const urls = new Map();          // fileId → Promise<blob URL>：封面 / 轮播图共用，`pagehide` 统一收回
+const els = {
+  tl: document.getElementById('sc-tl'),
+  empty: document.getElementById('sc-empty'),
+  bg: document.getElementById('sc-bg'),
+  layers: [document.getElementById('sc-bg1'), document.getElementById('sc-bg2')],
+};
+
+/** 取图（走带 Bearer 的 blob 口子；裸 `<img src="/api/files/…">` 永远 401）。同一 fileId 只取一次。
+    ⚠️ **别做成"关轮播就 revoke"**：背景层用的封面很可能就是同一张图（同一个 fileId）。 */
+function photoUrl(fileId) {
+  if (!urls.has(fileId)) urls.set(fileId, BAND.fileBlobUrl(fileId).catch(() => null));
+  return urls.get(fileId);
+}
+// blob URL 用完要收回，否则切来切去会把整批照片都留在内存里
+window.addEventListener('pagehide', () => {
+  urls.forEach((p) => p.then((u) => { if (u) URL.revokeObjectURL(u); }));
+});
+
+function buildStops(nodes) {
+  for (const n of nodes) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sc-stop';
+    b.dataset.year = String(n.year);
+    const img = document.createElement('div');
+    img.className = 'sc-stop-img';
+    img.dataset.fileId = String(n.coverFileId);   // 背景层按它取同一张图（一年只取一次 blob）
+    const yr = document.createElement('div');
+    yr.className = 'sc-yr';
+    yr.textContent = String(n.year);
+    const nm = document.createElement('div');
+    nm.className = 'sc-nm';
+    nm.textContent = n.photoCount + ' 张照片';
+    b.append(img, yr, nm);
+    els.tl.appendChild(b);
+    photoUrl(n.coverFileId).then((u) => { if (u) img.style.backgroundImage = 'url(' + u + ')'; });
+    // 点它 → 取这一年的图 → **从这张封面的矩形**长出来（FLIP 的起点是"封面图"，不是整个方块）
+    b.addEventListener('click', () => {
+      const rect = img.getBoundingClientRect();
+      openYear(n.year, rect);
+    });
+  }
+}
+
+/** 浮现（定档 A · 上浮，docs/17 §17.6）：初始 opacity:0 + translateY(26px)，进视口回原位。
+    `rootMargin` 下边收 12% —— 不收的话"刚沾到屏幕下缘"就算进来，滚动时会看到它半露着开始动。 */
+function reveal() {
+  const stops = [...els.tl.querySelectorAll('.sc-stop')];
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    stops.forEach((s) => s.classList.add('in'));      // 降级：不做浮现，但节点一样都在
+    return;
+  }
+  const io = new IntersectionObserver((es) => {
+    es.forEach((e) => { if (e.isIntersecting) e.target.classList.add('in'); });
+  }, { rootMargin: '0px 0px -12% 0px' });
+  stops.forEach((s) => io.observe(s));
+}
+
+/** 背景换图（docs/17 §17.4）：判据 = **节点中心越过视口中线**，取"最后一个已越过的"；
+    页面刚打开时取第一个。交叉淡入 = 让另一层来淡入、旧层淡出（不是硬切）。 */
+const bgState = { top: 0, shown: null };
+function syncBg() {
+  const stops = [...els.tl.querySelectorAll('.sc-stop')];
+  if (!stops.length) return;
+  const mid = window.innerHeight / 2;
+  let cur = stops[0];
+  for (const s of stops) {
+    const r = s.getBoundingClientRect();
+    if (r.top + r.height / 2 <= mid) cur = s;
+  }
+  const year = cur.dataset.year;
+  if (year === bgState.shown) return;
+  bgState.shown = year;
+  const next = 1 - bgState.top;
+  const fileId = Number(cur.querySelector('.sc-stop-img').dataset.fileId);
+  photoUrl(fileId).then((u) => {
+    const layer = els.layers[next];
+    // ⚠️ 改完要**逼一帧**再淡入，否则浏览器把"设图 + 加 class"合成一步、过渡根本不跑
+    if (u) layer.style.backgroundImage = 'url(' + u + ')';
+    void layer.offsetWidth;
+    layer.classList.add('on');
+    els.layers[bgState.top].classList.remove('on');
+    bgState.top = next;
+    els.bg.dataset.year = year;       // 挂出来：这是"什么时候换"唯一的可量判据
+  });
+}
+let bgRaf = null;
+function onScroll() {
+  if (bgRaf) return;
+  bgRaf = requestAnimationFrame(() => { bgRaf = null; syncBg(); });
+}
+window.addEventListener('scroll', onScroll, { passive: true });
+window.addEventListener('resize', onScroll);
+
+/* ---------- 入场编排 B 段（docs/14 §14.6.4；形态的真值 = design-samples/showcase-mock.html）
+   ⚠️ 这是全项目**唯一**允许的"长转场"（约 6s，远超 §14.6.6 的 300–500ms）——那边开了
+   **第六条留痕**，边界写在 `17` §17.6：**可跳过** / **只此一处** / **每次都播**（不去重）/
+   reduced-motion **整段跳过**（这段没有任何功能，纯装饰）。
+   ⚠️ `z-index` 是书面值 900；猫在 `<head>` 里就被按住了（`BAND.catHold`）。 */
+const INTRO = { ch: 280, hold: 240, search: 600, fly: 1100, fade: 400 };
+const intro = document.getElementById('sc-intro');
+const caret = document.getElementById('sc-caret');
+const chars1 = [...document.querySelectorAll('#sc-t1 .sc-ch')];
+const chars2 = [...document.querySelectorAll('#sc-t2 .sc-ch')];
+let introTimers = [];
+let introDone = false;
+let w1 = [];
+let w2 = [];
+
+// 探针读这个（别逐帧采样：Windows 上 rAF 会被饿死，量出来全是假象——见 debug_log 2026-09-27）
+window.__scIntro = { phases: [] };
+function mark(phase, typed) {
+  intro.dataset.phase = phase;
+  window.__scIntro.phases.push({ phase: phase, typed: typed == null ? -1 : typed });
+}
+function at(ms, fn) { introTimers.push(setTimeout(fn, ms)); }
+function clearIntro() { introTimers.forEach(clearTimeout); introTimers = []; }
+
+/** 打字**不改文字宽度**：整串字先排好，逐字只切 `opacity`；光标只动 `transform`（逐字步进）。 */
+function showChars(list, n) { list.forEach((c, i) => c.classList.toggle('on', i < n)); }
+function moveCaret(widths, n) {
+  let x = 0;
+  for (let i = 0; i < n; i++) x += widths[i] || 0;
+  caret.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
+}
+function measureChars() {
+  w1 = chars1.map((c) => c.offsetWidth || 16);
+  w2 = chars2.map((c) => c.offsetWidth || 16);
+}
+
+/** 收尾 / **跳过** / reduced-motion：直接到结尾状态（层撤掉、能滚动、把猫放出来）。 */
+function finishIntro() {
+  clearIntro();
+  mark('done');
+  introDone = true;
+  document.documentElement.classList.remove('sc-intro-on');   // ⇒ 层 `display:none`
+  document.documentElement.style.overflow = '';
+  document.body.classList.remove('cat-off');
+  BAND.releaseCat();
+}
+
+function runIntro() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // ⚠️ 这一段**整段跳过**（不是"减少"）：里面没有任何功能，纯装饰 ⇒ 一帧黑幕都不出
+    finishIntro();
+    return;
+  }
+  document.documentElement.style.overflow = 'hidden';    // 编排期间锁住滚动
+  document.body.classList.add('cat-off');
+  intro.classList.add('blink');                          // 光标只在编排期间闪（结束就摘掉）
+  showChars(chars1, 0);
+  showChars(chars2, 0);
+  measureChars();
+  moveCaret(w1, 0);
+  mark('type1', 0);
+
+  let t = 0;
+  chars1.forEach((c, i) => at(t += INTRO.ch, () => {
+    c.classList.add('on');
+    moveCaret(w1, i + 1);
+    mark('type1', i + 1);
+  }));
+  t += INTRO.hold;
+
+  // ⚠️ 每一拍的"开场标记"也走 `at()`（而不是当场同步 mark）：`window.__scIntro.phases` 是
+  //    按发生时间排的日志，同步 mark 会让最后两次的标记**挤到最前面**、日志读起来是乱的
+  at(t, () => mark('del', chars1.length));
+  for (let i = chars1.length - 1; i >= 0; i--) {
+    at(t += Math.round(INTRO.ch * .8), () => {
+      chars1[i].classList.remove('on');
+      moveCaret(w1, i);
+      mark('del', i);
+    });
+  }
+  t += INTRO.hold;
+
+  at(t, () => mark('type2', 0));
+  chars2.forEach((c, i) => at(t += INTRO.ch, () => {
+    c.classList.add('on');
+    moveCaret(w2, i + 1);
+    mark('type2', i + 1);
+  }));
+  t += INTRO.hold;
+
+  at(t, () => { intro.classList.add('searching'); mark('search'); });      // ⭐ 模拟搜索
+  t += INTRO.search;
+
+  at(t, () => {                                                          // ⭐ 飞到"正中间上方"
+    mark('fly');
+    intro.classList.remove('blink');                                     // 后半段不再闪 ⇒ 不留常驻循环
+    // ⚠️ 这一页**没有页头**（2026-09-28 起侧栏与页头都藏了，见 `band.css` §9.6）⇒
+    //    落点不再量那个「我们的专场」标题，改成**算出来的一个点**：水平正中 + 靠上。
+    const b = intro.querySelector('.sc-sbox').getBoundingClientRect();
+    const down = b.y + b.height / 2;
+    const right = b.x + b.width / 2;
+    intro.classList.add('flying');
+    intro.querySelector('.sc-sbox').style.transform = 'translate3d(' +
+      (window.innerWidth / 2 - right).toFixed(1) + 'px,' +
+      (Math.max(96, window.innerHeight * .22) - down).toFixed(1) + 'px,0)';
+  });
+  t += INTRO.fly;
+
+  at(t, () => {                                                          // 框与黑幕淡出
+    // ⚠️ 把"它到底停在哪儿"**在那一刻记下来**（`fade` 这一拍只存在 400ms，紧接着就是 `done`）：
+    //    探针等 `dataset.phase === 'fade'` 会有**整个窗口漏掉**的风险（rAF 被饿死时就是这样，
+    //    2026-09-28 实测假红过一次）⇒ 记进 `window.__scIntro.landed` 让它读历史，别去抢那一拍。
+    const b = intro.querySelector('.sc-sbox').getBoundingClientRect();
+    window.__scIntro.landed = { cx: b.x + b.width / 2, cy: b.y + b.height / 2, vw: window.innerWidth, vh: window.innerHeight };
+    intro.classList.add('sc-gone');
+    mark('fade');
+  });
+  t += INTRO.fade;
+  at(t, finishIntro);
+}
+
+/** 跳过：点任意处 / Esc ⇒ 直接到结尾状态。
+    ⚠️ 日后若在这一层上加按钮（如"重播"），那个按钮的 click **必须 `stopPropagation`** ——
+    否则点击会冒泡到这里、编排刚起播就被当场结束（样张实测踩过）。 */
+document.addEventListener('click', () => { if (!introDone) finishIntro(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !introDone) { e.preventDefault(); finishIntro(); }
+});
+
+/* ---------- 弧带轮播 + 专注单图（docs/17 §17.6）----------
+   ⚠️ 三条最容易做错的地方（样张踩过，别改回去）：
+   ① **唯一状态是 `pos`**（"第几张在最前"，可带小数）；`shown` 只是**渲染插值**，不是第二份语义状态。
+      样张第一版同时维护"当前角度 / 目标角度"两套语义状态，吸附时丢了个负号 ⇒ 表现是
+      "拖一步却跳到最后一页"（6 张的环上 −1 与 5 是同一张，症状离根因极远）。
+   ② **缓停只能用 rAF 逼近**，不能用 CSS 过渡——`render()` 按周期取模，CSS 会把"差一个周期"的跳变也动画出来。
+   ③ **无限滑动 = 渲染 3 份 + 平移量取模**，不搬 DOM。 */
+const stage = document.getElementById('sc-stage');
+const bandwrap = document.getElementById('sc-bandwrap');
+const strip = document.getElementById('sc-strip');
+const focus = document.getElementById('sc-focus');
+const big = document.getElementById('sc-big');
+const noteTx = document.getElementById('sc-note-tx');
+const COPIES = 3;
+let cards = [];
+let curPhotos = [];
+let N = 0, step = 422, cycle = 0, centerOffset = 0;
+let pos = 0, shown = 0, dragging = false, lastX = 0, crRaf = null;
+let lastIndex = 0, downItem = null, moved = 0, openCoverFrom = null, closeTimer = null;
+
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function buildStrip(photos) {
+  strip.innerHTML = '';
+  cards = [];
+  N = photos.length;
+  for (let c = 0; c < COPIES; c++) {
+    for (let i = 0; i < N; i++) {
+      const el = document.createElement('div');
+      el.className = 'sc-ph';
+      el.dataset.i = String(i);
+      const cap = document.createElement('div');
+      cap.className = 'sc-cap';
+      cap.textContent = photos[i].note ? photos[i].note.slice(0, 12) : '';
+      el.appendChild(cap);
+      strip.appendChild(el);
+      cards.push(el);
+      photoUrl(photos[i].fileId).then((u) => { if (u) el.style.backgroundImage = 'url(' + u + ')'; });
+    }
+  }
+}
+
+/** 一步 = 卡宽 + 间距 ⇒「拖一张卡的距离 = 正好进一张」——**手感正常的定义**。
+    ⚠️ 用 `offsetWidth`（不受 transform 影响）：`getBoundingClientRect()` 会量到**过渡中途**的值。 */
+function measureStep() {
+  if (!cards.length) return;
+  const w = cards[0].offsetWidth || 400;
+  const g = parseFloat(getComputedStyle(strip).columnGap) || 22;
+  step = w + g;
+  cycle = step * N;
+  centerOffset = ((stage.clientWidth || window.innerWidth) - w) / 2;
+  render();
+}
+
+/** 整条带子平移，让第 `shown` 张落在屏幕中央；平移量**按一个周期取模** ⇒ 3 份副本接得上、无感回绕。 */
+function render() {
+  if (!cards.length) return;
+  const p = ((shown % N) + N) % N;
+  strip.style.transform = 'translate3d(' + (centerOffset - cycle - p * step).toFixed(1) + 'px,0,0)';
+  strip.dataset.pos = pos.toFixed(3);          // 挂出来给探针 / 排查看
+}
+
+/** 缓停：rAF 逐帧逼近（**不能用 CSS 过渡**，见上）。 */
+function tick() {
+  shown += (pos - shown) * .18;
+  if (Math.abs(pos - shown) < .0015) { shown = pos; render(); crRaf = null; return; }
+  render();
+  crRaf = requestAnimationFrame(tick);
+}
+function kick() { if (!crRaf) crRaf = requestAnimationFrame(tick); }
+
+/** FLIP 的位移+缩放：起点缩放到"塞进方块封面里"（取小的一边，避免宽高比不同时被拉伸），中心对齐。
+    ⚠️ 必须**先量到终点**再算它（顺序反了算不准）。 */
+function fit(fr, to) {
+  const s = fr ? Math.min(fr.width / to.width, fr.height / to.height, 1) : 1;
+  const dx = fr ? (fr.x + fr.width / 2) - (to.x + to.width / 2) : 0;
+  const dy = fr ? (fr.y + fr.height / 2) - (to.y + to.height / 2) : 0;
+  return 'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px,0) scale(' + s.toFixed(4) + ')';
+}
+
+function openStage(fromRect) {
+  openCoverFrom = fromRect;
+  clearTimeout(closeTimer);                 // ⚠️ 取消上一次"延迟关层"，见 closeStage
+  closeTimer = null;
+  stage.classList.add('open');
+  document.body.classList.add('cat-off');   // 猫让位（同一个坑第三次）
+  pos = 0;
+  shown = 0;
+  bandwrap.style.transition = 'none';       // ⚠️ 量之前关掉过渡，否则量到的是动画中途的值
+  measureStep();                            // ① 先落到最终位置（顺便量一步）——这步是为了**量终点**
+  const to = bandwrap.getBoundingClientRect();
+  if (reduced()) {                          // 降级：不做"长出来"那一趟，直接到位
+    bandwrap.style.transform = 'none';
+    bandwrap.style.opacity = '1';
+    bandwrap.style.transition = '';
+    return;
+  }
+  const start = fit(fromRect, to);          // ② 把整条带子摆回方块封面那儿
+  bandwrap.style.transform = start;
+  bandwrap.style.opacity = '.35';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bandwrap.style.transition = '';         // ③ 恢复过渡 ⇒ 放大 + 滑到中央（连那道弧一起长出来）
+    bandwrap.style.transform = 'none';
+    bandwrap.style.opacity = '1';
+  }));
+}
+
+/** 关掉：反向 FLIP（从哪来回哪去）。 */
+function closeStage() {
+  const fr = openCoverFrom;
+  if (!fr || !stage.classList.contains('open')) {
+    stage.classList.remove('open');
+    document.body.classList.remove('cat-off');
+    return;
+  }
+  bandwrap.style.transition = '';
+  bandwrap.style.transform = fit(fr, bandwrap.getBoundingClientRect());
+  bandwrap.style.opacity = '.2';
+  /* ⚠️ 这个延迟**必须可取消**：连按几次 Esc 会排出一串定时器，其中一些会在**浮层重新打开之后**
+     才触发 —— 把刚开的层又关掉（表现是"点开之后拖不动"，**且不报任何错**）。 */
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    stage.classList.remove('open');
+    document.body.classList.remove('cat-off');
+    closeTimer = null;
+  }, reduced() ? 0 : 260);
+}
+
+/** 点一个时间点 → 取这一年的图 → 从那张封面长出来（取数失败/为空就什么都不做，toast 已弹）。 */
+async function openYear(year, coverRect) {
+  try {
+    const photos = await BAND.must('/api/showcase/years/' + year);
+    if (!photos.length) return;
+    curPhotos = photos;
+    buildStrip(photos);
+    openStage(coverRect);
+  } catch (e) { /* must 已经 toast 过 */ }
+}
+
+/* 拖动：跟手 1:1；松手**只做一件事** —— `pos` 取最近的整数（**不做惯性**：速度估计不可靠、
+   写不出确定判据，而 1:1 跟手 + 精确吸附是可预测的）。 */
+strip.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  lastX = e.clientX;
+  moved = 0;
+  downItem = e.target && e.target.closest ? e.target.closest('.sc-ph') : null;
+  stage.classList.add('dragging');
+  e.preventDefault();               // ⚠️ 挡掉"划选文字 / 原生拖拽"抢走指针序列（见 band.css 的注释）
+  if (crRaf) { cancelAnimationFrame(crRaf); crRaf = null; }
+  shown = pos;
+  try { strip.setPointerCapture(e.pointerId); } catch (e2) { /* 忽略 */ }
+});
+stage.addEventListener('dragstart', (e) => e.preventDefault());
+strip.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX;
+  lastX = e.clientX;
+  moved += Math.abs(dx);
+  pos += -dx / step;                // 跟手 1:1：往左拖 ⇒ pos 增 ⇒ 下一张到最前
+  shown = pos;                      // 拖动时不插值（要跟手）
+  render();
+});
+function endDrag() {
+  if (!dragging) return;
+  dragging = false;
+  stage.classList.remove('dragging');
+  if (moved < 8 && downItem) {      // 几乎没动 = **轻点这一张**
+    // ⚠️ 不用 `click` 判轻点：拖动面一旦 `setPointerCapture`，浏览器会把 `click` **重定向到捕获元素**，
+    //    挂在卡片上的 click 永远不触发（实测过）。正解就是这里按位移判。
+    openFocus(Number(downItem.dataset.i));
+  } else {
+    pos = Math.round(pos);          // ⭐ 唯一的吸附动作：取最近的一张
+    if (reduced()) { shown = pos; render(); } else { kick(); }
+  }
+  downItem = null;
+}
+strip.addEventListener('pointerup', endDrag);
+strip.addEventListener('pointercancel', endDrag);
+
+/* ---------- 专注单图 ---------- */
+function openFocus(i) {
+  lastIndex = i;
+  const p = curPhotos[i];
+  photoUrl(p.fileId).then((u) => { if (u) big.style.backgroundImage = 'url(' + u + ')'; });
+  noteTx.textContent = p.note || '（这张没有配文案）';
+  focus.classList.add('open');
+}
+function closeFocus() {
+  focus.classList.remove('open');
+  // ⚠️ 退出回到**刚才那张**（不是第一张）：把唯一状态对齐到刚点开的索引
+  pos = lastIndex;
+  shown = pos;
+  render();
+}
+
+document.getElementById('sc-stage-close').addEventListener('click', closeStage);
+document.getElementById('sc-focus-close').addEventListener('click', closeFocus);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (focus.classList.contains('open')) closeFocus();
+  else if (stage.classList.contains('open')) closeStage();
+});
+window.addEventListener('resize', measureStep);
+
+async function load() {
+  const me = await BAND.renderNav('showcase.html');
+  // 全屏浮层挂到 `body` 上（照 `announce()` 的先例）：不参与正文流，层级也不必跟侧栏那条纠缠。
+  // ⚠️ 必须**等 `renderNav` 之后**再搬：它里面的 `mountSkeleton` 会把 `#navbar` 之后的节点整体搬进 `.main`，
+  //    早搬一步照样被它搬回去。
+  document.body.append(stage, focus);
+  if (!me) { finishIntro(); return; }        // 401 已在 api() 里跳登录；这里只保证黑幕不留下
+  const nodes = await BAND.must('/api/showcase/timeline');
+  runIntro();                                // 编排与取数**并行**：黑幕揭开时页面已经就位
+  els.empty.hidden = nodes.length > 0;
+  if (!nodes.length) return;
+  buildStops(nodes);
+  reveal();
+  syncBg();
+}
+
+load();
+</script>
+</body>
+</html>

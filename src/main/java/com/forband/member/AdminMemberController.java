@@ -3,7 +3,6 @@ package com.forband.member;
 import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.auth.Role;
-import com.forband.auth.TokenService;
 import com.forband.common.ApiResponse;
 import com.forband.log.OpLog;
 import com.forband.member.dto.MemberCreateRequest;
@@ -29,11 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminMemberController {
 
     private final MemberService memberService;
-    private final TokenService tokenService;
 
-    public AdminMemberController(MemberService memberService, TokenService tokenService) {
+    public AdminMemberController(MemberService memberService) {
         this.memberService = memberService;
-        this.tokenService = tokenService;
     }
 
     @PostMapping("/members")
@@ -61,7 +58,7 @@ public class AdminMemberController {
     @PostMapping("/members/{id}/revoke-sessions")
     @OpLog(action = "ACCOUNT_REVOKE_SESSIONS", targetType = "member")
     public ApiResponse<Void> revokeSessions(@PathVariable long id) {
-        tokenService.revokeAllFor(id);
+        memberService.revokeSessions(id);
         return ApiResponse.ok();
     }
 

@@ -44,10 +44,14 @@ public final class ConcertDtos {
     public record PhotoRequest(Long fileId, @Size(max = 128) String caption) {
     }
 
-    /** 列表行：只要档案信息（详细内容走详情页）。 */
+    /**
+     * 列表行：只要档案信息（详细内容走详情页）。
+     * `isShowcase` = 这场是不是「专场」（`docs/17`）—— 策展管理页要按它分「专场」与「其他演出」两栏。
+     */
     public record ConcertView(long id, String name, LocalDate date, LocalTime startTime, String venue,
                               String host, String status, String statusLabel, Long posterFileId,
-                              Integer pieceCount, Integer castCount, Integer photoCount) {
+                              Integer pieceCount, Integer castCount, Integer photoCount,
+                              Boolean isShowcase) {
     }
 
     /** 曲目单的一行（带曲目元数据，免得前端再查一次）。 */

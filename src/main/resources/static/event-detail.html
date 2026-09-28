@@ -24,7 +24,7 @@
 </div>
 
 <h2 class="mb-3">考勤</h2>
-<table class="tb">
+<table class="tb" id="att-table">
   <thead><tr><th>团员</th><th>声部</th><th>状态</th><th>签到时间</th><th>代签人</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -89,6 +89,9 @@ async function load() {
 
   renderCheckin(me, e, canceled);
   await loadRows(me, canceled);
+  // ⚠️ 在两个常驻容器都写完**之后**才播。`loadRows` 会被签到 / 代签 / 改考勤 / 定时器反复重调，
+  // 但"播过"的标志只认这两个容器 ⇒ 后续重渲染直接给终值，不重播（docs/14 §14.6.4 ②）。
+  BAND.alive(document.getElementById('summary'), document.getElementById('att-table'));
 }
 
 function renderCheckin(me, e, canceled) {
@@ -228,9 +231,12 @@ async function loadRows(me, canceled) {
     }
     tbody.appendChild(tr);
   }
-  // 出勤率与请假数成对展示（docs/05 硬规则）
-  document.getElementById('summary').textContent =
-    `应到 ${d.expected} · 出勤 ${d.present} · 请假 ${d.leave} · 缺勤 ${d.absent} · 出勤率 ${BAND.ratePct(d.rate, d.expected)}`;
+  // 出勤率与请假数成对展示（docs/05 硬规则）。⚠️ 五个数**各自一个 span**——「界面的活性」① 要求
+  // "要数的数字必须各自在独立元素里"；`·` 与「出勤率」这类标签留在外面当文本节点。
+  document.getElementById('summary').innerHTML =
+    `应到 <span class="n" data-count>${d.expected}</span> · 出勤 <span class="n" data-count>${d.present}</span>`
+    + ` · 请假 <span class="n" data-count>${d.leave}</span> · 缺勤 <span class="n" data-count>${d.absent}</span>`
+    + ` · 出勤率 <span class="n" data-count>${BAND.ratePct(d.rate, d.expected)}</span>`;
 }
 
 load();

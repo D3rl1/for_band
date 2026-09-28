@@ -23,7 +23,7 @@
     <option value="GRADUATED">毕业</option>
   </select>
 </div>
-<table class="tb">
+<table class="tb" id="members-table">
   <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -69,6 +69,7 @@ async function load() {
     tr.children[6].textContent = m.phone || '';
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 load();
 </script>

@@ -30,6 +30,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +44,14 @@ public class MemberService {
     /** 「对外只到月-日 / 只到年份」用的两个格式（本人与管理员走 `ISO_LOCAL_DATE` 全值）。 */
     private static final DateTimeFormatter MONTH_DAY = DateTimeFormatter.ofPattern("MM-dd");
     private static final DateTimeFormatter YEAR_ONLY = DateTimeFormatter.ofPattern("yyyy");
+
+    /**
+     * 可经建号 / 编辑接口授予的角色白名单——**不含 `ADMIN`**（`docs/01` §1.3：管理员账号只能由
+     * `AdminSeeder` 播种，系统内没有人能修改 / 制造它）。`HONORARY` 在列，但建号另有禁令（见 {@link #create}）。
+     */
+    private static final Set<String> EDITABLE_ROLES = Set.of(
+            Role.MEMBER.name(), Role.SECTION_LEADER.name(), Role.CONDUCTOR.name(),
+            Role.LEADER.name(), Role.HONORARY.name());
 
     private final MemberMapper memberMapper;
     private final MemberRoleHistoryMapper historyMapper;
@@ -114,32 +124,50 @@ public class MemberService {
 
     @Transactional
     public MemberView update(long id, MemberUpdateRequest request, CurrentUser operator) {
-        Member member = requireMember(id);
+        Member member = requireWritableMember(id);
         OpLogRecorder.putBefore(snapshotOf(member));
 
+        // 清空声部的唯一途径是显式标记（docs/03 §3.4 边界②）：`sectionId == null` 在本接口一律当"未提供"
+        // （`updateById` 忽略 null 字段），否则弹窗里"选无声部"会被静默忽略、点了没反应。
+        boolean clearSection = Boolean.TRUE.equals(request.clearSection());
+        Long effectiveSectionId = clearSection ? null
+                : (request.sectionId() != null ? request.sectionId() : member.getSectionId());
+        String effectiveRole = request.role() != null ? request.role() : member.getRole();
+        String effectiveStatus = request.status() != null ? request.status() : member.getStatus();
+
         boolean roleChanged = request.role() != null && !request.role().equals(member.getRole());
-        boolean sectionChanged = request.sectionId() != null
-                && !request.sectionId().equals(member.getSectionId());
+        boolean sectionChanged = !Objects.equals(effectiveSectionId, member.getSectionId());
         boolean statusChanged = request.status() != null && !request.status().equals(member.getStatus());
 
         if (request.role() != null) {
             validateRole(request.role());
         }
-        if (request.sectionId() != null) {
+        if (request.sectionId() != null && !clearSection) {
             requireSection(request.sectionId());
         }
-        boolean staysSectionLeader = Role.SECTION_LEADER.name().equals(
-                roleChanged ? request.role() : member.getRole());
+        // 边界①（docs/03 §3.4）：选了声部长却没有声部 ⇒ 拒绝（能造出"没有声部的声部长"）。
+        // 拦在后端、前端不预判；`checkSectionLeaderUnique` 遇 null 直接 return，拦不住它。
+        if (Role.SECTION_LEADER.name().equals(effectiveRole) && effectiveSectionId == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "声部长必须指定声部");
+        }
+        boolean staysSectionLeader = Role.SECTION_LEADER.name().equals(effectiveRole);
         if (staysSectionLeader && (sectionChanged || roleChanged)) {
-            checkSectionLeaderUnique(request.sectionId() != null ? request.sectionId() : member.getSectionId(), id);
+            checkSectionLeaderUnique(effectiveSectionId, id);
+        }
+
+        // 边界③（docs/03 §3.4）：当前是荣誉团员时，角色只能"撤销为团员"（续期不动角色）。
+        // 直接改成团长 / 指挥 / 声部长会绕过 honorary_until 的有效期校验，
+        // 并留下"已毕业的人挂着团长头衔"这种自相矛盾的记录（member_role_history 里还会多一段假任期）。
+        if (Role.HONORARY.name().equals(member.getRole()) && roleChanged
+                && !Role.MEMBER.name().equals(request.role())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "荣誉团员的角色只能撤销为团员（不能改成团长 / 指挥 / 声部长）");
         }
 
         // 荣誉团员规则（docs/03 §3.4 + docs/13 不变式 13，双向）：结果是荣誉团员就必须保持
         // status=GRADUATED——授予那一刻要校验，授予之后把状态改成 ACTIVE 同样要拦
         // （放行的话 canLogin 第一步就通过，honorary_until 当场失效＝永久可登录，且能签到）。
         // 撤销荣誉走"角色改回 MEMBER"（下面会显式清 honorary_until）。
-        String effectiveRole = request.role() != null ? request.role() : member.getRole();
-        String effectiveStatus = request.status() != null ? request.status() : member.getStatus();
         boolean honorary = Role.HONORARY.name().equals(effectiveRole);
         if (honorary && !MemberStatus.GRADUATED.equals(effectiveStatus)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -180,15 +208,20 @@ public class MemberService {
                     .eq(Member::getId, id)
                     .set(Member::getHonoraryUntil, null));
         }
+        if (clearSection && member.getSectionId() != null) {
+            // 同上：updateById 忽略 null ⇒"清空声部"必须显式 set，否则选了没反应（docs/03 §3.4 边界②）
+            memberMapper.update(null, new LambdaUpdateWrapper<Member>()
+                    .eq(Member::getId, id)
+                    .set(Member::getSectionId, null));
+        }
 
         if (statusChanged) {
             applyStatusSideEffects(member, request.status());
         }
         if (roleChanged || sectionChanged) {
             String newRole = roleChanged ? request.role() : member.getRole();
-            Long newSectionId = request.sectionId() != null ? request.sectionId() : member.getSectionId();
             closeOpenHistory(id, LocalDate.now());
-            writeHistory(id, newRole, newSectionId, LocalDate.now(), operator.memberId());
+            writeHistory(id, newRole, effectiveSectionId, LocalDate.now(), operator.memberId());
         }
         Member updated = requireMember(id);
         OpLogRecorder.putAfter(snapshotOf(updated));
@@ -211,7 +244,7 @@ public class MemberService {
 
     @Transactional
     public String resetPassword(long id) {
-        Member member = requireMember(id);
+        requireWritableMember(id);
         String newPassword = randomPassword();
         memberMapper.update(null, new LambdaUpdateWrapper<Member>()
                 .eq(Member::getId, id)
@@ -220,6 +253,16 @@ public class MemberService {
                 .set(Member::getUpdatedAt, LocalDateTime.now()));
         tokenService.revokeAllFor(id);
         return newPassword;
+    }
+
+    /**
+     * 踢某人下线：作废其全部 token，但不动账号状态（`docs/01` §1.3；可重新登录）。
+     * 走这里而不是让控制器直调 {@link TokenService}，是为了同过 {@link #requireWritableMember} 那道闸门
+     * ——`is_system = 1` 的账号连"踢下线"也不能碰。
+     */
+    public void revokeSessions(long id) {
+        requireWritableMember(id);
+        tokenService.revokeAllFor(id);
     }
 
     /** 全部账号的激活状态表：未激活显示初始密码，已激活显示「已激活」（docs/01）。 */
@@ -340,6 +383,12 @@ public class MemberService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "未知角色：" + role);
         }
+        // ⚠️ 枚举合法 ≠ 取值白名单：`Role.valueOf` 会放行 ADMIN，而本接口一旦能写 role=ADMIN，
+        // 就能在界面之外造出第二个管理员——`docs/01` §1.3 的"管理员只有一个、由播种产生"当场失效，
+        // 且 `#80` 的写侧闸门（只认 `is_system = 1`）管不到这个新管理员。
+        if (!EDITABLE_ROLES.contains(role)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "不能把角色设为：" + role);
+        }
     }
 
     private void requireSection(Long sectionId) {
@@ -352,6 +401,22 @@ public class MemberService {
         Member member = memberMapper.selectById(id);
         if (member == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "团员不存在");
+        }
+        return member;
+    }
+
+    /**
+     * 写侧闸门（`docs/01` §1.3「管理员账号的写侧闸门」）：`is_system = 1` 的账号**任何写操作一律 404**，
+     * 沿用同处 {@link #get} 的先例——**不承认它存在**（回 403 等于承认它存在，多一处可探测的信息）。
+     * <p>
+     * 为什么必须有：`update` 原来只调 {@code requireMember}（只查存在性），拿管理员账号调
+     * `PUT /api/admin/members/{id}` 能把它降成团员 ⇒ **系统里再也没有管理员**，
+     * 而唯一的出路 `reset-admin-password.sh` **只改密码、不改角色**，救不回来。
+     */
+    private Member requireWritableMember(long id) {
+        Member member = requireMember(id);
+        if (Boolean.TRUE.equals(member.getIsSystem())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
         }
         return member;
     }

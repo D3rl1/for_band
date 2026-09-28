@@ -18,7 +18,7 @@
 <p id="pending-empty" class="py-3" hidden>没有等你审批的申请</p>
 
 <h2 class="mt-4 mb-3">全部申请（角色范围内）</h2>
-<table class="tb">
+<table class="tb" id="leave-table">
   <thead><tr><th>日期</th><th>活动</th><th>申请人</th><th>声部</th><th>状态</th><th>进度</th></tr></thead>
   <tbody id="all-rows"></tbody>
 </table>
@@ -113,6 +113,7 @@ async function load() {
       .join(' / ');
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('leave-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 load();
 </script>

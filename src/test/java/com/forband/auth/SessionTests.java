@@ -166,7 +166,7 @@ class SessionTests extends IntegrationTestBase {
         memberService.update(zhangId,
                 new com.forband.member.dto.MemberUpdateRequest(
                         null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
-                        null, null, null, null),
+                        null, null, null, null, null),
                 admin);
         String token = loginToken("zhang3", zhangInitial);
         api(token, "GET", "/api/auth/sessions", null)

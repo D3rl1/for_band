@@ -66,7 +66,7 @@ public abstract class IntegrationTestBase {
             "feedback", "release_note",   // 期 1.5：两表都依赖 member，必须排在它前面
             "file",                       // 文件表：owner_id 指向 member，也必须排在它前面
             "event_piece", "piece_attachment", "piece",   // 期 3：曲目相关三张表
-            "concert_photo", "concert_piece", "concert_cast", "concert",   // 期 4：演出四张表
+            "concert_photo", "concert_piece", "concert_cast", "showcase_photo", "concert",   // 期 4 演出四张（+期 1.7 专场策展图）
             "recording_comment", "recording",   // 期 5：录音与点评
             "profile_visit",   // 期 1.6：访客记录（两个 FK 都指向 member，必须排在它前面）
             "member", "section",
@@ -114,7 +114,7 @@ public abstract class IntegrationTestBase {
         memberService.update(memberId,
                 new com.forband.member.dto.MemberUpdateRequest(
                         null, null, null, status, null, null, null, null, null, null,
-                        null, null, null, null), admin);
+                        null, null, null, null, null), admin);
     }
 
     protected CurrentUser currentUserOf(long memberId) {

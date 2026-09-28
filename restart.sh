@@ -70,6 +70,10 @@ for _ in $(seq 1 45); do
 done
 
 if [ "$CODE" = "200" ]; then
+  # ---- 记下"这个进程吃到了此刻的源码" ----
+  # `refresh.sh` 的 [3.5/5] 拿它当尺子：源码比这个时间戳新 ⇒ 提醒"改了 Java 没重启"。
+  # ⚠️ 必须写在**健康之后**：早写会把"编译启动失败"也记成"已生效"。
+  date +%s > "$ROOT/target/.app-started" 2>/dev/null || true
   echo
   echo "✓ 服务已起（:$PORT）。日志：$LOG"
   echo "  验证新接口有没有生效：curl -s -o /dev/null -w '%{http_code}\n' http://localhost:$PORT/api/health"

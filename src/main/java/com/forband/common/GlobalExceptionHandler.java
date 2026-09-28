@@ -50,9 +50,26 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorCode.VALIDATION_FAILED.getCode(), "上传文件过大"));
     }
 
-    /** 静态资源不存在（含浏览器每次必请求的 /favicon.ico）→ 404，不打 ERROR 堆栈（docs/14 §14.4）。 */
+    /**
+     * 静态资源不存在（含浏览器每次必请求的 /favicon.ico）→ 404，不打 ERROR 堆栈（docs/14 §14.4）。
+     * <p>
+     * ⚠️ **`/api/**` 也落到这里**，那说明"这个路径上没有任何处理器"——最常见的原因是
+     * **改了 Java 没重启**（Java 类是 JVM 启动时一次性加载的；`./refresh.sh` 只管静态资源）。
+     * 所以这一支单独给一句能自解释的话 + 一条 WARN：否则它和"少了一张图"共用同一句
+     * `10002 资源不存在`，看的人根本分不清是哪种（2026-09-28 真的这样白绕过一轮）。
+     * ⚠️ **码与 HTTP 状态一个字不改**（`10002` / 404）：`docs/10` §10.5 那张表比的是
+     * `ErrorCode` 里的**默认文案**，这里只动 `/api/**` 这一支的**运行时**文案。
+     */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> noResource(NoResourceFoundException e) {
+        String path = e.getResourcePath() == null ? "" : e.getResourcePath();
+        if (path.equals("api") || path.startsWith("api/")) {
+            log.warn("未映射的接口请求：{} /{} —— 这个进程里没有它的处理器（改了 Java 没重启？跑 ./restart.sh）",
+                    e.getHttpMethod(), path);
+            return ResponseEntity.status(ErrorCode.NOT_FOUND.getHttpStatus())
+                    .body(ApiResponse.fail(ErrorCode.NOT_FOUND.getCode(),
+                            "接口不存在（若刚更新过代码，服务需要重启）"));
+        }
         return ResponseEntity.status(ErrorCode.NOT_FOUND.getHttpStatus())
                 .body(ApiResponse.fail(ErrorCode.NOT_FOUND.getCode(),
                         ErrorCode.NOT_FOUND.getDefaultMessage()));

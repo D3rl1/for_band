@@ -84,7 +84,7 @@ class BirthdayTests extends IntegrationTestBase {
         setMemberStatus(admin, h.id(), "GRADUATED");
         memberService.update(h.id(), new MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
-                null, null, null, null), admin);
+                null, null, null, null, null), admin);
         // 另一个在团的人今天生日 —— 这才是该被通告的那位
         jdbc.update("UPDATE member SET birthday = CURDATE() WHERE id = ?", memberAId);
 

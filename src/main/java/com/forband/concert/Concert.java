@@ -42,6 +42,13 @@ public class Concert {
     /** `PLANNED` / `DONE` / `CANCELED`。 */
     private String status;
 
+    /**
+     * 1 = 这是一场「专场」，在「我们的专场」时间线上占一个节点（`docs/17`）。
+     * 用布尔而不是 `kind` 枚举的理由见 `docs/13` §13.3⑫：业务分类不能猜，现在只需回答"要不要上时间线"。
+     * 它**只影响专页**——其余演出照旧出现在演出列表里。
+     */
+    private Boolean isShowcase;
+
     private Long createdBy;
 
     private Long updatedBy;
@@ -138,6 +145,14 @@ public class Concert {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Boolean getIsShowcase() {
+        return isShowcase;
+    }
+
+    public void setIsShowcase(Boolean isShowcase) {
+        this.isShowcase = isShowcase;
     }
 
     public Long getCreatedBy() {

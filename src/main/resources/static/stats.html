@@ -21,20 +21,25 @@ const PENTA = ['宫', '商', '角', '徵', '羽'];
 
 function kindCard(label, k) {
   const lit = k.expected === 0 ? 0 : Math.round((k.rate || 0) * 5);
+  // 分母为 0（指挥 / 荣誉团员）：出勤率那一格显示「—」，出勤横条**为空**⇒ 压根不画（docs/14 §14.6.4 ④）
+  const noData = k.expected === 0;
   const el = document.createElement('div');
   el.className = 'cell';
   el.innerHTML = `
     <div class="lab"></div>
-    <p class="big"></p>
+    <p class="big" data-count></p>
+    ${noData ? '' : `<div class="attbar" style="--r:${k.rate || 0}"><b></b></div>`}
     <div class="penta mb-2"></div>
     <p class="chip mb-0"></p>`;
   el.querySelector('.lab').textContent = label;
   el.querySelector('.big').textContent = BAND.ratePct(k.rate, k.expected);
   el.querySelector('.penta').innerHTML = PENTA.map((n, i) =>
     `<div class="pv ${i < lit ? 'on' : ''}"><i></i><em>${n}</em></div>`).join('');
-  // 出勤率与请假数成对出现（docs/05 硬规则）
-  el.querySelector('.chip').textContent =
-    `应到 ${k.expected} · 出勤 ${k.present} · 请假 ${k.leave} · 缺勤 ${k.absent}`;
+  // 出勤率与请假数成对出现（docs/05 硬规则）。⚠️ 这四个数**各自一个 span**——「界面的活性」① 要求
+  // "要数的数字必须各自在独立元素里"，`·` 留在外面当文本节点（也别用 `<b>` 改掉字重）。
+  el.querySelector('.chip').innerHTML =
+    `应到 <span class="n" data-count>${k.expected}</span> · 出勤 <span class="n" data-count>${k.present}</span>`
+    + ` · 请假 <span class="n" data-count>${k.leave}</span> · 缺勤 <span class="n" data-count>${k.absent}</span>`;
   return el;
 }
 
@@ -47,12 +52,14 @@ async function load() {
   if (me.role === 'MEMBER' || me.role === 'HONORARY') {
     const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
     cards.append(kindCard('排练出勤', s.rehearsal), kindCard('声部课出勤', s.sectionClass));
-    return;
+  } else {
+    const stats = await BAND.must('/api/attendance/stats');
+    stats.kinds
+      .map((k) => kindCard(k.kind === 'SECTION_CLASS' ? '声部课' : '排练', k))
+      .forEach((el) => cards.appendChild(el));
   }
-  const stats = await BAND.must('/api/attendance/stats');
-  stats.kinds
-    .map((k) => kindCard(k.kind === 'SECTION_CLASS' ? '声部课' : '排练', k))
-    .forEach((el) => cards.appendChild(el));
+  // ⚠️ 必须在卡片都建好**之后**才播（早调会快照到空点阵；而"播过"的标志一置位就再也不播了）
+  BAND.alive(cards);
 }
 load();
 </script>

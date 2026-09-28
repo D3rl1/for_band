@@ -50,7 +50,7 @@ class ConcertTests extends IntegrationTestBase {
         setMemberStatus(admin, honoraryId, "GRADUATED");
         memberService.update(honoraryId, new com.forband.member.dto.MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null,
-                LocalDate.now().plusYears(2), null, null, null, null, null), admin);
+                LocalDate.now().plusYears(2), null, null, null, null, null, null), admin);
     }
 
     @Test
@@ -162,6 +162,103 @@ class ConcertTests extends IntegrationTestBase {
         api(honoraryToken(), "GET", "/api/concerts/" + id, null).andExpect(status().isOk());
         api(honoraryToken(), "PUT", "/api/concerts/" + id, "{\"name\":\"x\",\"date\":\"2026-01-01\"}")
                 .andExpect(status().isForbidden());
+    }
+
+    // ---------- #70 演出照片的下载规则 ----------
+
+    /**
+     * 演出照片的下载口径 = **登录即可、含荣誉团员**（`docs/07` §7.4/§7.5）——与曲目附件**相反**。
+     * ⚠️ 这条规则曾经整个漏掉：除上传者本人外**全员 403**（含管理员），照片墙一直是坏的（`交接单` `#70`）。
+     */
+    @Test
+    void concert_photo_is_downloadable_by_every_role_including_honorary() throws Exception {
+        long id = createConcert("仲夏音乐会");
+        long fileId = uploadPhoto(memberAToken, "a.png");
+        addPhoto(memberAToken, id, fileId);
+
+        // 反例的主角是"非上传者"：改前这几条全是 403
+        api(memberBToken, "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+        api(conductorToken, "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+        api(adminToken(), "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+        // ⚠️ 荣誉团员也放行——**与曲目附件相反**（那条见 PieceTests）
+        api(honoraryToken(), "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+    }
+
+    /** 海报（`concert.poster_file_id`）也是同一个口径；漏掉它 = 海报对全团是空的。 */
+    @Test
+    void poster_file_is_downloadable_by_others() throws Exception {
+        long id = createConcert("仲夏音乐会");
+        long poster = uploadPhoto(memberAToken, "poster.png");
+        jdbc.update("UPDATE concert SET poster_file_id = ? WHERE id = ?", poster, id);
+
+        api(memberBToken, "GET", "/api/files/" + poster, null).andExpect(status().isOk());
+        api(honoraryToken(), "GET", "/api/files/" + poster, null).andExpect(status().isOk());
+    }
+
+    /**
+     * ⚠️⚠️ 第三处引用点（`showcase_photo.file_id`）：漏掉它 = **专页的图只有管理员本人看得到**，
+     * 就是同一个病原样复现一遍（`docs/13` §13.3㉔ 那句警告）。
+     */
+    @Test
+    void showcase_photo_file_is_downloadable_by_others() throws Exception {
+        long id = createConcert("专场·仲夏");
+        long fileId = uploadPhoto(memberAToken, "curated.png");
+        jdbc.update("""
+                INSERT INTO showcase_photo (concert_id, file_id, sort_no, note, created_by, created_at)
+                VALUES (?, ?, 1, '策展文案', ?, NOW())
+                """, id, fileId, memberAId);
+
+        api(memberBToken, "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+        api(honoraryToken(), "GET", "/api/files/" + fileId, null).andExpect(status().isOk());
+    }
+
+    /** 反向：新规则**只认领演出照片**，不能被顺手放宽成"登录就能拿任何文件"。 */
+    @Test
+    void file_not_referenced_by_any_rule_is_still_403_for_others() throws Exception {
+        long orphan = uploadPhoto(memberAToken, "orphan.png");
+        api(memberBToken, "GET", "/api/files/" + orphan, null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    // ---------- #71 表结构 ----------
+
+    /**
+     * `concert.is_showcase` 的默认值与显式值（`docs/13` §13.3⑫）。
+     * ⚠️ 验收里"**只有 `is_showcase = 1` 的进时间线**"这一条**断言不到**——
+     * 时间线查询属于 `#72`（还没实现），届时在那里补。
+     */
+    @Test
+    void is_showcase_defaults_to_zero_and_can_be_set() {
+        jdbc.update("""
+                INSERT INTO concert (name, date, status, created_by, created_at, updated_at)
+                VALUES ('普通演出', CURDATE(), 'PLANNED', ?, NOW(), NOW())
+                """, memberAId);
+        jdbc.update("""
+                INSERT INTO concert (name, date, status, is_showcase, created_by, created_at, updated_at)
+                VALUES ('专场', CURDATE(), 'PLANNED', 1, ?, NOW(), NOW())
+                """, memberAId);
+
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT is_showcase FROM concert WHERE name = '普通演出'", Integer.class),
+                "老演出 / 不传该列时必须是 0——上线前的演出不会被误当成专场");
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM concert WHERE is_showcase = 1", Integer.class));
+    }
+
+    /** 新表 `showcase_photo` 真的建出来了（能插行、列语义对）。 */
+    @Test
+    void showcase_photo_table_accepts_rows() throws Exception {
+        long concertId = createConcert("专场·仲夏");
+        long fileId = uploadPhoto(memberAToken, "curated.png");
+        jdbc.update("""
+                INSERT INTO showcase_photo (concert_id, file_id, sort_no, note, created_by, created_at)
+                VALUES (?, ?, 2, '第二张', ?, NOW())
+                """, concertId, fileId, memberAId);
+
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM showcase_photo", Integer.class));
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT sort_no FROM showcase_photo WHERE concert_id = ?", Integer.class, concertId));
     }
 
     // ---------- 造数 ----------

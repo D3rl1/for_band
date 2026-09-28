@@ -12,6 +12,8 @@
 # 所以**只要把资源重新拷一遍就行**。这条最省事、也不打断正在跑的服务。
 #
 # 万一拷完还是旧的（少数情况），脚本会告警，那时才需要重启后端。
+#
+# [3.5/5] 还会替你判一件事：**源码是不是比当前进程新**（改了 Java 只跑本脚本 = 新端点静默 404）。
 # ---------------------------------------------------------------
 set -uo pipefail
 
@@ -72,6 +74,33 @@ else
   echo "  说明这个实例把资源缓存住了，需要重启后端：" >&2
   echo "    ./restart.sh（或：停掉占用 $PORT 的进程 → mvn spring-boot:run）" >&2
   exit 1
+fi
+
+# ---- [3.5/5] 后端新鲜度：源码比当前进程新吗？（"改了 Java 只跑 refresh"的静默坑）----
+# 为什么查这个：Java 类是 **JVM 启动时一次性加载**的，本脚本只管静态资源
+# ⇒ 改了 Java 只跑本脚本时，服务照常 200、静态资源哈希也一致，**唯独新端点不存在**，
+#   回的是 404『资源不存在』（`NoResourceFoundException` 落到静态兜底那一支）。
+#   2026-09-28 真踩过（专场专页那批端点）：用户点界面只看到一句"资源不存在"，白查一轮。
+# 判据：`restart.sh` 健康之后会写 `target/.app-started`（那一刻的源码已被吃进进程）；
+#   拿它跟 `restart.sh` 头注释里那三类后端文件（src/main/java、pom.xml、application*.yml）比 mtime。
+# 只提醒、不中断 —— 你可能正打算改完一起重启。
+echo
+echo "[3.5/5] 后端新鲜度（源码 vs 当前进程）…"
+STAMP="$ROOT/target/.app-started"
+if [ ! -f "$STAMP" ]; then
+  echo "      跳过：这个进程不是 ./restart.sh 起的（没有 target/.app-started）"
+else
+  NEWER="$( { find "$ROOT/src/main/java" -name '*.java' -newer "$STAMP" 2>/dev/null
+              find "$ROOT/pom.xml" -newer "$STAMP" 2>/dev/null
+              find "$ROOT/src/main/resources" -maxdepth 1 -name 'application*.yml' -newer "$STAMP" 2>/dev/null
+            } | head -3 )"
+  if [ -n "$NEWER" ]; then
+    echo "  ⚠ 后端有改动比当前进程新 —— 这些还没生效："
+    echo "$NEWER" | sed 's|^|      |'
+    echo "      → 跑 ./restart.sh（在那之前调新端点会回 404『资源不存在』）"
+  else
+    echo "      ✓ 进程里的后端不比源码旧"
+  fi
 fi
 
 # ---- [4/5] 页面可达性体检：每个 static/*.html 都得在**别处**被引用过，否则界面上够不着 ----

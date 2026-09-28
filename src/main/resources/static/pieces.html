@@ -52,7 +52,7 @@
     <button id="new" class="go go-sm" type="button" hidden>新建</button>
   </div>
 </div>
-<table class="tb">
+<table class="tb" id="pieces-table">
   <thead><tr><th>曲名</th><th>作曲</th><th>体裁</th><th>状态</th><th>备注</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -99,6 +99,7 @@ async function load() {
     }
     tbody.appendChild(tr);
   }
+  BAND.alive(document.getElementById('pieces-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
 function openEditor(piece) {
