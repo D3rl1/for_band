@@ -35,6 +35,15 @@
   **停止服务要按端口找 PID 杀**（`netstat -ano | findstr :8080` → `taskkill /F /PID <pid>`）：
   杀掉外层的 shell / mvn 进程**不会**连带杀掉它启动的 `java` 孙进程，端口会一直被占着。
   （**这条原理说明不要删**——`restart.sh` 就是照它写的，删了后人看不懂"为什么不能只杀 mvn"。）
+- ⚠️ **改完 `src/main/java/`、`pom.xml`、`src/main/resources/application*.yml` 之后必须 `./restart.sh`**
+  （**不是** `./refresh.sh`）。Java 类是 **JVM 启动时一次性加载**的，而 `refresh.sh` 只管静态资源
+  ⇒ **服务照常 200、`refresh.sh` 那几步也全绿，但新端点在这个进程里根本不存在**，
+  回的是 `404 10002『资源不存在』`——**和"少了一张图"同一句话**（2026-09-28 在"专场专页"那批端点上
+  真踩过：用户界面只看到一句"资源不存在"，白查一轮）。
+  **判据**（不用登录就能核）：`curl -s -o /dev/null -w '%{http_code}' -X POST \
+  http://localhost:8080/api/<新端点>` ⇒ **401 = 已生效**（只是要登录）、**404 = 这个进程里还没有它**。
+  `refresh.sh` 新加的 **[3.5/5] 后端新鲜度**就是替你判这件事：
+  拿 `target/.app-started`（`restart.sh` 健康之后写的）跟后端源码的 mtime 比，源码更新就提醒你重启。
 - **改完前端（`src/main/resources/static/` 下任何文件）就跑一次 `./refresh.sh`。**
   Spring Boot 从 **`target/classes`** 读静态资源，只改 `src/` **不会自动生效**——
   浏览器拿到的还是旧版，你会以为"改了没用"（2026-09-22 真踩过：修好的脚本没被服务，
