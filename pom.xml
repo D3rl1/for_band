@@ -64,4 +64,32 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- 打「上服务器」那个包时用：`mvn package -P release`。
+             ⚠️ **为什么要它**：`application-local.yml`（本机数据库密码）就在 `src/main/resources/` 下，
+             而 `mvn package` 会**把它一起打进 fat jar**（实测 `target/classes/application-local.yml` 一直在）。
+             服务器上那份外部配置（`/opt/band/application-local.yml`，systemd 的 WorkingDirectory 就在那儿）
+             **优先级更高、会覆盖它**，所以功能上没问题 —— 但不该让"凭据随包外流"成为默认行为。
+             这个 profile 把两份本机/私有配置都排除掉；`.gitignore` 里那两条（`application-local.yml`
+             / `application-prod.yml`）正是它俩。
+             ⚠️ **默认构建一个字不动**：本地 `mvn spring-boot:run`、`mvn test`、`refresh.sh` 照旧从
+             `target/classes` 读到它 ⇒ 本机连库不受影响。
+             ⚠️ 这里**没有打开 `filtering`**：本仓库的 `application.yml` 里没有任何 Maven 占位符
+             （`${user.home}` 是 Spring 自己的、与 Maven 无关）。将来若要用 `@...@` 占位符，记得把它打开。 -->
+        <profile>
+            <id>release</id>
+            <build>
+                <resources>
+                    <resource>
+                        <directory>src/main/resources</directory>
+                        <excludes>
+                            <exclude>application-local.yml</exclude>
+                            <exclude>application-prod.yml</exclude>
+                        </excludes>
+                    </resource>
+                </resources>
+            </build>
+        </profile>
+    </profiles>
 </project>

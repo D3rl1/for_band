@@ -2,6 +2,10 @@
 -- 本机执行：mysql -uroot -p band < sql/schema.sql
 -- ⚠️ **必须用管理员账号**（见 AGENTS.md「运行与环境」）：脚本含 `CREATE TABLE` 与守护式
 --    `CREATE PROCEDURE`，应用账号 `band_app` 只有 DML 权限，拿它跑会直接报错。
+--
+-- ⚠️ 显式声明连接字符集：本脚本里**有中文数据字面量**（`band_tighten_leave_reason` 那条回填，
+--    2026-09-28 加的）——不声明的话结果取决于客户端的默认值，写进库的可能是乱码。库本身是 utf8mb4。
+SET NAMES utf8mb4;
 
 -- ① section 声部（docs/13 §13.3①）
 CREATE TABLE IF NOT EXISTS section (
@@ -488,4 +492,32 @@ BEGIN
 END$$
 CALL band_add_concert_showcase_column()$$
 DROP PROCEDURE band_add_concert_showcase_column$$
+
+-- 同上：存量库把 leave_request.reason **收紧成 NOT NULL**（docs/13 §13.3⑪ + §13.1，
+-- 2026-09-25 定的"请假理由必填"）。
+-- ⚠️⚠️ **这是本脚本里唯一一条"光重跑补不上"的迁移**：`reason` 的 NOT NULL 写在上面 CREATE TABLE 的
+--    列定义里，而 `CREATE TABLE IF NOT EXISTS` **对已存在的表一个字都不改** ⇒ 先装过本系统、
+--    后来才定"理由必填"的库（例如 2026-09-23 上线的服务器库），那一列会一直允许为空
+--    （只有接口层的 `@NotBlank` 拦着，数据库自己不做最后一道保险）。所以补这段守护过程把它收掉。
+-- ⚠️ **收紧之前必须先回填**：存量库里既然允许为空，就可能真有 NULL 行（2026-09-25 之前建的请假单）；
+--    直接 `MODIFY … NOT NULL` 在严格模式下会报错、**把后面整段脚本一起打断**。
+--    空值统一填成下面那句话；**已经填过理由的行一个字都不改**（这是"补记"不是"改写"）。
+-- ⚠️ 幂等：列已经是 NOT NULL 时整段跳过；它是本脚本里**第一个中文数据字面量** ⇒ 见文件头的 `SET NAMES`。
+DROP PROCEDURE IF EXISTS band_tighten_leave_reason$$
+CREATE PROCEDURE band_tighten_leave_reason()
+BEGIN
+    DECLARE nullable INT DEFAULT 0;
+    SELECT COUNT(*) INTO nullable FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'leave_request'
+        AND COLUMN_NAME = 'reason'
+        AND IS_NULLABLE = 'YES';
+    IF nullable > 0 THEN
+        UPDATE leave_request SET reason = '（历史数据，理由缺失）' WHERE reason IS NULL;
+        ALTER TABLE leave_request
+            MODIFY reason VARCHAR(255) NOT NULL COMMENT '理由';
+    END IF;
+END$$
+CALL band_tighten_leave_reason()$$
+DROP PROCEDURE band_tighten_leave_reason$$
 DELIMITER ;

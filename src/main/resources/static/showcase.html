@@ -235,13 +235,24 @@ function measureChars() {
   w2 = chars2.map((c) => c.offsetWidth || 16);
 }
 
+/** 滚动锁（#93 ②）：三层（入场编排 / 轮播 / 专注单图）会**先后开关** ⇒ 用**集合记名**，不用布尔。
+    布尔会"关一层就把锁放了"——后开的那层还开着，页面却已经能滚（背后时间线跟着手指走）。
+    ⚠️ 三层共用 `documentElement.overflow` 这一处（照入场编排原来那套，`docs/14` §14.6.4
+    「我们的专场专页」末三条）；`overflow: hidden` 期间**专注单图那一层自己可滚**（`band.css` §10）：
+    外面锁住、里面放开。 */
+const scrollLocks = new Set();
+function setScrollLock(key, on) {
+  if (on) scrollLocks.add(key); else scrollLocks.delete(key);
+  document.documentElement.style.overflow = scrollLocks.size ? 'hidden' : '';
+}
+
 /** 收尾 / **跳过** / reduced-motion：直接到结尾状态（层撤掉、能滚动、把猫放出来）。 */
 function finishIntro() {
   clearIntro();
   mark('done');
   introDone = true;
   document.documentElement.classList.remove('sc-intro-on');   // ⇒ 层 `display:none`
-  document.documentElement.style.overflow = '';
+  setScrollLock('intro', false);
   document.body.classList.remove('cat-off');
   BAND.releaseCat();
 }
@@ -252,7 +263,7 @@ function runIntro() {
     finishIntro();
     return;
   }
-  document.documentElement.style.overflow = 'hidden';    // 编排期间锁住滚动
+  setScrollLock('intro', true);                          // 编排期间锁住滚动
   document.body.classList.add('cat-off');
   intro.classList.add('blink');                          // 光标只在编排期间闪（结束就摘掉）
   showChars(chars1, 0);
@@ -413,6 +424,7 @@ function openStage(fromRect) {
   clearTimeout(closeTimer);                 // ⚠️ 取消上一次"延迟关层"，见 closeStage
   closeTimer = null;
   stage.classList.add('open');
+  setScrollLock('stage', true);             // ⚠️ 满屏遮罩之下**不许**再带着时间线滚（#93 ②）
   document.body.classList.add('cat-off');   // 猫让位（同一个坑第三次）
   pos = 0;
   shown = 0;
@@ -440,6 +452,7 @@ function closeStage() {
   const fr = openCoverFrom;
   if (!fr || !stage.classList.contains('open')) {
     stage.classList.remove('open');
+    setScrollLock('stage', false);
     document.body.classList.remove('cat-off');
     return;
   }
@@ -451,6 +464,7 @@ function closeStage() {
   clearTimeout(closeTimer);
   closeTimer = setTimeout(() => {
     stage.classList.remove('open');
+    setScrollLock('stage', false);
     document.body.classList.remove('cat-off');
     closeTimer = null;
   }, reduced() ? 0 : 260);
@@ -514,9 +528,11 @@ function openFocus(i) {
   photoUrl(p.fileId).then((u) => { if (u) big.style.backgroundImage = 'url(' + u + ')'; });
   noteTx.textContent = p.note || '（这张没有配文案）';
   focus.classList.add('open');
+  setScrollLock('focus', true);             // ⚠️ 同上：这一层也盖满了屏（#93 ②）
 }
 function closeFocus() {
   focus.classList.remove('open');
+  setScrollLock('focus', false);            // 关一层只解一把锁：轮播那层若还开着，页面仍然锁着
   // ⚠️ 退出回到**刚才那张**（不是第一张）：把唯一状态对齐到刚点开的索引
   pos = lastIndex;
   shown = pos;

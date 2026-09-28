@@ -66,6 +66,11 @@
   --ring: 40px;          /* 当前项图标外的细环直径 */
   --shoulder: 22px;      /* 右缘"肩"的半径（角块边长同值） */
   --nav-foot: 15px;      /* 底部账号区字号 */
+  /* 手机端（`docs/14` §14.6.4「手机端（≤720px）」，2026-09-28 定稿）：细标题栏高 + 左滑操作区宽。
+     ⚠️ 抽屉宽 / 行高 / 字号 / 头像**复用上面那组导航令牌**（`--open-w` / `--row-h` / `--tx` / `--av`），
+     别另造一份。 */
+  --mhead-h: 52px;       /* 手机端细标题栏高（抽屉的 `padding-top` 也用它：身份行落在标题栏之下） */
+  --swipe-w: 140px;      /* 手机端表格行左滑露出的操作区宽（§10 的卡片行） */
   /* 展开这种大幅位移不能用全站 --ease：cubic-bezier(.22,.8,.28,1) 起步太猛
      （实测第一帧跳 50px/216px），要用两头慢的曲线 —— docs/14 §14.6.4 明说不共用 */
   --ease-nav: 340ms cubic-bezier(.4, 0, .2, 1);
@@ -231,6 +236,13 @@ h1 { font-size: 27px; letter-spacing: .02em; }
 .railwrap:hover .menu,
 .railwrap:focus-within .menu { scrollbar-width: thin; scrollbar-color: var(--shellhi) transparent; }
 
+/* ---- 菜单的分组容器（`docs/14` §14.6.4「手机端」二）----
+   DOM 只有一份：桌面与抽屉共用同一棵菜单树。**桌面端整块透明**（`display: contents` ⇒
+   那 14 项仍是一列平铺），组标题是手机端才有的折叠开关（桌面端 `display: none`）。
+   手机段的样式在 §10。 */
+.dgrp, .dgrp-b { display: contents; }
+.dgrp-h { display: none; }
+
 /* ---- 菜单项：只有当前项是浅色"凹槽"块 ---- */
 .rail .menu a.on {
   background: var(--silk);
@@ -334,7 +346,13 @@ h1 { font-size: 27px; letter-spacing: .02em; }
    所以"肩"保不保留、糊不糊，以人眼看到的那一瞬间为准
    （`design-samples/_rail_pill.py` 只出截图，也没能把它自动定下来）。 */
 .railwrap { view-transition-name: none; }        /* 不再点名整根柱子（原来叫 rail） */
-.rail .menu a.on { view-transition-name: nav-pill; }
+/* ⚠️ 点名"当前项"这条**显式收进 `min-width: 721px`**（`docs/14` §14.6.4「跳页过渡」末段，2026-09-28）：
+   手机端是**抽屉**，`.menu a.on` 常态在**屏幕之外**（`.railwrap` 是 `translateX(-100%)`）⇒
+   若仍点名它，浏览器会把那块凹槽**从屏外滑进来**（不是"没效果"，是"一个东西从边上飞进来"）。
+   窄屏 / 触屏那半边在 §10 里显式写成 `none`。**桌面这条一个字没改**（只加了门控）。 */
+@media (min-width: 721px) {
+  .rail .menu a.on { view-transition-name: nav-pill; }
+}
 /* 登录那一次**不参与**跨页过渡：目标页首帧本来就是 `.wel` 全黑幕（z-index 90），
    再叠一层文档级过渡必然互相盖住。`band-nav.js` 读到 band_welcome 时会挂上这个类。 */
 html.no-xvt { view-transition-name: none; }
@@ -345,6 +363,9 @@ html.no-xvt .rail .menu a.on { view-transition-name: none; }
 .main { flex: 1; min-width: 0; padding: 36px 46px 44px 34px; }
 
 .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 26px; }
+/* 手机端的细标题栏（`app.js` 的 `mountSkeleton` 把它建在 `.head` 里）：**只在窄屏 / 触屏出现**。
+   桌面端页头本来就没有头像，而且桌面用侧栏 ⇒ 整条不画（`display: none` 是**基准**，§10 里翻成 flex）。 */
+.mhead { display: none; }
 .head .head-l { display: flex; flex-direction: column; }
 .head .head-l h1 { font-size: 18px; color: var(--mid); margin: 0; }
 .head .greet { font-size: 13px; color: var(--mid); }
@@ -594,13 +615,35 @@ html.wel-armed .wel { display: flex; }
 .p-pw-form { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .p-pw-form[hidden] { display: none; }
 
-@media (max-width: 720px) {
+/* 「← 回抽屉」：**只在手机端的第二层里出现**（桌面端点面板外 / Esc 就够）。
+   ⚠️ 样张（`design-samples/mobile-mock.html` 的 `.p2head .back`）里有它、**规格正文只写了
+   "Esc / 点面板外关闭"** —— 手机上既没有 Esc，第二层又把 320px 占满、只剩右边一条缝，
+   没有它就等于"进去出不来"（已记 `交接单` §三 移交事项）。 */
+.p-back {
+  display: none; position: absolute; top: 14px; left: 14px;
+  width: 40px; height: 40px; border-radius: 10px;
+  border: 1px solid var(--edge); background: none; color: var(--deep);
+  font-family: inherit; font-size: 17px; cursor: pointer;
+  align-items: center; justify-content: center;
+}
+
+/* 个人栏在手机端 = 与抽屉**同一方向**左滑出的"第二层"（`docs/14` §14.6.4「个人栏」，2026-09-28 定稿，结 T10）。
+   ⚠️ **留痕（旧文与旧理由保留不删）**：这里原来写的是「手机端从**底部**升起（底部抽屉）——
+   团员日常用手机，底部比侧滑好够到」。**推翻的理由**：手机端主导航**也**变成左侧抽屉了
+   ⇒ 个人栏若仍从底部升起，同屏就有**两个方向**的手势、容易互相打架；改成同一方向（左）的第二层，
+   全屏只剩一种手势。桌面端（精确指针 + 宽屏）不变。 */
+@media (max-width: 720px), (pointer: coarse) {
   .profile {
-    left: 0; right: 0; bottom: 0; top: auto; width: auto;
-    border-radius: var(--radius) var(--radius) 0 0;
-    transform: translateY(24px); padding-bottom: 28px;
+    left: 0; right: auto; top: 0; bottom: 0; width: var(--open-w);
+    z-index: 800;                      /* ⚠️ 必须**盖在抽屉之上**：抽屉 700、遮罩 600 */
+    border-radius: 0; padding: calc(var(--mhead-h) + 18px) 20px 22px;
+    transform: translateX(-100%);        /* 与抽屉同方向、同一条缓动 */
+    transition: opacity var(--t-base) var(--ease), transform var(--ease-nav),
+                visibility 0s linear var(--t-base);
   }
   .profile.open { transform: none; }
+  .profile-backdrop { z-index: 750; }    /* 夹在抽屉与第二层之间 */
+  .p-back { display: flex; }
 }
 
 /* ============ §6 bento 网格：一个主角格 + 配角 ============ */
@@ -1103,38 +1146,215 @@ body.cat-off #oneko { display: none; }
 #m-hint { margin-top: 10px; }
 
 /* ============ §10 手机 ============ */
-/* ⚠️ **本节即将被重写**：手机端形态已 **2026-09-28 定稿 = 抽屉（汉堡）**，
-   规格见 `docs/14` §14.6.4「**手机端（≤720px）**」（含分组归属表 / 当前项高亮 / 密度 / 卡片行 / 四样手感）。
-   本节下面那块是**旧形态**，实现方按新规格改；**旧文与旧理由保留不删**（见下面第一句注释）。
-   ⚠️ 与形态无关、**无论怎么改都成立**的一条：`.railwrap` 的 `position: static`（见本节末尾那条注释）。 */
-@media (max-width: 720px) {
-  /* 手机端形态待定（docs/00 T9），先照旧：顶部一条横排、常显、不裁切。
-     悬停展开在触屏上不生效，预留位在窄屏上没有意义，全部放开。
-     ——【2026-09-28 留痕】T9 已结案，形态定为**抽屉**；这段话与它下面的规则是**旧形态**，别当成依据。 */
-  .layout { display: block; }
-  .nav-slot { display: block; }
-  /* ⚠️ `position: static` 不能少（docs/14 §14.6.4「移动端」）：手机段给了 `height: auto`，
-     若还留着桌面那条 `sticky`，会把整条顶栏**钉在屏幕顶上**——那是真实的行为变更，不是 no-op */
-  .railwrap { width: 100%; height: auto; min-height: 0; overflow: visible; position: static; }
-  .rail {
-    height: auto; min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center;
-    gap: 6px 14px; padding: 10px 14px;
+/* 手机端形态 = **左侧抽屉**（2026-09-28 定稿，结 `docs/00` 的 T9 / T10），
+   规格见 `docs/14` §14.6.4「**手机端（≤720px）**」（细标题栏 / 抽屉 / 分组归属表 / 当前项高亮 /
+   密度收紧 / 卡片行 / 四样手感）。
+   ⚠️ **旧形态（"顶部一条横排、常显"）整块删掉了**——用户报的"手机端 UI 过于臃肿"第一样就是它。
+   它当年那条 `.railwrap { position: static }` 的理由（手机段给了 `height: auto`，留着桌面的
+   `sticky` 会把顶栏钉在屏幕顶上）现在由"抽屉是 `position: fixed`"接管，**不是 no-op 的那份注意仍然成立**。
+
+   ⚠️⚠️ **门控是"窄屏 **或** 触屏"，不是只"窄屏"**：平板（721–1024）不满足
+   `(hover:hover) and (pointer:fine)` ⇒ 桌面那套"悬停展开"在触屏平板上**永远不生效**、
+   92px 轨道展不开（`docs/14` §14.6.4 九 说的"死档"）。所以这里用 `(pointer: coarse)` 把触屏平板圈进来；
+   **桌面（精确指针 + 宽屏）一个字不动**。⇒ `app.js` 的 `BAND.isMobile()` **必须与这一条同源**。 */
+@media (max-width: 720px), (pointer: coarse) {
+  /* ---- 一、细标题栏（DOM 由 `app.js` 的 `mountSkeleton` 建在 `.head` 里）----
+     左侧那颗头像是**抽屉开关**（2026-09-28 用户定的；原方案是 `☰`）——它同时是**欢迎过渡的落点**，
+     所以必须一直可见。几何与层级写死：抽屉 700 / 遮罩 600 / **标题栏 20（必须低于遮罩）**。 */
+  .mhead {
+    position: sticky; top: 0; z-index: 20;
+    flex: 0 0 auto; height: var(--mhead-h);
+    display: flex; align-items: center; gap: 10px; padding: 0 6px 0 4px;
+    background: var(--silk); border-bottom: 1px solid var(--pale);
   }
-  .rail .me { height: auto; margin: 0 4px 0 0; }
-  .rail .menu a, .rail .me { height: auto; padding: 5px 6px; }
-  .rail .menu a .ic, .rail .me .ic { flex: 0 0 auto; padding-right: 4px; font-size: calc(var(--ic) * .8); }
-  .rail .menu a .tx, .rail .me .tx { font-size: calc(var(--tx) * .82); }
-  .rail .menu { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; overflow: visible; }
-  .rail .menu a.on { border-radius: 10px; background: var(--silk); }
-  .rail .menu a.on::before, .rail .menu a.on::after { display: none; }
-  .rail .menu a.on .ic::after { display: none; }
-  .rail .foot { margin: 0; padding-left: 0; line-height: 1.6; }
+  .mav-toggle {
+    flex: 0 0 auto; padding: 0 4px; border: 0; background: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .mav-toggle:active { transform: scale(.92); }
+  /* 标题栏那颗头像的**手机版外形**（内容由 `paintAvatar` 填：有头像放 `img`、否则姓名首字）。
+     ⚠️ 别在别处再写第二套头像渲染。 */
+  .mav-toggle span {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--shellhi); color: var(--shell);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
+  }
+  .mh-title { font-size: var(--tx); font-weight: 600; color: var(--deep); letter-spacing: .02em; }
+  /* `.head` 用 `display: contents` **不是随手写的**：`.mhead` 要 `sticky` 就得有一根够长的
+     "行程"（containing block），而 `.head` 自己的盒子只有标题栏 + 欢迎行那么高 ⇒ 滚过一屏它就
+     不再钉住了。摊平成 `.main` 的直接子元素之后，行程 = 整个正文高度。
+     ⚠️ `.head > .head-l > h1` 这层**结构一动没动**（`event-detail.html:42` / `concert-detail.html:143`
+     直接取 `.head h1` 写标题）。 */
+  .head { display: contents; }
+  .head-l > h1 { display: none; }            /* 页面名只在标题栏出现，正文里不再重复一遍 */
+  .head-l { padding: 16px 18px 0; }
+  .head-r { padding: 6px 18px 0; }
+
+  /* ---- 二、抽屉：就是**桌面那根柱子**（`.railwrap > .rail`），改成从左侧滑出的浮层 ----
+     单份 DOM：桌面与手机共用同一棵侧栏（`mountSkeleton` 只建一次）。 */
+  .layout { display: block; }
+  /* ⚠️⚠️ **不能写 `display: none`**：抽屉（`.railwrap`）**就在 `.nav-slot` 里面**，把它整块藏掉
+     等于把侧栏一起藏了（实测：`.rail` 的 `offsetHeight` = 0，而 `getBoundingClientRect().x` 也恰好是 0，
+     被探针读成"抽屉开着"——**假绿**）。这里只把它做成一个 **0 尺寸的壳**：抽屉是 `position: fixed`、
+     本来就脱离文档流，`.nav-slot` 剩下的作用只是"不要再占那 320px 的预留位"。
+     ⚠️ `.hit` 也在这个壳里 ⇒ 它 `height: 100%` 的 0 高度加上下面那条 `pointer-events: none`，
+     "压在标题栏 x∈[92,180] 上偷点击"的毛病才真的没有。 */
+  .nav-slot { display: block; width: 0; height: 0; }
+  .hit { pointer-events: none; }
+  .railwrap {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--open-w); height: auto; min-height: 0;
+    z-index: 700; overflow: hidden;
+    transform: translateX(-100%);
+    transition: transform var(--ease-nav);   /* 与桌面展开同一条缓动（340ms） */
+  }
+  html.drawer-open .railwrap { transform: none; }
+  /* ⚠️ 桌面那三条"悬停 / `rail-keep` / `:focus-within` 展开"的门控都带 `min-width: 721px`（§4），
+     触屏平板与窄屏天然进不来 ✔ —— 抽屉**只由标题栏那颗头像**（与遮罩）驱动。 */
+  .rail {
+    /* 顶部空出**整个标题栏的高度**：身份行要落在标题栏**之下**、与标题栏那颗头像**不重叠**
+       （用户 2026-09-28 在"两颗重合"与"下移不重叠"之间选了下移）。
+       ⚠️ 同一个头像图形出现两处、两种职责是**选定的取舍**：标题栏那颗 = 开抽屉，
+       这一行这颗 = 开个人栏，靠位置区分 —— **别为了"统一"把两颗合并，也别再加第三颗**。 */
+    padding-top: calc(var(--mhead-h) + 18px);
+  }
+  .rail .me { margin-bottom: 14px; }        /* 身份行（`.me`）本身的行高与 flex 居中沿用桌面那份
+                                               ——漏掉 `align-items: center` 时头像与文字中心差 37px */
+  /* 抽屉里唯一会滚的东西（`.menu` 桌面那份已经 `overflow-y:auto`）；**不显示滚动条**，
+     理由同桌面收起态（`band.css` §4：一直露着一条很难看）。⚠️ 是"隐藏滚动条"、不是"取消滚动"。 */
+  .rail .menu { padding-top: 0; margin-top: 0; scrollbar-width: none; }
+  .rail .foot { padding-left: 0; line-height: 1.8; }
   .rail .foot .brand { margin-bottom: 0; }
-  .main { padding: 22px 20px 30px; }
-  .grid { grid-template-columns: 1fr; grid-template-rows: auto; gap: 14px; }
+  /* 当前项：**只留左半圆帽 + 细环，右缘那两个「肩」不画**（`DECISIONS` D24）。
+     桌面那套的隐喻是"浅色高亮块**挖进右侧相邻的浅色正文**"，而抽屉浮在**深色遮罩**之上、
+     右边根本没有浅色正文可接 ⇒ 同样的弧会变成两块浅色浮在深色上，读不出"挖"的意思。
+     ⚠️⚠️ **桌面那两条（§4 的 `.rail .menu a.on::before/::after`）一个字都不许动。两套形态，别互相抄。** */
+  .rail .menu a.on::before, .rail .menu a.on::after { content: none; }
+
+  /* ---- 二·分组（`docs/14` §14.6.4 二/四）：抽屉里分「日常 / 管理」两组，「管理」默认折叠 ----
+     ⚠️ 桌面端这两条被 §4 的 `display: contents` / `display: none` 摊平（那里是基准，这里是覆盖）。 */
+  .dgrp { display: block; }
+  .dgrp-b { display: block; }
+  .dgrp:not(.open) .dgrp-b { display: none; }
+  .dgrp-h {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; padding: 10px 12px; margin: 2px 0;
+    border: 0; background: none; cursor: pointer; font-family: inherit;
+    color: var(--shellmid); font-size: calc(var(--tx) * .82); letter-spacing: .08em;
+  }
+  .dgrp-h i { font-style: normal; transition: transform var(--t-fast) var(--ease); }
+  .dgrp.open .dgrp-h i { transform: rotate(90deg); }   /* ⚠️ 基线是 ▸，**只有展开**才转成 ▾ —— 别写反 */
+  .dgrp.open .dgrp-h { color: var(--silk); }
+
+  /* ---- 三、遮罩 ---- */
+  .scrim {
+    position: fixed; inset: 0; z-index: 600;
+    background: rgba(42, 29, 20, .46);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--t-base) var(--ease);
+  }
+  html.drawer-open .scrim { opacity: 1; pointer-events: auto; }
+
+  /* ---- 四、跳页过渡：窄屏 / 触屏**不许点名当前项**（它在屏外，凹槽会从边上飞进来）---- */
+  .rail .menu a.on { view-transition-name: none; }
+
+  /* ---- 五、密度收紧一档（只在手机段覆盖，§1 的令牌值与桌面版一律不动）---- */
+  :root { --pad: 18px; --gap: 14px; }
+  body:not(.page-showcase) .main { padding: 0; }        /* 标题栏要贴到屏幕顶与左右两边 */
+  body:not(.page-showcase) .mbody { padding: 0 18px 30px; }
+  .grid { grid-template-columns: 1fr; grid-template-rows: auto; gap: 10px; }
   .cell.hero, .cell.wide, .cell.s1, .cell.s2 { grid-area: auto; }
   .hero h2 { font-size: 27px; }
-  .tb th, .tb td { padding-right: 14px; }
+
+  /* ---- 六、表格 → 「一行一人」的卡片行（`docs/14` §14.6.4 八）----
+     名册 5 列 / 考勤明细 6 列在 390px 上靠缩 padding 撑不住（字小、还得横着拖）⇒
+     手机上**不显示表头**，每格改成「标签 · 值」两列；第一格当卡头。
+     ⚠️ 只改版式，**表格语义（`<table>` / `<tr>` / `<td>`）一个字不动**：`display` 换了，
+     选择器与无障碍都还在（各页自己的 `.av-name` / `.chip` 那堆照样命中）。
+     ⚠️ `data-label` 由 `app.js` 的 `BAND.shapeRows()` 从 `thead th` 抄过来（手机端才做）。 */
+  .tb, .tb tbody { display: block; }
+  .tb thead { display: none; }                      /* 手机上不显示表头 */
+  .tb tbody tr {
+    display: block; position: relative; overflow: hidden;
+    background: var(--cell); border-radius: 12px; margin-bottom: 10px;
+  }
+  .tb td {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 6px 14px;
+  }
+  .tb td::before {
+    content: attr(data-label); flex: 0 0 auto;
+    font-size: 11.5px; letter-spacing: .16em; color: var(--mid);
+  }
+  .tb td[data-label=""]::before { content: none; }
+  .tb tr td:first-child { padding-top: 12px; font-size: 16px; font-weight: 600; }
+  .tb tr td:first-child::before { content: none; }
+  /* 左滑露出的操作区：**内容格往左滑、操作格钉在右边** —— 操作格 `z-index: 0`、
+     内容格 `z-index: 1` + 不透明底 ⇒ 平时它被内容盖着，滑开才露出来。
+     ⚠️ `translateX` 挂在**格子上**、不挂在**行**上：行的 `transform` 已经被入场动画的
+     `translateY` 占着（§14.6.4「界面的活性」③），**同一元素上两条 `transform` 会互相覆盖**
+     （规格原文那条硬约束）。手机上 `<table>` 里能挂 transform 的"内层包裹元素"就是 `<td>` 自己——
+     再往里包一层 `<span>` 会打断各页自己的选择器，那点收益不值这个险。 */
+  .tb tr.swipable td {
+    position: relative; z-index: 1; background: var(--cell);
+    transition: transform var(--t-base) var(--ease);
+  }
+  .tb tr.swipable td.sw-act {
+    position: absolute; top: 0; right: 0; bottom: 0; width: var(--swipe-w); z-index: 0;
+    /* ⚠️ `flex-wrap: wrap` 是**必须的**：`--swipe-w` 只有 140px，而「团员管理」那一行末格里有
+       4 个按钮（编辑 / 重置密码 / 踢下线 / 停用）——不换行就会被挤成一条、字全糊在一起。
+       卡行本身有 5~6 格那么高，换行放得下。⚠️ 别改成"把按钮藏掉几个"：那是功能缺失。 */
+    display: flex; flex-wrap: wrap; align-content: center; align-items: center;
+    justify-content: center; gap: 6px;
+    padding: 8px 6px; font-weight: 400; font-size: 14px;
+  }
+  .tb tr.swipable td.sw-act > * { flex: 0 0 auto; margin: 0; }
+  .tb tr.swipable td.sw-act::before { content: none; }
+
+  /* ---- 七、下拉刷新（`docs/14` §14.6.4 六 + 「界面的活性」6）----
+     参数**写死**（阈值 64 / 位移衰减 ×0.5 / 封顶 96，见 `app.js` 的 `mountPullRefresh`）。
+     ⚠️⚠️ **`transform` 只许打在 `.mbody` 上**（正文包裹层）：打在 `.main` 上会建 containing block，
+     `showcase.html` 那些 `position: fixed` 层与 `#wel` 的参照系会一起乱（规格原文）。
+     ⚠️ 提示条**挂在 `.mbody` 内部**、常态 `translateY(-100%)` ⇒ 正文被推下去时它"自然露出来"，
+     不需要再写一条会与主位移对不齐的跟随动画。 */
+  html { overscroll-behavior-y: contain; }   /* 关掉 Chromium 原生下拉刷新，别和自绘的抢 */
+  .mhint {
+    position: absolute; top: 0; left: 0; right: 0; height: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    color: var(--mid); font-size: 13px;
+    transform: translateY(-100%);
+  }
+  .mhint .arrow { display: block; font-size: 15px; line-height: 1;
+                  transition: transform var(--t-base) var(--ease); }
+  .mhint .spin { display: none; width: 15px; height: 15px; border-radius: 50%;
+                 border: 2px solid var(--pale); border-top-color: var(--wood); }
+  html.ptr-load .mhint .arrow { display: none; }
+  html.ptr-load .mhint .spin { display: block; animation: mhintSpin 700ms linear infinite; }
+  /* ⚠️ 转的是 **`transform: rotate`**（不是 `border-color` / `background-position` —— 不在白名单）。
+     这个旋转**不是 idle 循环**：只在真在加载时转、加载完就停（`docs/14` §14.6.6）。 */
+  @keyframes mhintSpin { to { transform: rotate(360deg); } }
+  html.ptr-drag .mhint .arrow { transform: rotate(var(--mh-rot, 0deg)); transition: none; }
+  .mbody { position: relative; transition: transform 320ms var(--ease); }
+  html.ptr-drag .mbody { transition: none; }
+
+  /* ---- 八、骨架屏（`docs/14` §14.6.4 六 + 「界面的活性」8）----
+     ⚠️ 必须在 `BAND.alive(...)` **之前**撤掉：那一批"只播一次"的入场快照会把骨架一起拍进去。
+     ⚠️ 流光走 **`transform: translateX`**（不是 `background-position`）。 */
+  .mbody > .skel { display: none; }
+  .mbody.loading > .skel { display: block; }
+  .mbody.loading > *:not(.skel) { display: none; }   /* 加载中不显示"空表格 + 骨架"两份 */
+  .skel .sk { background: var(--cell); border-radius: 12px; height: 96px; margin-bottom: 14px;
+              position: relative; overflow: hidden; }
+  .skel .sk.tall { height: 150px; }
+  .skel .sk.row { height: 60px; }
+  .skel .sk::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 253, 248, .72), transparent);
+    transform: translateX(-100%); animation: skelSweep 1100ms linear infinite;
+  }
+  @keyframes skelSweep { to { transform: translateX(100%); } }
 
   /* ---- 专场专页（`docs/14` §14.6.4）：这一页是"手机上看得多"的页面 ----
      中轴**靠左**、节点单列铺满（左右交替在半屏宽下会把图和年份都挤成一条）。
@@ -1147,12 +1367,33 @@ body.cat-off #oneko { display: none; }
   .sc-stop, .sc-stop:nth-of-type(odd), .sc-stop:nth-of-type(even) {
     width: calc(100% - 26px); margin: 0 0 16vh 26px; text-align: left;
   }
-  .sc-stop:nth-of-type(odd)::before, .sc-stop:nth-of-type(even)::before { right: auto; left: -26px; }
-  .sc-stop:nth-of-type(odd)::after, .sc-stop:nth-of-type(even)::after { right: auto; left: -30px; }
+  /* ⚠️⚠️ 这两条就是 **#93 ①** 修掉的错位：手机段把 `.sc-axis` 挪到 `left: 18px`、节点
+     `margin-left: 26px`（上面那两条）⇒ **节点左缘离中轴只剩 8px**；而这里原来照抄的是**桌面那套
+     `-26` / `-30`**（那是按"节点离中轴 **22px**"设计的）。390px 实测：短横跨到轴上 **4px**、
+     轴点中心落在轴**左边 18.5px** —— 小点浮在左侧空白里，根本没落在轴上。
+     ⚠️ **8px 是"轴靠左 18px + 节点左缘 26px"推导出来的后果**，不是随手定的数：
+     改上面那两个值，这两条就要跟着重算。
+     3.5 = 轴点半径（7px 的一半）⇒ 短横从轴上起、轴点中心正好落在轴上。 */
+  .sc-stop:nth-of-type(odd)::before, .sc-stop:nth-of-type(even)::before { right: auto; left: -8px; width: 8px; }
+  .sc-stop:nth-of-type(odd)::after, .sc-stop:nth-of-type(even)::after { right: auto; left: calc(-8px - 3.5px); }
   .sc-stop-img { max-height: none; }        /* 手机上按比例算出来就≈151px，不需要那个上限 */
   .sc-yr { font-size: 23px; }
   .sc-motto { margin: 30px 0 34px; font-size: 17px; }
   .sc-back { margin-bottom: 30px; }         /* 手机也是页尾一行（顶栏在这一页已经不显示了） */
+
+  /* ---- 专注单图（#93 ③）：这一层**自己可纵向滚**，文案超高时够得到 ----
+     ⚠️ 与 #93 ② 配套：**外面锁住（滚动的锁在 `showcase.html` 里加在 `documentElement` 上）、
+     这一层里面放开**。锁加在这一层上就照样滚不动。
+     ⚠️ 居中改用 `margin-block: auto`，**不能只靠 `align-items: center`**：后者在内容高出容器时
+     会把**上缘裁掉**（flex 居中溢出的老毛病）—— 那正好就是"上面那张照片看不见"。
+     ⚠️ 关闭按钮改 `position: fixed`：这一层一旦能滚，绝对定位的它会**跟着内容滚走**，
+     而手机上没有 Esc ⇒ 退出就够不到了（与"文案够不到"是同一类毛病）。 */
+  .sc-focus {
+    overflow-y: auto; overscroll-behavior: contain;
+    align-items: flex-start; padding: 26px 18px 46px;
+  }
+  .sc-focus .sc-big, .sc-focus .sc-note { margin-block: auto; }
+  .sc-focus .sc-cls { position: fixed; }
 
   /* ---- 节拍器（`docs/14` §14.6.4「练习录音页」）：手机上**单列铺开、按钮整行** ---- */
   .metro-row { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -1172,6 +1413,15 @@ body.cat-off #oneko { display: none; }
 /* ============ §11 降级 ============ */
 @media (prefers-reduced-motion: reduce) {
   .railwrap { transition-duration: 0s; }
+  /* 手机端四样手感（`docs/14` §14.6.6 降级清单 ⑧，2026-09-28）：抽屉开合与遮罩、下拉刷新、
+     左滑、骨架屏的过渡**全部归零**、各自**直接给终态** —— 抽屉直接出现、下拉指示器**不转圈**
+     （内容照常刷新）、左滑直接到位、**骨架照常显示只是不扫光**。
+     ⚠️ 降级是"减少"不是"删掉"：功能一样不缺（抽屉照样开、下拉照样刷、左滑照样划、骨架照样占位）。 */
+  .scrim, .mbody, .tb tr.swipable td, .mhint .arrow { transition: none; }
+  /* ⚠️ 这里**必须 `!important`**：手机段那条是 `html.ptr-load .mhint .spin`（0,3,1），
+     比 `.mhint .spin`（0,2,0）特异 —— 不写它的话 reduced-motion 下照样转圈（实测踩过）。 */
+  .mhint .spin { animation: none !important; }
+  .skel .sk::after { animation: none; }
   /* `.tb tbody tr` 已在下面那条里；这里再补「界面的活性」新加的两处过渡（点阵内层 / 出勤横条）。
      ⚠️ 正常情况下 JS 侧已经保证 reduced 下直接给终态（`ALIVE.play` 的降级分支），这里是兜底。 */
   .go, .tb tbody tr { transition: none; }

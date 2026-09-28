@@ -812,6 +812,21 @@ const BAND = {
     ['logs.html', '操作日志', '志', ['ADMIN', 'LEADER']],
   ],
 
+  /** 抽屉里的分组归属表（`docs/14` §14.6.4 二，2026-09-28 定）。⚠️ **只影响手机端的抽屉**：
+      桌面仍是那一列 14 项平铺（`.dgrp` 在桌面端是 `display: contents`、组标题不画）。
+      ⚠️ 这里**只写 `href`**，名字与图标仍从 `navItems` 取（单一来源）；`navItems` 本身不改。
+      某角色在某组里一项都看不到时，那一组连标题都不画（团员就没有「管理」组）。 */
+  navGroups: [
+    ['日常', ['events.html', 'members.html', 'my-leave.html', 'pieces.html', 'concerts.html',
+              'recordings.html', 'stats.html']],
+    ['管理', ['approve-leave.html', 'admin-events.html', 'admin-showcase.html', 'admin-members.html',
+              'admin-feedback.html', 'admin-notes.html', 'logs.html']],
+  ],
+
+  /** 各折叠组的开关状态（键 = 组下标）。⚠️ **真值只在这里**：DOM 上那个 `.open` 类只是它的投影
+      （`mountDrawer` 的委托监听器写回来）。从没手动动过 ⇒ 该键不存在。 */
+  grpOpen: {},
+
   /** 不在主导航里的页面取不到菜单项，标题单独给——别把它们塞进 `navItems`（那会多出一个菜单项）。 */
   offMenuTitles: {
     'sessions.html': '登录设备',
@@ -845,12 +860,29 @@ const BAND = {
         <div class="foot">
           <div class="brand">山水民族管弦乐团</div>
         </div>
-      </aside></div></div>`;
+      </aside></div></div>
+      <div class="scrim"></div>`;
 
     const main = document.createElement('main');
     main.className = 'main';
     const head = document.createElement('div');
     head.className = 'head';
+    // 细标题栏（docs/14 §14.6.4「手机端（≤720px）」）：**只在窄屏 / 触屏出现**（CSS 里 `display:none` 兜底）。
+    // 左侧那颗头像是「开抽屉」的开关（2026-09-28 用户定的，原方案是 `☰`）——它同时是**欢迎过渡的
+    // FLIP 落点之一**（`playWelcome` 的 `targets()` 在触屏 / 窄屏下取的就是它），所以它必须一直可见。
+    // ⚠️ 内容走 `paintAvatar`（清单校验 + 首字回退都在它内部），别写第二套；拿到身份之前留空、不编数据。
+    const mhead = document.createElement('div');
+    mhead.className = 'mhead';
+    const mav = document.createElement('button');
+    mav.className = 'mav-toggle';
+    mav.type = 'button';
+    mav.setAttribute('aria-label', '打开菜单');
+    mav.setAttribute('aria-expanded', 'false');
+    const mavSpan = document.createElement('span');
+    mav.appendChild(mavSpan);
+    const mhTitle = document.createElement('span');
+    mhTitle.className = 'mh-title';
+    mhead.append(mav, mhTitle);
     const headL = document.createElement('div');
     headL.className = 'head-l';
     // 欢迎行（docs/14 §14.6.4）：姓名朱砂、后面跟职称，不用标点；它是欢迎过渡的落点之一
@@ -868,11 +900,47 @@ const BAND = {
     const headR = document.createElement('div');
     headR.className = 'head-r';
     headR.innerHTML = '<span class="greet"></span>';
-    head.append(headL, headR);
+    head.append(mhead, headL, headR);   // ⚠️ `.mhead` 在桌面端 `display:none` ⇒ 桌面那套布局与从前一模一样
     main.appendChild(head);
+    // 正文**再包一层**（`docs/14` §14.6.4 六）：手机端下拉刷新的 `transform` 只能打在这一层上——
+    // 打在主区容器上会建 containing block，把 `showcase.html` 那些 `position:fixed` 层与 `#wel`
+    // 的参照系一起搞乱。骨架屏（C 批）也插在这里。**`.head` 留在包裹层外面**，否则标题栏会跟着位移。
+    const mbody = document.createElement('div');
+    mbody.className = 'mbody';
+    // 下拉刷新的提示条（`docs/14` §14.6.4 六）：挂在正文包裹层**内部**、常态 `translateY(-100%)`
+    // ⇒ 正文被推下去时它"自然露出来"，不用再写一条会与主位移对不齐的跟随动画。
+    const hint = document.createElement('div');
+    hint.className = 'mhint';
+    const hArrow = document.createElement('span');
+    hArrow.className = 'arrow';
+    hArrow.textContent = '↓';
+    const hSpin = document.createElement('span');
+    hSpin.className = 'spin';
+    const hintTx = document.createElement('span');
+    hintTx.className = 'mh-tx';
+    hintTx.textContent = '下拉刷新';
+    hint.append(hArrow, hSpin, hintTx);
+    // 骨架屏（六 + 「界面的活性」8）：只在手机段显示，由 `BAND.alive()` 撤掉（`endLoading`）。
+    const skel = document.createElement('div');
+    skel.className = 'skel';
+    skel.innerHTML = '<div class="sk tall"></div><div class="sk row"></div>' +
+                     '<div class="sk row"></div><div class="sk"></div>';
+    mbody.append(hint, skel);
+    main.appendChild(mbody);
     layout.appendChild(main);
+    // ⚠️⚠️ **骨架屏只对"有列表 / 数字那类内容"的页面开**（`ALIVE.play` 认得的那几样，静态标记里就有）。
+    // 沉浸页（`showcase.html`）与纯表单页**没有"纯白等"这回事**，给它们盖骨架反而像卡住了 ——
+    // 而且它会顺手把正文藏掉（`.mbody.loading > *:not(.skel)`），**跨批回归时真被探针抓到过**
+    // （专页探针量到中轴 `x = 0.00`：整页内容还在骨架的 3 秒窗口里）。
+    const host0 = document.getElementById('navbar');
+    if (host0 && host0.parentNode.querySelector('table.tb, [data-count], .penta, .attbar')) {
+      mbody.classList.add('loading');
+      // ⚠️ **兜底**：个别页面**不调** `BAND.alive()`——少了它，骨架会把正文**一直**盖住
+      // （`.mbody.loading` 会把非骨架子元素一起藏掉）。正常路径是 `alive()` 里的 `endLoading()`。
+      setTimeout(() => this.endLoading(mbody), 3000);
+    }
 
-    // 把 #navbar 之后的页面内容全部挪进 .main（toast-host 留在 body 上）
+    // 把 #navbar 之后的页面内容全部挪进 `.mbody`（toast-host 留在 body 上）
     const host = document.getElementById('navbar');
     const moved = [];
     let node = host.nextSibling;
@@ -881,18 +949,26 @@ const BAND = {
       if (node.nodeType === Node.ELEMENT_NODE && node.id !== 'toast-host') moved.push(node);
       node = next;
     }
-    moved.forEach((n) => main.appendChild(n));
+    moved.forEach((n) => mbody.appendChild(n));
     host.replaceWith(layout);   // ← 这一步之后，布局就定了；接口还没回来也不影响首帧
 
     // 底栏现在只剩品牌一行，**没有监听器要绑**了——「退出」与「声音」都搬去了个人栏
     //（`#p-logout` / `#p-sound`，见 `mountProfile`）。
     // ⚠️ 收起判定**必须在这里同步绑**（不能等 `await requireUser()` 回来），详见 `mountRailKeep`。
     this.mountRailKeep(layout);
+    // 抽屉的开关同理：`mountSkeleton` 一个页面只跑**一次**（第二次 `renderNav()` 只走 `paintNav()`、
+    // 不重建 DOM，`app.js` 上面那段注释）⇒ 这里同步绑，别挪进 `paintNav`。
+    this.mountDrawer(layout);
+    this.mountRowSwipe();
+    this.mountPullRefresh({ mbody, hint, hintTx, hArrow });
 
     return {
       layout, active,
       menu: layout.querySelector('.menu'),
       av: layout.querySelector('.me .ic span'),
+      mav: mavSpan,                       // 手机标题栏那颗（欢迎过渡在手机端的落点，见 `playWelcome`）
+      mhTitle,
+      mbody, skel, hint, hintTx, hArrow,
       meName: layout.querySelector('.me-name'),
       meSec: layout.querySelector('.me-sec'),
       wname, wrole, h1,
@@ -902,18 +978,40 @@ const BAND = {
   },
 
   /**
+   * 菜单 HTML（`docs/14` §14.6.4 二/四）：桌面仍是 14 项平铺；手机端在抽屉里分「日常 / 管理」两组，
+   * **「管理」默认折叠**，而**当前项落在哪一组，那一组就必须展开**（硬条款——否则"你在这一页"的
+   * 高亮块看不见）。⚠️ 硬条款优先于"手动折叠"：你在管理组的某一页里手动收它，这一页会立刻展回来，
+   * 这是**有意**的，别当 bug（要改口径得先动规格）。
+   * ⚠️ 分组容器与组标题在**桌面端**被 `band.css` §4 摊平（`display: contents` / `none`），
+   * 所以这一份 DOM 桌面与抽屉共用，不做两套。
+   */
+  menuMarkup(me, active) {
+    const allowed = this.navItems.filter(([, , , roles]) => roles.includes(me.role));
+    const byHref = new Map(allowed.map((it) => [it[0], it]));
+    const link = ([href, label, icon]) =>
+      `<a href="/${href}"${href === active ? ' class="on"' : ''}>` +
+      `<span class="ic" aria-hidden="true">${icon}</span><span class="tx">${label}</span></a>`;
+    return this.navGroups.map(([name, hrefs], gi) => {
+      const items = hrefs.map((h) => byHref.get(h)).filter(Boolean);
+      if (!items.length) return '';               // 这个角色在这一组里一项都没有 ⇒ 连组标题都不画
+      const fold = gi > 0;                        // 第 0 组（日常）不可折叠；其余可折叠
+      const open = !fold || !!this.grpOpen[gi] || items.some((it) => it[0] === active);
+      return `<div class="dgrp${open ? ' open' : ''}">` +
+        (fold ? `<button class="dgrp-h" type="button" data-g="${gi}" aria-expanded="${open}">` +
+                `${name}<i aria-hidden="true">▸</i></button>` : '') +
+        `<div class="dgrp-b">${items.map(link).join('')}</div></div>`;
+    }).join('');
+  },
+
+  /**
    * ②/③ 幂等填充：菜单（按角色过滤）、头像、姓名·声部、欢迎行职称、页标题、右上角操作区。
    * 传 `null`（还没拿到身份）就把这些**留空**——不编数据；拿到接口结果后再调一次即纠正。
    */
   paintNav(s, me, active) {
     // 菜单：只有知道角色才画得出（别的角色看到的是另一套）
-    s.menu.innerHTML = !me ? '' : this.navItems
-      .filter(([, , , roles]) => roles.includes(me.role))
-      .map(([href, label, icon]) =>
-        `<a href="/${href}"${href === active ? ' class="on"' : ''}>` +
-        `<span class="ic" aria-hidden="true">${icon}</span><span class="tx">${label}</span></a>`)
-      .join('');
+    s.menu.innerHTML = !me ? '' : this.menuMarkup(me, active);
     s.av.textContent = '';
+    s.mav.textContent = '';                 // 手机标题栏那颗同理：拿到身份之前留空、不编数据
     if (!me) {
       s.meName.textContent = '';
       s.meSec.textContent = '';
@@ -922,6 +1020,7 @@ const BAND = {
       s.greet.textContent = '';
     } else {
       this.paintAvatar(s.av, me);   // 有头像用头像、否则姓名首字；一律 textContent，防注入
+      this.paintAvatar(s.mav, me);  // 标题栏那颗走**同一个入口**（清单校验 + 首字回退都在它内部）
       s.meName.textContent = me.name;
       s.meSec.textContent = me.sectionName || '';
       s.wname.textContent = me.name;
@@ -929,8 +1028,13 @@ const BAND = {
       s.greet.textContent = me.sectionName || '';
     }
     const activeLabel = this.navItems.find(([href]) => href === active);
-    s.h1.textContent = activeLabel ? activeLabel[1]
+    const title = activeLabel ? activeLabel[1]
       : (this.offMenuTitles[active] || (me ? me.name : ''));
+    s.h1.textContent = title;
+    // 手机端细标题栏右侧那颗「页面名」= **菜单表里的栏目名**（2026-09-28 用户定），
+    // 与 `h1` 同一个字符串。⚠️ 详情页会把 `h1` 改写成具体演出名，但**手机端 h1 不显示**（`band.css` §10），
+    // 所以标题栏照样是栏目名 —— 这是选定的口径，不是漏同步。
+    s.mhTitle.textContent = title;
     // 右上角操作区要重建（它按角色决定画不画「反馈」）：先清掉上一轮的，再画
     s.headR.querySelectorAll('.hact').forEach((el) => el.remove());
     if (me) {
@@ -965,6 +1069,231 @@ const BAND = {
    *     提前之后**必须事件委托**——`paintNav` 会把菜单 `innerHTML` 重写两遍（首访无缓存时三遍），
    *     逐项绑的 `mousedown` 会跟着被销毁。所以挂在 `.menu` 上（它由骨架创建、**永不重建**）。
    */
+  /** 「窄屏 或 触屏」= 手机端那套形态（抽屉 / 标题栏 / 密度 / 卡片行）的门控。
+      ⚠️⚠️ **必须与 `band.css` §10 那条 `@media (max-width: 720px), (pointer: coarse)` 同源**，
+      一处改了另一处要跟着改。⚠️ **只写 `(pointer: coarse)` 不够**：**≤720px 的桌面窗口**
+      （精确指针）在 CSS 上也走抽屉，而欢迎过渡若照桌面那一支去量**侧栏**那颗头像，
+      量到的是抽屉里那颗、`x ≈ -320`（**在屏幕外**）⇒ 头像会被飞出屏幕。
+      （`docs/14` §14.6.4 给的是 `(hover: none), (pointer: coarse)`，漏了窄屏这一半——
+      已记 `交接单` §三 移交事项，规格侧改口径前以这条代码为准。） */
+  isMobile() {
+    return !!(window.matchMedia
+      && window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
+  },
+
+  /** 手机端抽屉（`docs/14` §14.6.4「手机端（≤720px）」一）：**标题栏那颗头像**是开关，
+      点遮罩（抽屉右边那一条）或 Esc 收回。
+      ⚠️ 必须由 `mountSkeleton` **同步**调用：`renderNav()` 第二次只走 `paintNav()`、不重建 DOM。
+      ⚠️ 组标题的折叠走**事件委托**（绑在 `.menu` 上）——`paintNav` 会把菜单 `innerHTML` 整块重写，
+      绑在按钮上的监听器会随 DOM 一起没（与 `mountRailKeep` 同一个理由）。 */
+  mountDrawer(layout) {
+    const root = document.documentElement;
+    const btn = layout.querySelector('.mav-toggle');
+    const scrim = layout.querySelector('.scrim');
+    const menu = layout.querySelector('.menu');
+    if (!btn || !scrim || !menu) return;
+    const setOpen = (open) => {
+      root.classList.toggle('drawer-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    };
+    btn.addEventListener('click', () => setOpen(!root.classList.contains('drawer-open')));
+    scrim.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && root.classList.contains('drawer-open')) setOpen(false);
+    });
+    menu.addEventListener('click', (e) => {
+      const h = e.target && e.target.closest ? e.target.closest('.dgrp-h') : null;
+      if (!h) return;
+      e.preventDefault();
+      const grp = h.parentElement;
+      const open = !grp.classList.contains('open');
+      // 状态只存一处（`grpOpen`），DOM 上的 `.open` 类是它的投影 —— 别在两处各写一遍
+      this.grpOpen[h.dataset.g] = open;
+      grp.classList.toggle('open', open);
+      h.setAttribute('aria-expanded', String(open));
+    });
+  },
+
+  /** 手机端的「一行一人」卡片行（`docs/14` §14.6.4 八）：把 `thead th` 的文字抄进每格的
+      `data-label`（CSS 用它画"标签 · 值"），并标出**哪一行可左滑**（末格里有按钮 / 链接时）。
+      调用点：`BAND.alive(...)` 里、`ALIVE.play` **之前** —— 那是各页数据渲染完的**唯一汇合点**，
+      而且**每次重渲染都会走到**（名册状态 / 声部、曲目状态、活动类型、录音范围那四处筛选器
+      走的都是 `load() → alive()`）。⚠️ 幂等（只写 `data-label` 与类名）。
+      ⚠️ 桌面端**什么都不做**（卡片行是 `@media (max-width:720px), (pointer:coarse)` 里的版式）。 */
+  shapeRows(root) {
+    if (!root || !this.isMobile()) return;
+    const tables = root.matches && root.matches('table.tb')
+      ? [root] : [...root.querySelectorAll('table.tb')];
+    for (const tb of tables) {
+      const labels = [...tb.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      for (const tr of tb.querySelectorAll('tbody tr')) {
+        const tds = [...tr.children].filter((c) => c.tagName === 'TD');
+        tds.forEach((td, i) => { td.dataset.label = labels[i] || ''; });
+        const last = tds[tds.length - 1];
+        const acts = (tds.length > 1 && last) ? last.querySelector('button, a, input, select') : null;
+        if (acts) {
+          last.classList.add('sw-act');
+          tr.classList.add('swipable');
+        } else if (last) {
+          last.classList.remove('sw-act');
+          tr.classList.remove('swipable');
+        }
+      }
+    }
+  },
+
+  /** 手机端表格行的**左滑**（`docs/14` §14.6.4 八）：滑过操作区宽的**一半**才算开；
+      **一次只开一行**；滑动过就**吃掉紧随的那次 `click`**（表格行自带"点进详情"的监听，
+      不挡的话"滑一下"会顺带跳页）；**点已滑开的那行先收回、不跳详情**。
+      ⚠️ 用**事件委托**（行是各页每次渲染新建的，绑不上）；`pointermove/up` 挂 `window`——
+      手指滑出表格范围也不丢事件（不靠 pointer capture）。⚠️ 桌面端整段不动（`isMobile()` 拦着）。 */
+  mountRowSwipe() {
+    const swipeW = () => parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--swipe-w')) || 140;
+    const tracks = (tr) => [...tr.querySelectorAll('td:not(.sw-act)')];
+    const setX = (tr, px, instant) => {
+      tracks(tr).forEach((td) => {
+        td.style.transition = instant ? 'none' : '';
+        td.style.transform = px ? 'translateX(' + px + 'px)' : '';
+      });
+    };
+    const close = (tr) => { tr.classList.remove('open'); setX(tr, 0, false); };
+    let row = null, x0 = 0, dx = 0, moved = false;
+    const settle = (cancel) => {
+      if (!row) return;
+      const tr = row, w = swipeW(), wasMoved = moved;
+      const base = tr.classList.contains('open') ? -w : 0;
+      const open = !cancel && (base + dx) < -w / 2;
+      document.querySelectorAll('.tb tbody tr.swipable.open').forEach((o) => { if (o !== tr) close(o); });
+      tr.classList.toggle('open', open);
+      setX(tr, open ? -w : 0, false);
+      if (wasMoved) {
+        // 滑动过 ⇒ 吃掉紧随的那次 click（一次性捕获监听；`setTimeout(0)` 兜底摘掉）
+        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        window.addEventListener('click', eat, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener('click', eat, { capture: true }), 0);
+      }
+      row = null; dx = 0; moved = false;
+    };
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.isMobile() || e.button !== 0) return;
+      const tr = e.target && e.target.closest ? e.target.closest('.tb tbody tr.swipable') : null;
+      if (!tr) return;
+      row = tr; x0 = e.clientX; dx = 0; moved = false;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!row) return;
+      dx = e.clientX - x0;
+      if (Math.abs(dx) > 8) moved = true;
+      const w = swipeW();
+      const base = row.classList.contains('open') ? -w : 0;
+      setX(row, Math.max(-w, Math.min(0, base + dx)), true);
+    });
+    window.addEventListener('pointerup', () => settle(false));
+    window.addEventListener('pointercancel', () => settle(true));
+    // 已经滑开的那行：点一下**先收回、不跳详情**。⚠️ 操作区（`.sw-act`）里的点击要放行
+    document.addEventListener('click', (e) => {
+      if (!this.isMobile()) return;
+      if (e.target && e.target.closest && e.target.closest('.sw-act')) return;
+      const tr = e.target && e.target.closest ? e.target.closest('.tb tbody tr.swipable.open') : null;
+      if (!tr) return;
+      e.preventDefault();
+      e.stopPropagation();
+      close(tr);
+    }, true);
+  },
+
+  /** 撤骨架屏（手机端，`docs/14` §14.6.4 六 + 「界面的活性」8）：**必须在 `BAND.alive(...)`
+      跑之前撤掉**——那一批"只播一次"的入场快照会把骨架一起拍进去，等入了场就已经是终态。
+      幂等（重复调用只去掉一个类）。 */
+  endLoading(mbody) {
+    if (mbody) mbody.classList.remove('loading');
+  },
+
+  /** 下拉刷新的"刷什么"（规格只写了形态、没写刷什么 ⇒ 见 `交接单` §三 移交事项）：
+      各页可以 `BAND.onRefresh(fn)` 自己登记；没登记的退回**各页那个全局 `load()`**
+      ——本仓 22 个页面的加载函数都是 `function load()` 的**函数声明**（⇒ 挂在 window 上可取）。
+      两条都没有的页面（沉浸式的 `showcase.html` 这类）**不启用**下拉手势，免得给一个空承诺。 */
+  onRefresh(fn) { this._refresh = fn; },
+  refresher() {
+    if (typeof this._refresh === 'function') return this._refresh;
+    if (typeof window.load === 'function') return window.load;
+    return null;
+  },
+
+  /** 手机端下拉刷新（`docs/14` §14.6.4 六 + 「界面的活性」6）：**参数写死，别自己调**——
+      触发阈值 **64**、位移衰减 **×0.5**、位移封顶 **96**。
+      ⚠️⚠️ `transform` **只许打在 `.mbody`** 上（打在 `.main` 上会建 containing block，
+      `showcase.html` 那些 `position: fixed` 层与 `#wel` 的参照系会一起乱）。
+      ⚠️ 触摸必须走 `touchmove` + `{ passive: false }`，而且**只有确认在下拉才 `preventDefault`**
+      （别抢正常滚动）；Pointer Events 做不到这件事。
+      ⚠️ 鼠标分支只为**桌面验收**（鼠标拖不触发原生滚动，没有要压的东西）；整段仍由 `isMobile()` 圈住。 */
+  mountPullRefresh(s) {
+    if (!s || !s.mbody || !this.refresher()) return;   // 没有刷新器就别给这个手势（空承诺）
+    const THRESHOLD = 64, DECAY = .5, CAP = 96;
+    const root = document.documentElement;
+    const body = s.mbody, hint = s.hint, tx = s.hintTx;
+    let startY = 0, dy = 0, dragging = false, busy = false;
+    const atTop = () => (document.scrollingElement.scrollTop || 0) <= 0;
+    const allowed = () => this.isMobile() && !busy && atTop();
+    const paint = () => {
+      root.classList.toggle('ptr-drag', dy > 0);
+      body.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
+      hint.style.setProperty('--mh-rot', Math.min(dy / 1.4, 180) + 'deg');
+      tx.textContent = dy >= THRESHOLD ? '松手刷新' : '下拉刷新';
+    };
+    const begin = (y) => { if (!allowed()) return; startY = y; dy = 0; dragging = true; };
+    const move = (y) => {
+      if (!dragging) return;
+      const raw = y - startY;
+      if (raw <= 0) { if (dy !== 0) { dy = 0; paint(); } return; }
+      dy = Math.min(raw * DECAY, CAP);     // 橡皮筋：衰减 + 封顶，**只动 transform**
+      paint();
+    };
+    const reset = () => {
+      root.classList.remove('ptr-drag', 'ptr-load');
+      body.style.transform = '';
+      tx.textContent = '下拉刷新';
+    };
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (dy < THRESHOLD) { reset(); return; }
+      busy = true;
+      root.classList.add('ptr-load');
+      body.style.transform = 'translateY(' + THRESHOLD + 'px)';
+      tx.textContent = '正在刷新…';
+      const done = () => {                 // 收尾：给一句「已是最新」再归位（别静默弹回）
+        root.classList.remove('ptr-load');
+        tx.textContent = '已是最新';
+        body.style.transform = '';
+        busy = false;
+        setTimeout(() => { root.classList.remove('ptr-drag'); tx.textContent = '下拉刷新'; }, 340);
+      };
+      let p;
+      try { p = Promise.resolve(this.refresher()()); } catch (e) { p = Promise.resolve(); }
+      Promise.resolve(p).catch(() => {}).then(() => setTimeout(done, 400));
+    };
+    document.addEventListener('touchstart', (e) => begin(e.touches[0].clientY), { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!dragging) return;
+      if (e.touches[0].clientY - startY > 0) e.preventDefault();
+      move(e.touches[0].clientY);
+    }, { passive: false });
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', () => { if (dragging) { dragging = false; reset(); } });
+    // 鼠标分支（桌面验收）：只在窄窗口 / 触屏形态下生效（`isMobile()` 圈着）
+    document.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button === 0) begin(e.clientY);
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') move(e.clientY);
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'mouse') end();
+    });
+  },
+
   mountRailKeep(layout) {
     if (!window.matchMedia
         || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
@@ -1038,6 +1367,15 @@ const BAND = {
       </form>`;
     const backdrop = document.createElement('div');
     backdrop.className = 'profile-backdrop';
+    // 手机端的第二层要能**回到抽屉**：给一个「←」（`band.css` 里 `display:none`，只在手机段出现）。
+    // ⚠️ 样张（`mobile-mock.html` 的 `.p2head .back`）里有它，而规格正文只写了"Esc / 点面板外关闭"——
+    //    手机上既没有 Esc、第二层又把 320px 占满，没有它就等于"进去出不来"（已记 `交接单` §三）。
+    const back = document.createElement('button');
+    back.className = 'p-back';
+    back.type = 'button';
+    back.setAttribute('aria-label', '返回菜单');
+    back.textContent = '←';
+    panel.prepend(back);
     document.body.append(backdrop, panel);
 
     // 用户数据一律 textContent（防注入）
@@ -1056,6 +1394,7 @@ const BAND = {
       setOpen(!panel.classList.contains('open'));
     });
     backdrop.addEventListener('click', () => setOpen(false));
+    back.addEventListener('click', () => setOpen(false));
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') setOpen(false);
     });
@@ -1206,8 +1545,13 @@ const BAND = {
       let playing = true;
 
       // 落点：**运行时量出来**（换宽度、手机端都会自动对上，绝不写死坐标）
+      // ⚠️ 头像那颗**按门控分支**（2026-09-28 连带修的真问题）：手机端侧栏是**默认关着的抽屉**，
+      //    抽屉里那颗头像在**屏幕之外**（`x ≈ -320`），照它飞等于把头像飞出屏幕——而现有守卫
+      //    只在"元素不存在"时早退，**抓不到"元素存在、只是在屏外"**。
+      //    ⇒ 手机 / 触屏改取**标题栏那颗**（一直可见，本来就是"开抽屉"的开关，落点/开关/身份合成一个元素）。
+      // ⚠️ 欢迎行两套形态**一样**（`.welcome` 在 `.head` 里、手机端也一直可见）：别把它藏了。
       const targets = () => ({
-        av: document.querySelector('.rail .me .ic span'),
+        av: document.querySelector(this.isMobile() ? '.mhead .mav-toggle span' : '.rail .me .ic span'),
         tx: document.querySelector('.welcome'),
       });
       const place = () => {
@@ -1374,6 +1718,11 @@ const BAND = {
    * 早调会快照到 `—` / 空点阵，而"播过"的标志一置位就**再也不播**了。
    */
   alive(...roots) {
+    // 手机端的卡片行要在**入场动画之前**把 `data-label` / 可左滑标记铺好（`shapeRows` 幂等）——
+    // `ALIVE.play` 用 WeakSet 记过"这个 root 播过了"，**重渲染时不会再走**，所以列形不能挂在它里面。
+    roots.forEach((root) => this.shapeRows(root));
+    // 骨架屏必须在入场之前撤（`docs/14` §14.6.4 六 / 「界面的活性」8）——这是"数据到了"的信号。
+    if (this.skeleton) this.endLoading(this.skeleton.mbody);
     ALIVE.play(...roots);
   },
 
