@@ -147,3 +147,17 @@
       理由见 `DECISIONS.md` D7（校园网下取不到就是白板；BootCDN 有投毒前科，且专挑移动端下发）。
 - [ ] **H2. 若将来确有必要用 CDN，必须带 `integrity`（SRI）+ `crossorigin`**，
       并在文档里写清：**SRI 只防篡改、不防不可达**——它解决不了 H1 的第一条理由。
+- [ ] **H3. 图标库也走 H1 那一套**（`vendor/icons/`，2026-09-30 新增）：菜单图标换成真图标后引入的
+      图标库（**Lucide，ISC**）**自托管、随仓库走**，在 `vendor/icons/SOURCE.md` 记
+      **版本 / 三源 URL / SHA256**。⚠️ **只挑用到的十来个 SVG 入库，不整包搬**——
+      搬整套会把几百个用不到的图标塞进仓库、也让"这份是哪儿来的"变得说不清。
+      ⚠️ **不引前端构建链**（`DECISIONS.md` D7 反对的是构建链，不是自托管静态资源，口径同 Bootstrap 那次）。
+
+**当前入过库的第三方资源**（每引一份，这里加一行）
+
+| 资源 | 目录 | 许可 | 上游 |
+|---|---|---|---|
+| Bootstrap 5.3.8 | `static/vendor/bootstrap/` | MIT | 见该目录 `SOURCE.md` |
+| 预置头像（fluentui-emoji 子集） | `static/vendor/avatars/` | MIT | 见该目录 `SOURCE.md` |
+| 欢迎行楷体子集 | `static/vendor/<字体名>/` | 见该目录 `SOURCE.md` | 同上 |
+| **Lucide 图标子集** `1.49.0`（20 个） | `static/vendor/icons/` | **ISC**（2 个派生自 Feather，**MIT**） | npm 官方 tarball 的 sha512 与 npm `integrity` 逐字符一致；unpkg / jsdelivr 逐字节一致。详见该目录 `SOURCE.md` |
