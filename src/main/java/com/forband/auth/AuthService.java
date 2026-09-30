@@ -7,6 +7,8 @@ import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
+import com.forband.member.MemberRoleHistory;
+import com.forband.member.MemberRoleHistoryMapper;
 import com.forband.section.Section;
 import com.forband.section.SectionMapper;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -20,16 +22,19 @@ public class AuthService {
 
     private final MemberMapper memberMapper;
     private final SectionMapper sectionMapper;
+    private final MemberRoleHistoryMapper historyMapper;
     private final TokenService tokenService;
     private final LoginThrottle loginThrottle;
     private final PermissionService permissionService;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public AuthService(MemberMapper memberMapper, SectionMapper sectionMapper,
+                       MemberRoleHistoryMapper historyMapper,
                        TokenService tokenService, LoginThrottle loginThrottle,
                        PermissionService permissionService) {
         this.memberMapper = memberMapper;
         this.sectionMapper = sectionMapper;
+        this.historyMapper = historyMapper;
         this.tokenService = tokenService;
         this.loginThrottle = loginThrottle;
         this.permissionService = permissionService;
@@ -43,7 +48,8 @@ public class AuthService {
 
     public record MeResponse(long id, String account, String name, String role,
                              Long sectionId, String sectionName, String status,
-                             LocalDate joinedAt, String instrument, String avatar) {
+                             LocalDate joinedAt, String instrument, String avatar,
+                             boolean everSectionLeader) {
     }
 
     public LoginResponse login(LoginRequest request, String ip, String userAgent) {
@@ -82,7 +88,22 @@ public class AuthService {
         }
         return new MeResponse(member.getId(), member.getAccount(), member.getName(),
                 member.getRole(), member.getSectionId(), sectionNameOf(member), member.getStatus(),
-                member.getJoinedAt(), member.getInstrument(), member.getAvatar());
+                member.getJoinedAt(), member.getInstrument(), member.getAvatar(),
+                everSectionLeader(member.getId()));
+    }
+
+    /**
+     * 「我历史上当过声部长吗」——**含已卸任**（`member_role_history` 里有任意一条 `SECTION_LEADER`）。
+     * 前端用它决定右上角那个「信封」入口**渲不渲染**（docs/14 §14.6.4 / docs/03 §3.5）：
+     * 普通团员那个位置**只有铃铛**，不是"留个灰的"。
+     * ⚠️ 这是**为实现 `#118` 的"条件渲染"而加的字段**，规格正文没写这个机制（已记移交事项）。
+     * 只看角色不看声部：信封点开读的是**我当前所在声部**的留言（用户 2026-09-30 拍板）。
+     */
+    private boolean everSectionLeader(long memberId) {
+        Long n = historyMapper.selectCount(new LambdaQueryWrapper<MemberRoleHistory>()
+                .eq(MemberRoleHistory::getMemberId, memberId)
+                .eq(MemberRoleHistory::getRole, Role.SECTION_LEADER.name()));
+        return n != null && n > 0;
     }
 
     public void logout(String rawToken) {

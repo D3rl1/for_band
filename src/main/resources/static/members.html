@@ -23,7 +23,8 @@
     <option value="GRADUATED">毕业</option>
   </select>
 </div>
-<table class="tb" id="members-table">
+<!-- `t2` = 手机端走样张的**两行式**（`docs/14` §14.6.4 八，`#105`）；桌面那 7 列一个字没动 -->
+<table class="tb t2" id="members-table">
   <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
@@ -45,9 +46,27 @@ async function load() {
   const d = await BAND.must('/api/members?' + params);
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
+  // ⭐ 荣誉团员**另起一节**（`docs/03` §3.4：「与 `09-历届成员.md` 的概念对齐」）。
+  // 后端已保证荣誉团员**连成一块排在最后** ⇒ 这里只要在**第一条**前面插一行小节标题。
+  let sectDone = false;
   for (const m of d.list) {
+    if (m.role === 'HONORARY' && !sectDone) {
+      sectDone = true;
+      const h = document.createElement('tr');
+      h.className = 'sec-h';          // ⚠️ `shapeRows()` 会跳过它（手机端别把它当一张数据卡）
+      h.innerHTML = '<td colspan="7">历届成员</td>';
+      tbody.appendChild(h);
+    }
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td>';
+    // 手机端两行式（`docs/14` §14.6.4 八，`#105`）的四类钩子：
+    //   `.t-head` = 头像 + 姓名（左上）· `.t-meta` = 声部·乐器·角色（左下，**新加的第 8 格**）·
+    //   `.t-st` 状态 / `.t-ph` 手机号（右侧上下两行）· `.t-acc` 账号（**手机上不显示**）·
+    //   `.t-solo` = 声部 / 乐器 / 角色（手机端藏起来，它们的内容已并进 `.t-meta`）。
+    // ⚠️ 第 8 格**追加在行末**（靠 `grid-area` 摆位），这样下面那些 `children[i]` 一个都不用改；
+    //    桌面上 `.t-meta` 是 `display:none`，多出来这一格看不见。
+    tr.innerHTML = '<td class="t-head"></td><td class="t-solo"></td><td class="t-solo"></td>'
+      + '<td class="t-solo"></td><td class="t-st"><span class="chip"></span></td>'
+      + '<td class="t-acc"></td><td class="t-ph"></td><td class="t-meta"></td>';
     // 姓名格：头像 + 姓名（docs/14 §14.6.4「名单里的头像」的统一姿势；走 paintAvatar 唯一入口）
     // ⚠️ 整块包成链接进"别人的主页"（docs/14 §14.6.4：**姓名与头像都可点**）——
     // 别只把名字包起来：头像是大家最顺手点的位置
@@ -62,6 +81,10 @@ async function load() {
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent = m.instrument || '';
     tr.children[3].textContent = BAND.roleLabel(m.role);
+    // 第 8 格 = 左下那行「声部 · 乐器 · 角色」（**手机端才有**；空的那几段不参与拼接，
+    // 免得出现"胡琴声部 · · 团员"这种空档）
+    tr.children[7].textContent =
+      [m.sectionName, m.instrument, BAND.roleLabel(m.role)].filter(Boolean).join(' · ');
     const chip = tr.querySelector('.chip');
     chip.textContent = BAND.statusLabel(m.status);
     if (m.status !== 'ACTIVE') chip.classList.add('warn'); // 休团/退团/毕业才用朱砂（§14.6.2 铁律 2）

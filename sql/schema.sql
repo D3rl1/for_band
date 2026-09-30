@@ -374,6 +374,24 @@ CREATE TABLE IF NOT EXISTS showcase_photo (
     KEY idx_concert_id (concert_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '专场策展图';
 
+-- ㉕ section_note 上任声部长的留言（docs/13 §13.3㉕，2026-09-30 建）。业务规则见 docs/03 §3.5。
+-- ⚠️ **不做「一声部一条」**（`section_id` **不加唯一键**）：它是**传承** —— 历届部长各留一条、
+--    按 `created_at` 叠着看才是重点（`docs/13` §13.3㉕ 明写）。
+-- ⚠️ `author_id` 的约束是"**写的那一刻**"的身份（王五卸任后仍是这条的作者）⇒ **不做成 DB 约束**，
+--    是**服务层校验**（可变的历史状态做不成跨表约束，见 `docs/13` §13.3㉕）。
+-- ⚠️ **任何人都不能删**（留痕性质，与 `operation_log` 同族的"只增"取向）⇒ 没有删除路径。
+-- ⚠️ 写与改都进操作日志，action 串 `SECTION_NOTE_WRITE`（docs/11 §11.3）。
+CREATE TABLE IF NOT EXISTS section_note (
+    id         BIGINT   NOT NULL AUTO_INCREMENT,
+    section_id BIGINT   NOT NULL COMMENT 'FK→section：哪条声部的留言',
+    author_id  BIGINT   NOT NULL COMMENT 'FK→member：写的人（写的那一刻必须是该声部的声部长）',
+    body       TEXT     NOT NULL COMMENT '留言正文（纯文本，保留换行——同 release_note 的口径）',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NULL COMMENT '本人可改；本项目按惯例在建行时也填（= created_at）',
+    PRIMARY KEY (id),
+    KEY idx_section_id (section_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '上任声部长的留言';
+
 -- 存量库补列（MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守护，保证本脚本可重复执行）。
 DELIMITER $$
 DROP PROCEDURE IF EXISTS band_add_honorary_until$$

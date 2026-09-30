@@ -42,17 +42,39 @@ public class ShowcaseService {
     private final ConcertMapper concertMapper;
     private final ConcertPhotoMapper photoMapper;
     private final ShowcasePhotoMapper showcasePhotoMapper;
+    private final ConcertCastMapper castMapper;
     private final FileService fileService;
     private final PermissionService permissionService;
 
     public ShowcaseService(ConcertMapper concertMapper, ConcertPhotoMapper photoMapper,
-                           ShowcasePhotoMapper showcasePhotoMapper, FileService fileService,
-                           PermissionService permissionService) {
+                           ShowcasePhotoMapper showcasePhotoMapper, ConcertCastMapper castMapper,
+                           FileService fileService, PermissionService permissionService) {
         this.concertMapper = concertMapper;
         this.photoMapper = photoMapper;
         this.showcasePhotoMapper = showcasePhotoMapper;
+        this.castMapper = castMapper;
         this.fileService = fileService;
         this.permissionService = permissionService;
+    }
+
+    /**
+     * 某成员**参演过多少场专场**（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）。
+     * <p>
+     * ⚠️ **只数专场**（`concert.is_showcase = 1`）—— 校庆晚会那类普通演出不算（用户口径原话：
+     * 「其他的**参演演出专场数**可以放在**个人主页**，**别人查看的时候能看到**」）。
+     * ⚠️ **0 就是 0**（不是 `—`）：与"出勤率 0/0 无意义"不是一回事。
+     */
+    public long memberShowcaseCount(long memberId) {
+        List<Long> concertIds = castMapper.selectList(new LambdaQueryWrapper<ConcertCast>()
+                        .eq(ConcertCast::getMemberId, memberId)
+                        .select(ConcertCast::getConcertId))
+                .stream().map(ConcertCast::getConcertId).distinct().toList();
+        if (concertIds.isEmpty()) {
+            return 0;
+        }
+        return concertMapper.selectCount(new LambdaQueryWrapper<Concert>()
+                .eq(Concert::getIsShowcase, true)
+                .in(Concert::getId, concertIds));
     }
 
     // ---------- 展示侧（登录即可，含荣誉团员） ----------

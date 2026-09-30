@@ -34,13 +34,17 @@
     <div class="lab">这周的谱</div>
     <div class="score" id="score"></div>
   </div>
+  <!-- ⭐ s1 从"只有出勤率一个数"改成**数字三连**（`docs/14` §14.6.4 九·b / `交接单 #117`）：
+       我的录音数 / 我的出勤场次 / 在团天数。⚠️ **三个数各自在自己的元素里**——
+       数字滚动（「界面的活性」①）要求如此，挤在一个元素里会串。
+       出勤率没有消失，它还在考勤统计页（这一格换成"成就感"的三个数）。 -->
   <div class="cell s1">
-    <div class="lab">我的出勤</div>
-    <p class="big" id="att-big" data-count>—</p>
-    <!-- 出勤横条（docs/14 §14.6.4「界面的活性」④）：出勤率是主角数字的地方才有它 -->
-    <div class="attbar" id="att-bar"><b></b></div>
-    <p class="mb-0 text-nowrap" id="att-note" hidden></p>
-    <div class="penta mt-auto" id="penta"></div>
+    <div class="lab">我的</div>
+    <div class="mine-nums">
+      <div class="mn"><p class="big" id="n-rec" data-count>—</p><em>录音</em></div>
+      <div class="mn"><p class="big" id="n-att" data-count>—</p><em>出勤场次</em></div>
+      <div class="mn"><p class="big" id="n-days" data-count>—</p><em>在团天数</em></div>
+    </div>
   </div>
   <div class="cell s2">
     <div class="lab">待办</div>
@@ -142,35 +146,32 @@ async function renderBento(me, list) {
   days.innerHTML = DAY_NAMES.map((n) => `<i>${n}</i>`).join('');
   score.appendChild(days);
 
-  // 我的出勤：五声点阵 = 出勤率 × 5 档；出勤率与请假数成对展示（docs/05 硬规则）
+  // 「我的」三个数（录音数 / 出勤场次 / 在团天数）
   // ⚠️ 这两条要 await：调用方（load）要在它们写完 DOM 之后才播「活性」
-  await fetchSummary(me);
+  await fetchMine(me);
   await renderTodo(me);
 }
 
-async function fetchSummary(me) {
-  const penta = document.getElementById('penta');
-  const bar = document.getElementById('att-bar');
-  const names = ['宫', '商', '角', '徵', '羽'];
+/** 「我的」那三个数（`docs/14` §14.6.4 九·b，`交接单 #117`）。
+ *  ⚠️ 值**直接写终态**：数字滚动会自己从 0 滚上去（`ALIVE.play` 读元素原文当终值）；
+ *  拿不到的写 `—`（`specOf` 认不出数字 ⇒ 不数，也不会被滚成 0）。 */
+async function fetchMine(me) {
+  // ① 我的录音数 ② 我的出勤场次（**与个人栏同一口径**：排练 + 声部课的 present 之和，
+  //   用户 2026-09-30 拍板；**不是**"数 attendance 行数"）③ 在团天数（本地算）
   try {
-    const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
-    const expected = s.rehearsal.expected;
-    const rate = s.rehearsal.rate || 0;
-    const lit = expected === 0 ? 0 : Math.round(rate * 5);
-    document.getElementById('att-big').textContent = BAND.ratePct(rate, expected);
-    // 分母为 0（指挥 / 荣誉团员）⇒ 出勤率显示「—」，横条**为空**：整条藏掉，
-    // 不画一条 0% 的条（那会被读成"出勤率为零"）。
-    bar.hidden = expected === 0;
-    bar.style.setProperty('--r', String(rate));
-    const note = document.getElementById('att-note');
-    note.hidden = false;
-    note.textContent = `排练应到 ${s.rehearsal.expected} · 出勤 ${s.rehearsal.present} · 请假 ${s.rehearsal.leave}`;
-    penta.innerHTML = names.map((n, i) =>
-      `<div class="pv ${i < lit ? 'on' : ''}"><i></i><em>${n}</em></div>`).join('');
+    const [rec, sum] = await Promise.all([
+      BAND.must(`/api/recordings?memberId=${me.id}&size=1`),
+      BAND.must(`/api/members/${me.id}/attendance-summary`),
+    ]);
+    document.getElementById('n-rec').textContent = String(rec.total || 0);
+    document.getElementById('n-att').textContent =
+      String((sum.rehearsal.present || 0) + (sum.sectionClass.present || 0));
   } catch (e) {
-    penta.innerHTML = '';
-    bar.hidden = true;
+    document.getElementById('n-rec').textContent = '—';
+    document.getElementById('n-att').textContent = '—';
   }
+  document.getElementById('n-days').textContent =
+    me.joinedAt ? String(BAND.daysSince(me.joinedAt)) : '—';
 }
 
 async function renderTodo(me) {

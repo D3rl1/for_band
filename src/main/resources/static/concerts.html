@@ -39,10 +39,24 @@
   </div>
 </div>
 
-<!-- ⭐ 「我们的专场」的入口（docs/17 §17.5）：就是这一条文字，**不占侧栏菜单项**。
-     页面清单里它挂的是 `offMenuTitles`（`14` §14.5 / `refresh.sh` 的 `[4/5]` 要两边都对上）。
-     ⚠️ `href` 留着（入口体检认它），点击只拦默认行为 —— 先过一道确认，再演 A 段。 -->
-<p class="mb-3"><a class="sc-entry" href="/showcase.html">我们的专场 →</a></p>
+<!-- ⭐ 「我们的专场」的入口（`docs/17` §17.5 + `docs/14` §14.6.4，2026-09-30 `#116`）：
+     **占满宽的入口卡**（用户原话「放演出里也可以啊，但是要**显眼**啊，不能摆个小字放那吧」）——
+     主视觉用**历届专场自己的东西**（这里是**年份墙**：纯文字的年份 chips，不新画插画）、
+     一句导语、一个**明确的进入动作**（不再是光秃秃一个箭头）。
+     ⚠️ 卡片本身**不做任何动效**（§14.6.6：不做 hover 浮起、不做循环）；**进门那道编排照旧**。
+     ⚠️ 位置仍在页面顶部、**仍不占侧栏菜单项**（页面清单里挂 `offMenuTitles`）。
+     ⚠️ `href` 留着（`refresh.sh` 的 `[4/5]` 入口体检认它），点击只拦默认行为 → 先过确认，再演 A 段。 -->
+<a class="sc-card sc-entry" href="/showcase.html">
+  <span class="sc-card-l">
+    <span class="sc-card-t">我们的专场</span>
+    <span class="sc-card-d">历届专场的时间线 —— 一年一年看下来</span>
+    <span class="sc-card-act">进去看看 →</span>
+  </span>
+  <!-- 年份墙：由 `/api/showcase/timeline` 灌（`<b>` 只放年份数字）。
+       ⚠️ `aria-hidden`：它是**装饰性的重复信息**（年份在专页上还要再看一遍），
+       留着会让整卡的链接名变成一串年份。 -->
+  <span class="sc-years" id="sc-years" aria-hidden="true"></span>
+</a>
 
 <!-- 入场编排 **A 段**（docs/14 §14.6.4）：黑幕从四面合拢 + 搜索框从下升起（**两件同时**），
      **黑透之后才换纸**到 `showcase.html`，B 段在那儿接着演 ⇒ "换纸"那一下被藏在黑里。
@@ -166,6 +180,20 @@ document.getElementById('save').addEventListener('click', async () => {
    它在 reduced-motion 下不播入场（Bootstrap 自己把 `.fade` 关掉了），正好满足规格那一条。
    ⚠️ 绑定**在解析期做一次**：`load()` 每次筛选/保存都会被再调用一遍，绑在里面会攒监听。 */
 (function bindShowcaseEntry() {
+  // 年份墙（`#116`）：**纯文字**，取自历届专场自己（`docs/14` §14.6.4「不用新画的插画」）。
+  // ⚠️ 它**可能为空**——时间线只收录"有策展图的场次"（`docs/17` §17.4）⇒ 空时就是空的、**不留空块**；
+  //    接口挂了也只是没有年份，**不弹错、不挡入口**。跑一次即可（下面那段 IIFE 本来就只跑一次）。
+  const years = document.getElementById('sc-years');
+  if (years) {
+    BAND.api('/api/showcase/timeline').then((env) => {
+      const list = env.code === 0 && Array.isArray(env.data) ? env.data : [];
+      list.forEach((n) => {
+        const b = document.createElement('b');
+        b.textContent = String(n.year);
+        years.appendChild(b);
+      });
+    }).catch(() => { /* 没有年份就没有年份，入口照常能进 */ });
+  }
   const entry = document.querySelector('.sc-entry');
   const layer = document.getElementById('sc-intro');
   if (!entry || !layer) return;

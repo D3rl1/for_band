@@ -6,10 +6,12 @@ import com.forband.attendance.dto.AttendanceDtos.AttendanceRow;
 import com.forband.attendance.dto.AttendanceDtos.CheckInRequest;
 import com.forband.attendance.dto.AttendanceDtos.EventAttendance;
 import com.forband.attendance.dto.AttendanceDtos.MemberSummary;
+import com.forband.attendance.dto.AttendanceDtos.SessionView;
 import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.auth.Role;
 import com.forband.common.ApiResponse;
+import com.forband.common.PageResult;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -53,6 +55,15 @@ public class AttendanceController {
                                                    @RequestBody @Valid AttendanceMarkRequest request,
                                                    CurrentUser operator) {
         return ApiResponse.ok(attendanceService.changeStatus(id, request, operator));
+    }
+
+    /** 历次场次（`docs/05` §5.4 的主视图改版，`交接单 #110`）：**登录即可**——
+     *  每行的五个汇总数**按角色裁剪**（普通团员拿到 `null`，只看得到自己那一格），裁剪判在 service。 */
+    @GetMapping("/api/attendance/sessions")
+    public ApiResponse<PageResult<SessionView>> sessions(@RequestParam(defaultValue = "1") int page,
+                                                        @RequestParam(defaultValue = "20") int size,
+                                                        CurrentUser viewer) {
+        return ApiResponse.ok(attendanceService.sessions(page, size, viewer));
     }
 
     @GetMapping("/api/members/{id}/attendance-summary")

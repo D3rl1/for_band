@@ -24,14 +24,18 @@ public class MemberController {
         this.profileVisitService = profileVisitService;
     }
 
+    /** 名册（排序口径见 `docs/03` §3.4）。
+     *  ⚠️ `includeLeft`：**默认 false** = 名册**不显示退团的人**（用户 2026-09-30 拍板）。
+     *  显式传 `status=LEFT` 仍然查得到；管理端名册与演出参演名单要看到退团的人，**显式带 `includeLeft=true`**。 */
     @GetMapping
     public ApiResponse<PageResult<MemberView>> list(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long sectionId,
+            @RequestParam(defaultValue = "false") boolean includeLeft,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             CurrentUser viewer) {
-        return ApiResponse.ok(memberService.list(status, sectionId, page, size, viewer));
+        return ApiResponse.ok(memberService.list(status, sectionId, includeLeft, page, size, viewer));
     }
 
     @GetMapping("/{id}")

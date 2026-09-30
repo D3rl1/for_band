@@ -13,12 +13,73 @@
 <body>
 <div id="navbar"></div>
 
-<div class="row2" id="cards"></div>
+<!-- ⭐ 主视图（2026-09-30 改，`docs/05` §5.4 / `DECISIONS` D25）：
+     **主体 = 「最近一次」+「可展开的历次场次」**；出勤率**降级**到下面（字号降一档）。
+     用户原话：「排练和声部课到底是一次还是多次？多次没意义。一次的话需要能展开所有过往记录。」
+     ⚠️ 变的是"**怎么看**"，不是"**怎么算**"——应到场次的口径一个字没动。 -->
+<div class="row2" id="latest"></div>
+<div class="mt-2 mb-3">
+  <button id="all-toggle" class="go go-ghost go-sm" type="button" aria-expanded="false">查看全部过往</button>
+</div>
+<div id="all-box" hidden>
+  <table class="tb" id="sessions-table">
+    <thead><tr><th>日期</th><th>活动</th><th>统计</th></tr></thead>
+    <tbody id="sessions-rows"></tbody>
+  </table>
+</div>
+
+<div class="row2 mt-4" id="cards"></div>
 <p class="chip mt-3">出勤率 = 出勤人次 ÷ 应到人次（含请假与缺勤）。请假日次单独列出。</p>
 
 <script>
 const PENTA = ['宫', '商', '角', '徵', '羽'];
+const MINE = { PRESENT: '出勤', LEAVE: '请假', ABSENT: '缺勤' };
 
+/** 我在这场是什么状态（`mine` 由服务端判：有行就是行里的，没行但该到 = 缺勤）。 */
+function mineLabel(mine) {
+  return MINE[mine] || '—';
+}
+
+/** 那一场的"统计"一栏：管理层看四个数，团员只看自己那一格（服务端已把四个数裁成 null）。 */
+function statText(s, canSeeAll) {
+  return canSeeAll
+    ? `应到 ${s.expected} · 出勤 ${s.present} · 请假 ${s.leave} · 缺勤 ${s.absent}`
+    : '我：' + mineLabel(s.mine);
+}
+
+/** 「最近一次排练 / 最近一次声部课」那一块：**具体是哪一场** + 那一场的数（不再是光秃秃一个百分比）。 */
+function latestCard(label, s, canSeeAll) {
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.innerHTML = '<div class="lab"></div><p class="mb-1"><b class="lt-name"></b></p>'
+    + '<p class="chip mb-1 lt-when"></p><p class="chip mb-0 lt-nums"></p>';
+  el.querySelector('.lab').textContent = label;
+  if (!s) {
+    el.querySelector('.lt-name').textContent = '还没有记录';
+    el.querySelector('.lt-when').textContent = '';
+    el.querySelector('.lt-nums').textContent = '';
+    return el;
+  }
+  el.querySelector('.lt-name').textContent = s.title || '（未命名）';
+  el.querySelector('.lt-when').textContent = s.date + ' · ' + BAND.kindLabel(s.kind);
+  el.querySelector('.lt-nums').textContent = statText(s, canSeeAll);
+  return el;
+}
+
+/** 历次场次里的一行。⚠️ 活动名做成**进那一场的链接**（规格：每行一场、可点进单场明细）。 */
+function sessionRow(s, canSeeAll) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td></td><td></td><td></td>';
+  tr.children[0].textContent = s.date || '';
+  const a = document.createElement('a');
+  a.href = '/event-detail.html?id=' + s.eventId;
+  a.textContent = (s.title || '（未命名）') + ' · ' + BAND.kindLabel(s.kind);
+  tr.children[1].appendChild(a);
+  tr.children[2].textContent = statText(s, canSeeAll);
+  return tr;
+}
+
+/** 出勤率那两张卡（**降级为辅助**：位置挪到下面、字号降一档 `.dim`；口径一个字没改）。 */
 function kindCard(label, k) {
   const lit = k.expected === 0 ? 0 : Math.round((k.rate || 0) * 5);
   // 分母为 0（指挥 / 荣誉团员）：出勤率那一格显示「—」，出勤横条**为空**⇒ 压根不画（docs/14 §14.6.4 ④）
@@ -27,7 +88,7 @@ function kindCard(label, k) {
   el.className = 'cell';
   el.innerHTML = `
     <div class="lab"></div>
-    <p class="big" data-count></p>
+    <p class="big dim" data-count></p>
     ${noData ? '' : `<div class="attbar" style="--r:${k.rate || 0}"><b></b></div>`}
     <div class="penta mb-2"></div>
     <p class="chip mb-0"></p>`;
@@ -46,21 +107,49 @@ function kindCard(label, k) {
 async function load() {
   const me = await BAND.renderNav('stats.html');
   if (!me) return;
+  // 荣誉团员与普通团员一样只看本人（docs/02 §2.3：他人考勤不可见）；服务端也按同一角色裁剪
+  const canSeeAll = me.role !== 'MEMBER' && me.role !== 'HONORARY';
+
+  const latest = document.getElementById('latest');
+  latest.innerHTML = '';
+  const tbody = document.getElementById('sessions-rows');
+  tbody.innerHTML = '';
+
+  // ⚠️ **只拉这一次**：「最近一次」两块与「全部过往」那张表**共用同一份数据**，别再各拉一遍。
+  const d = await BAND.must('/api/attendance/sessions?size=50');
+  const rows = d.list || [];
+  const firstOf = (kind) => rows.find((r) => r.kind === kind) || null;
+  latest.append(
+    latestCard('最近一次排练', firstOf('REHEARSAL'), canSeeAll),
+    latestCard('最近一次声部课', firstOf('SECTION_CLASS'), canSeeAll));
+  for (const s of rows) tbody.appendChild(sessionRow(s, canSeeAll));
+  // ⚠️ 列表**默认收着**（HTML 里那个 `hidden` 就是初始态，**别再动它**）；
+  //    一场都没有时连那个入口按钮都不给（不弹空层、不留空入口）。
+  document.getElementById('all-toggle').parentElement.hidden = rows.length === 0;
+
   const cards = document.getElementById('cards');
   cards.innerHTML = '';
-  // 荣誉团员与普通团员一样只看本人汇总（docs/02 §2.3：他人考勤不可见）
-  if (me.role === 'MEMBER' || me.role === 'HONORARY') {
-    const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
-    cards.append(kindCard('排练出勤', s.rehearsal), kindCard('声部课出勤', s.sectionClass));
-  } else {
+  if (canSeeAll) {
     const stats = await BAND.must('/api/attendance/stats');
     stats.kinds
       .map((k) => kindCard(k.kind === 'SECTION_CLASS' ? '声部课' : '排练', k))
       .forEach((el) => cards.appendChild(el));
+  } else {
+    const s = await BAND.must(`/api/members/${me.id}/attendance-summary`);
+    cards.append(kindCard('排练出勤', s.rehearsal), kindCard('声部课出勤', s.sectionClass));
   }
   // ⚠️ 必须在卡片都建好**之后**才播（早调会快照到空点阵；而"播过"的标志一置位就再也不播了）
-  BAND.alive(cards);
+  BAND.alive(cards, document.getElementById('sessions-table'));
 }
+
+document.getElementById('all-toggle').addEventListener('click', () => {
+  const box = document.getElementById('all-box');
+  const btn = document.getElementById('all-toggle');
+  box.hidden = !box.hidden;
+  btn.setAttribute('aria-expanded', String(!box.hidden));
+  btn.textContent = box.hidden ? '查看全部过往' : '收起';
+});
+
 load();
 </script>
 </body>

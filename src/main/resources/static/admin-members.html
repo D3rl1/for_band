@@ -40,12 +40,23 @@
 
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h2 class="mb-0">成员列表</h2>
-  <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
+  <div class="d-flex gap-2">
+    <!-- 「批量」开关（docs/14 §14.6.4 八·b，2026-09-30 #105）：`.bulk-toggle` 在桌面端不显示，
+         手机段才让出来（勾选列与底部操作条同样只在手机段的 CSS 里）。 -->
+    <button id="bulk-btn" class="go go-ghost go-sm bulk-toggle" type="button" aria-pressed="false">批量</button>
+    <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
+  </div>
 </div>
-<table class="tb" id="admin-members-table">
+<!-- `t2` = 手机端走样张的**两行式**（docs/14 §14.6.4 八，`#105`）；桌面那 8 列一个字没动 -->
+<table class="tb t2" id="admin-members-table">
   <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
+<!-- 批量操作条（八·b）：`.tb.picking` 时才出现，`position: sticky` 贴底 -->
+<div class="bulkbar" id="bulkbar">
+  <span id="bulk-count">已选 0 人</span>
+  <button id="bulk-stop" type="button" disabled>停用</button>
+</div>
 
 <div class="modal fade" id="pw-modal">
   <div class="modal-dialog modal-sm">
@@ -115,13 +126,30 @@ function todayLocal() {
 }
 
 async function loadRows() {
-  const d = await BAND.must('/api/members?size=100');
+  // ⚠️ `includeLeft=true`（2026-09-30 `#109`）：名册的默认视图**不含退团的人**，
+  // 而管理端要能管理退团账号 ⇒ 显式要回来（不加这个参数，这里会凭空少人）。
+  const d = await BAND.must('/api/members?size=100&includeLeft=true');
+  rowsCache = d.list;                 // 批量「停用」要拿得到每人当前状态
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
   for (const m of d.list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td></td><td class="act"></td>';
-    tr.children[0].textContent = m.name;
+    tr.dataset.mid = m.id;
+    // 手机端两行式（`docs/14` §14.6.4 八，`#105`）的钩子：`.t-head` 头像+姓名 · `.t-meta` 声部·角色
+    //（新加的第 9 格）· `.t-st` 状态 / `.t-act2` 激活（右列上下两行）· `.t-date` 入团日期（单独一行）·
+    // `.t-acc` 账号（手机上不显示）· `.t-solo` 声部 / 角色（已并进 `.t-meta`）· `.t-pick` 勾选框（批量时才有）。
+    // ⚠️ 新加的两格**追加在行末**（靠 `grid-area` 摆位）⇒ 下面 `children[i]` 的取值顺序一个都没变。
+    tr.innerHTML = '<td class="t-head"></td><td class="t-solo"></td><td class="t-solo"></td>'
+      + '<td class="t-st"><span class="chip"></span></td><td class="t-acc"></td><td class="t-act2"></td>'
+      + '<td class="t-date"></td><td class="act"></td><td class="t-meta"></td><td class="t-pick"></td>';
+    // 头像 + 姓名（`docs/14` §14.6.4「名单里的头像」：凡显示人的地方都加头像，走 `paintAvatar` 唯一入口）
+    const nameWrap = document.createElement('span');
+    nameWrap.className = 'av-name';
+    const avSlot = document.createElement('span');
+    avSlot.className = 'av-sm';
+    BAND.paintAvatar(avSlot, m);
+    nameWrap.append(avSlot, document.createTextNode(m.name));
+    tr.children[0].appendChild(nameWrap);
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent =
       BAND.roleLabel(m.role) + (m.role === 'HONORARY' && m.honoraryUntil ? ` · 至 ${m.honoraryUntil}` : '');
@@ -130,6 +158,14 @@ async function loadRows() {
     if (m.status !== 'ACTIVE') chip.classList.add('warn');
     tr.children[4].textContent = m.account || '';
     tr.children[5].textContent = m.activated ? '已激活' : '未激活';
+    tr.children[8].textContent =
+      [m.sectionName, tr.children[2].textContent].filter(Boolean).join(' · ');   // 左下那行（手机端）
+    // 勾选框（批量选择，`docs/14` §14.6.4 八·b）：**默认就有这一格，只是手机段在非 `.picking` 时藏起来**
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.setAttribute('aria-label', '选 ' + m.name);
+    cb.addEventListener('change', updateBulkBar);
+    tr.children[9].appendChild(cb);
     // 入团日期：就地可改（docs/03 §3.4「必须能改」）。改它会动出勤率分母，所以先确认
     const joinedInput = document.createElement('input');
     joinedInput.type = 'date';
@@ -197,6 +233,7 @@ async function loadRows() {
     tbody.appendChild(tr);
   }
   BAND.alive(document.getElementById('admin-members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  updateBulkBar();                       // 重渲染后勾选没了 ⇒ 底部那条的「已选 N 人」跟着归零
 }
 
 function showPassword(pw) {
@@ -292,6 +329,58 @@ document.getElementById('edit-save').addEventListener('click', async () => {
   bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
   BAND.toast('已保存', 'success');
   loadRows();   // 后端可能有连带改动：清 honorary_until、写 left_at、吊销 token
+});
+
+// ---- 批量选择（`docs/14` §14.6.4 八·b，2026-09-30 `#105`）：开关 → 勾选列 → 底部 sticky 操作条 ----
+//  ⚠️ **只做手机端**：`.bulk-toggle` 在桌面端不显示、勾选列与操作条也都只在手机段的 CSS 里。
+//     规格没写这条要不要也做桌面端（`八·b` 所在的 §八 就是"手机端（≤720px）"那一节），已记 `交接单` §三。
+//  ⚠️ 没有"批量"接口 ⇒ 「停用」是**前端逐个发 `PUT`**（`docs/03` §3.3 那个端点的既有点法）。
+let picking = false;
+let rowsCache = [];
+const tableEl = document.getElementById('admin-members-table');
+const bulkBtn = document.getElementById('bulk-btn');
+const bulkCount = document.getElementById('bulk-count');
+const bulkStop = document.getElementById('bulk-stop');
+
+function checkedIds() {
+  const out = [];
+  tableEl.querySelectorAll('tbody tr').forEach((tr) => {
+    const cb = tr.querySelector('.t-pick input');
+    if (cb && cb.checked) out.push(Number(tr.dataset.mid));
+  });
+  return out;
+}
+
+function updateBulkBar() {
+  const n = checkedIds().length;
+  bulkCount.textContent = '已选 ' + n + ' 人';
+  bulkStop.disabled = n === 0;
+}
+
+bulkBtn.addEventListener('click', () => {
+  picking = !picking;
+  tableEl.classList.toggle('picking', picking);
+  bulkBtn.setAttribute('aria-pressed', String(picking));
+  if (!picking) {                       // 关掉时把勾选清干净，免得下次打开"上次选的人还勾着"
+    tableEl.querySelectorAll('.t-pick input').forEach((cb) => { cb.checked = false; });
+  }
+  updateBulkBar();
+});
+
+bulkStop.addEventListener('click', async () => {
+  const ids = checkedIds();
+  const victims = rowsCache.filter((m) => ids.includes(m.id) && m.status !== 'PAUSED');
+  if (!victims.length) { BAND.toast('选中的都是在休团状态，无需停用'); return; }
+  if (!confirm(`把这 ${victims.length} 人改成「休团（停用）」？其登录态将被吊销。`)) return;
+  let ok = 0, fail = 0;
+  for (const m of victims) {
+    try {
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { status: 'PAUSED' } });
+      ok++;
+    } catch (e) { fail++; }              // 单个失败不打断其余：最后一次性报「N 成功 / M 失败」
+  }
+  BAND.toast(fail ? `已停用 ${ok} 人（${fail} 人失败）` : `已停用 ${ok} 人`, fail ? 'warning' : 'success');
+  loadRows();
 });
 
 // 导出走 fetch 而不是 <a href>：裸链接不带 Authorization 头，永远是 401

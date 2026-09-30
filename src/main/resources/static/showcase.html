@@ -322,8 +322,20 @@ function runIntro() {
     // ⚠️ 把"它到底停在哪儿"**在那一刻记下来**（`fade` 这一拍只存在 400ms，紧接着就是 `done`）：
     //    探针等 `dataset.phase === 'fade'` 会有**整个窗口漏掉**的风险（rAF 被饿死时就是这样，
     //    2026-09-28 实测假红过一次）⇒ 记进 `window.__scIntro.landed` 让它读历史，别去抢那一拍。
-    const b = intro.querySelector('.sc-sbox').getBoundingClientRect();
-    window.__scIntro.landed = { cx: b.x + b.width / 2, cy: b.y + b.height / 2, vw: window.innerWidth, vh: window.innerHeight };
+    // ⚠️⚠️ **但"那一刻"必须等飞行那条过渡真的落地**：`INTRO.fly` 与 `band.css` 的 `--sc-fly`
+    //    **都是 1100ms**，计时器正好掐在过渡结束的那一帧 ⇒ 机器一忙（探针并行跑时就是这样）就量到
+    //    **飞行途中**的位置（`cy` 从 198 变成 270），判据"停在正中间上方"**假红**
+    //    —— 2026-09-30 实测 4 次里红 1~2 次，**HEAD 上同样如此**（两个数一直是相等的）。
+    //    ⇒ 改成挂在 `transitionend` 上（配一条兜底：位移为 0 时过渡不触发）。
+    const sbox = intro.querySelector('.sc-sbox');
+    const record = () => {
+      if (window.__scIntro.landed) return;          // 只记第一次（= 飞行落地那一刻的量）
+      const b = sbox.getBoundingClientRect();
+      window.__scIntro.landed = { cx: b.x + b.width / 2, cy: b.y + b.height / 2,
+                                  vw: window.innerWidth, vh: window.innerHeight };
+    };
+    sbox.addEventListener('transitionend', (e) => { if (e.propertyName === 'transform') record(); });
+    setTimeout(record, 300);                        // 兜底：万一过渡没跑（位移为 0）也要有值
     intro.classList.add('sc-gone');
     mark('fade');
   });

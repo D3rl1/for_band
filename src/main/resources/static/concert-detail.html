@@ -298,7 +298,9 @@ document.getElementById('pm-save').addEventListener('click', async () => {
 // ---- 参演名单编辑（含非 ACTIVE 的人）----
 document.getElementById('edit-cast').addEventListener('click', async () => {
   if (!members.length) {
-    const d = await BAND.must('/api/members?size=200');
+    // ⚠️ `includeLeft=true`（2026-09-30 `#109`）：名册默认不含退团的人，而参演名单**含非 ACTIVE 的人**
+    //（已毕业 / 休团的人照样上合）⇒ 显式要回来，否则退团的人会从这个选择器里消失。
+    const d = await BAND.must('/api/members?size=200&includeLeft=true');
     members = d.list;
   }
   const chosen = new Map(detail.cast.map((m) => [m.memberId, m.note || '']));

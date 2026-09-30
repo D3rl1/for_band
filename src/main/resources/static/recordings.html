@@ -81,6 +81,11 @@
 let me = null;
 let recorder = null;
 let chunks = [];
+// ⭐ **同一时刻最多一个在播**（`docs/08` §8.4，`#112`）：用户原话「听录音的时候可以同时按多个录音听，
+//    这个不好，一次应该只能听一个」。
+// ⚠️ **持一个"当前正在播的那个"引用、切换时显式关掉旧的** —— **不要靠 `pause` 事件去推状态**：
+//    快速连点会打断进行中的事件，`pause` 不保证按时到达，状态就卡住了（`docs/14` §14.6.6「过渡必须可取消」同族）。
+let playingAudio = null;
 // ⚠️ `load()` 会被反复调用（切筛选、上传完、删完）⇒ **事件绑定只做一次**。
 //    （原来 `setupRecorder()` 每次 load 都绑一遍，点「开始录音」会**叠着起两个 MediaRecorder**——
 //     本轮顺手修掉。）
@@ -107,6 +112,7 @@ async function load() {
   const query = scope === 'mine' ? `?memberId=${me.id}&size=50` : '?size=50';
   const d = await BAND.must('/api/recordings' + query);
   const host = document.getElementById('list');
+  if (playingAudio) { playingAudio.pause(); playingAudio = null; }   // 旧节点马上要被丢掉，先停声
   host.innerHTML = '';
   document.getElementById('empty').hidden = d.list.length > 0;
   for (const r of d.list) host.appendChild(card(r));
@@ -132,6 +138,14 @@ function card(r) {
   const audio = document.createElement('audio');
   audio.controls = true;
   audio.className = 'w-100 mt-2';
+  // ⭐ 互斥（`#112`）：这条一开始播，就把"上一个在播的"**显式**停掉并归零（不靠 `pause` 事件推状态）。
+  audio.addEventListener('play', () => {
+    if (playingAudio && playingAudio !== audio) {
+      playingAudio.pause();
+      playingAudio.currentTime = 0;
+    }
+    playingAudio = audio;
+  });
   el.appendChild(audio);
   BAND.fileBlobUrl(r.fileId).then((url) => { audio.src = url; }).catch(() => {});
 

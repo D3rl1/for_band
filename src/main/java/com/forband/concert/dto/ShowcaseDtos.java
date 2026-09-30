@@ -62,4 +62,12 @@ public final class ShowcaseDtos {
     /** 一场专场里的一行策展图（管理页用：挑完 / 加完 / 排完都回这一份）。 */
     public record ShowcasePhotoRow(long photoId, long fileId, int sortNo, String note) {
     }
+
+    /**
+     * 「**参演过 N 场专场**」（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）。
+     * ⚠️ **别人也能看**（团员主页）⇒ 这里**只有这一个数**，不许顺手把出勤率之类搬进来。
+     * ⚠️ **0 就回 0**（不是 404 / 不是 null）——"一场没参演过"是个**事实**。
+     */
+    public record MemberShowcaseCount(long count) {
+    }
 }

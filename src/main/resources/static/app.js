@@ -374,6 +374,23 @@ const BAND = {
     try { localStorage.setItem('band_seen_birthday', day); } catch (e) { /* 忽略 */ }
   },
 
+  /**
+   * 「上任声部长的留言」读到哪一条了（`docs/03` §3.5）——**设备级**，记的是那条的 **id**
+   * （与生日通告记"日期"不同：留言是**一条一条**的，"读过这一条"才够准）。
+   * ⚠️ 读完之后内容**不会消失**，只是**不再弹**（它常驻在右上角那个「信封」里）。
+   */
+  seenSectionNote() {
+    try {
+      return Number(localStorage.getItem('band_seen_section_note')) || 0;
+    } catch (e) {
+      return 0;   // 隐私模式：当作没读过 → 会再弹一次，可接受
+    }
+  },
+
+  markSectionNoteSeen(id) {
+    try { localStorage.setItem('band_seen_section_note', String(id)); } catch (e) { /* 忽略 */ }
+  },
+
   /** 本地日期 `YYYY-MM-DD`。⚠️ **别用 `toISOString()`**——那是 UTC，跨日会错一天。 */
   localDayKey() {
     const d = new Date();
@@ -382,41 +399,327 @@ const BAND = {
   },
 
   /**
-   * 右上角操作区（docs/14 §14.6.4）：**反馈**（打开浮层）+ **更新**（进 `updates.html`，有未读公告带红点）。
-   * §14：**荣誉团员看得到「更新」、看不到「反馈」**（对"新功能默认不给荣誉团员"的有意例外 —— 公告是纯只读信息）。
+   * 右上角操作区（`docs/14` §14.6.4「右上角操作区（铃铛 + 信封）」）：
+   * **铃铛**（原「反馈 + 更新」两个汉字入口**合并成一个**，点开小面板两项）+ **信封**（上任声部长的留言）。
+   * ⚠️ 2026-09-30（`交接单 #118`）用户原话：「**其它两个合并在一起呗，放个单色铃铛**，
+   * 然后声部长留言就放信封图标」。**这不是把已有的挪个位置，是把两个入口收成一个。**
+   * ⚠️ **都不带文字**（用户原话「单独摆个字在这也不好看」）⇒ **`aria-label` 是它们唯一的可读名**，
+   * 别只写 `aria-hidden`；`.head-r` 的 `align-items` 也跟着从 `baseline` 改成 `center`（`band.css`）。
+   * ⚠️ **两个宿主**（2026-09-28 改；用户真机反馈"手机上点不动、位置也乱"）：
+   *   桌面挂 `s.headR`（右上角操作区，原样）；**手机挂 `s.mhead`（那条 sticky 标题栏）**。
+   *   为什么必须换宿主：手机端 `.head{display:contents}` 之后 `.head-r` 掉成**正文里的通栏块**
+   *   （位置乱），而且它**没有任何 z-index**、会被 `sticky; z-index:20` 且不透明的标题栏盖住（点不动）
+   *   —— 挪进标题栏两件事一起解决。⚠️ **只判一次**（`isMobile()` 与手机段媒体查询条件逐字相同），
+   *   不监听 resize —— 照 `mountRailKeep` 的既有先例。
    */
-  mountHeadActions(headR, me) {
-    if (me.role !== 'HONORARY') {
-      const fb = document.createElement('button');
-      fb.type = 'button';
-      fb.className = 'hact';
-      fb.innerHTML = '<span class="hact-ic" aria-hidden="true">馈</span><span class="hact-tx">反馈</span>';
-      fb.addEventListener('click', () => this.openFeedback());
-      headR.appendChild(fb);
+  mountHeadActions(s, me) {
+    const host = this.isMobile() ? s.mhead : s.headR;
+    const bell = document.createElement('button');
+    bell.type = 'button';
+    bell.className = 'hact hact-bell';
+    bell.setAttribute('aria-label', '消息');
+    bell.setAttribute('aria-haspopup', 'true');
+    bell.setAttribute('aria-expanded', 'false');
+    bell.innerHTML = '<span class="hact-ic" aria-hidden="true">' + this.iconSvg('bell') + '</span>'
+      + '<span class="hact-dot" hidden></span>';
+    bell.addEventListener('click', () => this.openHeadPanel(bell, me));
+    host.appendChild(bell);
+    if (me.everSectionLeader) {
+      // ⭐ **条件渲染**（`docs/03` §3.5）：只有**历任与现任声部长**看得到信封——
+      //   普通团员那个位置**只有铃铛**（**不是留个灰的**）。
+      const mail = document.createElement('button');
+      mail.type = 'button';
+      mail.className = 'hact hact-mail';
+      mail.setAttribute('aria-label', '上任声部长的留言');
+      mail.innerHTML = '<span class="hact-ic" aria-hidden="true">' + this.iconSvg('mail') + '</span>'
+        + '<span class="hact-dot" hidden></span>';
+      mail.addEventListener('click', () => this.openSectionNotes());
+      host.appendChild(mail);
     }
-    const up = document.createElement('a');
-    up.className = 'hact';
-    up.href = '/updates.html';
-    up.innerHTML = '<span class="hact-ic" aria-hidden="true">更</span><span class="hact-tx">更新</span>';
-    const dot = document.createElement('span');
-    dot.className = 'hact-dot';
-    dot.hidden = true;
-    up.appendChild(dot);
-    headR.appendChild(up);
   },
 
-  /** 未读公告的小红点（与弹层同一套判定：本机没记录过也算"有未读"）。
-   *  单独一个方法是为了**只拉一次**——`paintNav` 会跑两遍（缓存 + 权威），别拉两次接口。 */
+  /** 「有没有未读公告」的唯一判定（与弹层同一套：本机没记录过也算"有未读"）。
+   *  抽成 Promise 是因为**两个消费者**（铃铛上的红点、小面板里那行的红点）都要问同一件事。 */
+  releaseUnread() {
+    return this.api('/api/release-notes/latest').then((envelope) =>
+      !!(envelope.code === 0 && envelope.data && envelope.data.id > this.seenRelease()))
+      .catch(() => false);   // 拉不到就不显示红点，别打扰
+  },
+
+  /** 未读公告的小红点。单独一个方法是为了**只拉一次**——`paintNav` 会跑两遍（缓存 + 权威）。
+   *  ⚠️⚠️ **选择器必须收窄到 `.hact-bell`**（2026-09-30，`交接单 #118`）：合并之后
+   *  **铃铛与信封各有一颗红点**，而这里原来是 `document.querySelector('.hact-dot')`（**单数**）
+   *  ⇒ 不收窄就会**把公告的红点画到信封上**（这就是"合并"带来的新坑）。 */
   refreshReleaseDot() {
-    const dot = document.querySelector('.hact-dot');
+    const dot = document.querySelector('.hact-bell .hact-dot');
     if (!dot) {
       return;
     }
-    this.api('/api/release-notes/latest').then((envelope) => {
-      if (envelope.code === 0 && envelope.data && envelope.data.id > this.seenRelease()) {
+    this.releaseUnread().then((unread) => { dot.hidden = !unread; });
+  },
+
+  /** 信封上的未读点：有"我刚上任、还没读过"的那一条才亮（`docs/03` §3.5）。
+   *  ⚠️ 只拉一次（见 `sectionNotePending`）。 */
+  refreshSectionNoteDot() {
+    const dot = document.querySelector('.hact-mail .hact-dot');
+    if (!dot) {
+      return;
+    }
+    this.sectionNotePending().then((note) => {
+      if (note && note.id > this.seenSectionNote()) {
         dot.hidden = false;
       }
-    }).catch(() => { /* 拉不到就不显示红点，别打扰 */ });
+    });
+  },
+
+  /** 「我刚上任、还没读过上一任的留言」那一条；没有就是 `null`。
+   *  **一次页面生命周期只拉一次**（`paintNav` 会跑两遍、弹层与红点都要问同一件事），
+   *  连 `null` 也缓存 —— 所以要重拉得先把它清掉。 */
+  sectionNotePending() {
+    if (!this._pendingNote) {
+      this._pendingNote = this.api('/api/me/section-note-pending')
+        .then((envelope) => (envelope.code === 0 && envelope.data ? envelope.data : null))
+        .catch(() => null);
+    }
+    return this._pendingNote;
+  },
+
+  /** 「今天过生日的人」（`docs/14` §14.6.4「生日通告」/「欢迎行」，`#115`）。
+   *  ⚠️ **一次页面生命周期只拉一次**：生日通告浮层与欢迎行那条文案问的是同一件事，
+   *  而 `paintNav` 会跑两遍（缓存 + 权威）⇒ 两个消费者共用一个 promise。
+   *  ⚠️ 与 `sectionNotePending` 同规矩：**连空数组也缓存**（"今天没人过生日"是确定答案，
+   *  别每调一次就打一次接口）。`id` 是 `#115` 给接口加的字段——没有它前端答不出"我在不在名单里"。 */
+  birthdaysToday() {
+    if (!this._birthdays) {
+      this._birthdays = this.api('/api/birthdays/today')
+        .then((envelope) => (envelope.code === 0 && Array.isArray(envelope.data) ? envelope.data : []))
+        .catch(() => []);           // 接口挂了就当作"今天没人过生日"：欢迎行退回平常那句，不报错
+    }
+    return this._birthdays;
+  },
+
+  /** 铃铛点开的小面板（`docs/14` §14.6.4）：两项，**按角色条件渲染**——
+   *  「更新公告」（进 `updates.html`，未读时这一行带小红点）+「提反馈」（开反馈浮层）。
+   *  ⚠️ **荣誉团员只渲染第一行**（提反馈是"动作"、不是只读 ⇒ 防腐条款不给，`docs/02` §2.3）；
+   *  仍保留"点开面板"这一个交互，不为此另开分支。
+   *  ⚠️ **层级沿用「个人栏」那一档（遮罩 490 / 面板 500）**，不新造一档；
+   *  「提反馈」开的 bootstrap modal 默认 1055，天然在其上。
+   *  关闭：点任意处 / `Esc`（与反馈浮层、个人栏同一条规矩：**绝不能不让人关**）；再点铃铛 = 收起。 */
+  openHeadPanel(bell, me) {
+    if (this.closeHeadPanel()) {
+      return;                                  // 已经开着 ⇒ 这一下是"收起"
+    }
+    const back = document.createElement('div');
+    back.className = 'hpanel-back';
+    const panel = document.createElement('div');
+    panel.className = 'hpanel';
+    panel.setAttribute('role', 'menu');
+    panel.setAttribute('aria-label', '消息');
+    const up = document.createElement('a');
+    up.className = 'hpanel-row';
+    up.href = '/updates.html';
+    up.innerHTML = '<span>更新公告</span><span class="hpanel-dot" hidden></span>';
+    panel.appendChild(up);
+    if (me.role !== 'HONORARY') {
+      const fb = document.createElement('button');
+      fb.type = 'button';
+      fb.className = 'hpanel-row';
+      fb.textContent = '提反馈';
+      fb.addEventListener('click', () => { this.closeHeadPanel(); this.openFeedback(); });
+      panel.appendChild(fb);
+    }
+    document.body.append(back, panel);
+    bell.setAttribute('aria-expanded', 'true');
+    const rowDot = panel.querySelector('.hpanel-dot');
+    this.releaseUnread().then((unread) => { rowDot.hidden = !unread; });
+    back.addEventListener('click', () => this.closeHeadPanel());
+    this._panelKey = (e) => { if (e.key === 'Escape') this.closeHeadPanel(); };
+    document.addEventListener('keydown', this._panelKey);
+  },
+
+  /** 收起小面板。**返回"刚才是不是开着"**——`openHeadPanel` 用它实现"再点一下收起"。 */
+  closeHeadPanel() {
+    const panel = document.querySelector('.hpanel');
+    if (!panel) {
+      return false;
+    }
+    const back = document.querySelector('.hpanel-back');
+    if (back) back.remove();
+    panel.remove();
+    document.removeEventListener('keydown', this._panelKey);
+    const bell = document.querySelector('.hact-bell');
+    if (bell) bell.setAttribute('aria-expanded', 'false');
+    return true;
+  },
+
+  // ---------- 上任声部长的留言（`#111`，docs/03 §3.5 / docs/14 §14.6.4） ----------
+
+  /**
+   * 「上任声部长的留言」浮层：**读 + 写同一处**。
+   * <p>
+   * 美术 = 「**一封压在谱架上的信**」：丝白底 `--silk`（⚠️ 铁律③：**绝不能做成宣纸黄**）、
+   * 楷体、落款**右对齐**、朱砂印章、**宽行距** + 段首空两格。⚠️ **不做竖排**（手机上可读性差）、
+   * **不画边框与阴影**（`§14.6.3`：需要边框就是需要更多间距，靠底色与留白分层）、
+   * **只做一次「展开」**（`opacity` + 轻微 `translateY`，≤400ms；**不做循环、不加纸纹**）。
+   * <p>
+   * 权限全由**服务端**判：读不到（403）会 toast 并**直接把浮层收掉**（不留空壳）；
+   * **作者能改自己那条**、**谁都删不了**（页面上根本没有删除入口）。
+   * 关闭：关闭按钮 / `Esc` / 点遮罩（与公告弹层同一套）。
+   */
+  async openSectionNotes() {
+    if (document.querySelector('.letter')) {
+      return;                                   // 已经开着，别叠第二层
+    }
+    const me = this.me || {};
+    const sectionId = me.sectionId;
+    if (!sectionId) {
+      this.toast('你现在不在任何声部，看不了留言');
+      return;
+    }
+    const reduced = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const mask = document.createElement('div');
+    mask.className = 'letter' + (reduced ? '' : ' letter-in');
+    mask.setAttribute('role', 'dialog');
+    mask.setAttribute('aria-modal', 'true');
+    mask.setAttribute('aria-label', '上任声部长的留言');
+    const card = document.createElement('div');
+    card.className = 'letter-card';
+    const cls = document.createElement('button');
+    cls.type = 'button';
+    cls.className = 'go go-ghost go-sm letter-cls';
+    cls.textContent = '关闭';
+    const list = document.createElement('div');
+    list.className = 'letter-list';
+    card.append(cls, list);
+    mask.appendChild(card);
+
+    const shut = () => {
+      document.removeEventListener('keydown', onKey);
+      mask.remove();
+    };
+    function onKey(e) { if (e.key === 'Escape') shut(); }
+    cls.addEventListener('click', shut);
+    mask.addEventListener('click', (e) => { if (e.target === mask) shut(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(mask);
+    cls.focus();
+
+    try {
+      await this.drawSectionNotes(list, sectionId);
+    } catch (e) {
+      shut();     // 读不了（403 / 网络）：toast 已弹，**别留一个空壳浮层**
+    }
+  },
+
+  /** 画留言列表：**按 `created_at` 正序**（历届叠着看，越早的越在上面）。写完 / 改完都重走一遍。 */
+  async drawSectionNotes(list, sectionId) {
+    const d = await this.must('/api/sections/' + sectionId + '/notes?size=100');
+    const me = this.me || {};
+    const redraw = () => this.drawSectionNotes(list, sectionId);
+    list.textContent = '';
+    const rows = d.list || [];
+    if (!rows.length) {
+      const empty = document.createElement('p');
+      empty.className = 'letter-empty';
+      empty.textContent = '还没有留言。';
+      list.appendChild(empty);
+    }
+    for (const n of rows) {
+      list.appendChild(this.letterItem(n, me, sectionId, redraw));
+    }
+    // ⭐ **现任声部长多一个「写」**（服务端还会再判一次；这一层只是不给没权限的人看）
+    if (me.role === 'SECTION_LEADER') {
+      list.appendChild(this.letterComposer(sectionId, redraw));
+    }
+  },
+
+  /** 一封「信」：正文 + 落款（署名 · 日期，右对齐）+ 朱砂印章；**我写的那条**多一个「改」。 */
+  letterItem(note, me, sectionId, redraw) {
+    const el = document.createElement('article');
+    el.className = 'letter-item';
+    const body = document.createElement('p');
+    body.className = 'letter-body';
+    body.textContent = note.body;              // 纯文本 + 保留换行（**绝不解析 HTML**，SECURITY.md C3）
+    const foot = document.createElement('div');
+    foot.className = 'letter-foot';
+    const seal = document.createElement('span');
+    seal.className = 'letter-seal';
+    seal.setAttribute('aria-hidden', 'true');
+    seal.textContent = (me.sectionName || '声部').replace(/声部$/, '') || '印';
+    const sign = document.createElement('span');
+    sign.className = 'letter-sign';
+    sign.textContent = (note.authorName || '') + ' · ' + String(note.createdAt || '').slice(0, 10)
+      + (note.updatedAt && note.updatedAt !== note.createdAt ? ' · 改过' : '');
+    foot.append(seal, sign);
+    el.append(body, foot);
+    if (note.mine) {
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'go go-ghost go-sm letter-act';
+      edit.textContent = '改';
+      edit.addEventListener('click', () => {
+        const box = this.letterEditor(note.body, '保存', async (text) => {
+          await this.must('/api/sections/' + sectionId + '/notes/' + note.id,
+            { method: 'PUT', body: { body: text } });
+          this.toast('改好了', 'success');
+          await redraw();
+        }, redraw);
+        el.replaceWith(box);
+        box.querySelector('.letter-ta').focus();
+      });
+      el.appendChild(edit);
+    }
+    return el;
+  },
+
+  /** 「写一条」——**只有现任声部长**看得到。 */
+  letterComposer(sectionId, redraw) {
+    return this.letterEditor('', '留一条', async (text) => {
+      await this.must('/api/sections/' + sectionId + '/notes', { method: 'POST', body: { body: text } });
+      this.toast('留好了', 'success');
+      await redraw();
+    }, null);   // 写没有"取消"（还没写呢，取消无从谈起）
+  },
+
+  /** 「写」与「改」共用的那一块（textarea + 保存 [+ 取消]）。`onCancel` 传 `null` 就不画取消。 */
+  letterEditor(initial, saveLabel, onSave, onCancel) {
+    const box = document.createElement('div');
+    box.className = 'letter-edit';
+    const ta = document.createElement('textarea');
+    ta.className = 'letter-ta';
+    ta.rows = 5;
+    ta.value = initial || '';
+    const row = document.createElement('div');
+    row.className = 'letter-acts';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'go go-sm';
+    save.textContent = saveLabel;
+    row.appendChild(save);
+    if (onCancel) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'go go-ghost go-sm';
+      cancel.textContent = '取消';
+      cancel.addEventListener('click', onCancel);
+      row.appendChild(cancel);
+    }
+    box.append(ta, row);
+    save.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) {
+        this.toast('留言不能为空');   // 服务端也会拦（`@NotBlank`），这里只是不用等一个来回
+        return;
+      }
+      save.disabled = true;           // 防连点发两次
+      try {
+        await onSave(text);
+      } finally {
+        save.disabled = false;
+      }
+    });
+    return box;
   },
 
   /** 反馈浮层（docs/15 §15.4）：多行文本框 + 提交。**页面路径由前端自动带**，设备由服务端取。 */
@@ -513,8 +816,10 @@ const BAND = {
         if (closed) return;
         closed = true;
         this.markReleaseSeen(note.id);
-        // 红点跟着消失：刚刚已经看过了
-        document.querySelectorAll('.hact-dot').forEach((d) => { d.hidden = true; });
+        // 红点跟着消失：刚刚已经看过了。⚠️ **只清铃铛那颗**（`#118` 之后信封也有一颗，
+        // 而这条说的是"公告已读"——清错就是把信封的未读状态抹掉了）。
+        const bellDot = document.querySelector('.hact-bell .hact-dot');
+        if (bellDot) bellDot.hidden = true;
         document.removeEventListener('keydown', onKey);
         mask.remove();
         resolve();
@@ -549,8 +854,7 @@ const BAND = {
     if (this.seenBirthday() === today) {
       return Promise.resolve();   // 今天已经弹过了（设备级去重）
     }
-    return this.api('/api/birthdays/today').then((envelope) => {
-      const list = envelope.code === 0 && Array.isArray(envelope.data) ? envelope.data : [];
+    return this.birthdaysToday().then((list) => {
       if (!list.length) {
         return;   // 今天没人过生日：整个环节跳过
       }
@@ -604,6 +908,77 @@ const BAND = {
   },
 
   /**
+   * 「新部长上任」那一次额外弹一遍（`docs/14` §14.6.4 ③）：**上号后首次进入**弹一次。
+   * ⚠️ **它和信封里那个浮层是同一份内容** —— 读完之后内容**不会消失**，只是**不再弹**（常驻在信封里）。
+   * 去重键 `localStorage.band_seen_section_note = '<noteId>'`（做法仿生日通告 `band_seen_birthday`）。
+   * <p>
+   * ⚠️ 形态**照抄 `announce()` / `announceBirthday()`**（同一个 `.ann` 浮层与 `ann-rise`、同一套关闭行为、
+   * z-index 120）—— 规格明写"别另造一套弹层"。
+   * ⚠️ **位置排在最后**：欢迎过渡 → 更新公告 → 生日通告 → **本弹层** → 才加载 oneko
+   * （oneko 的 z-index 是最大整数，**必须等所有弹层都关掉**）。
+   * ⚠️ 规格里写死的是「**四者顺序**」，本弹层是**第五个** —— 已记 `交接单` §三 移交事项。
+   * @param fromLogin 只有登录成功那一次为 true
+   */
+  announceSectionNote(fromLogin) {
+    if (!fromLogin) {
+      return Promise.resolve();   // 平时浏览页面不弹
+    }
+    return this.sectionNotePending().then((note) => {
+      if (!note || note.id <= this.seenSectionNote()) {
+        return undefined;         // 没有 / 已经读过这一条：整个环节跳过，不弹空层、不留空帧
+      }
+      return new Promise((resolve) => {
+        const reduced = window.matchMedia
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const mask = document.createElement('div');
+        mask.className = 'ann' + (reduced ? '' : ' ann-in');
+        const card = document.createElement('div');
+        card.className = 'ann-card';
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-label', '上任声部长的留言');
+        const title = document.createElement('p');
+        title.className = 'ann-title';
+        title.textContent = '上任声部长给你留了一条';
+        const body = document.createElement('p');
+        body.className = 'ann-body';
+        body.textContent = note.body;   // 纯文本，不解析 HTML（与公告同规矩）
+        const acts = document.createElement('div');
+        acts.className = 'ann-acts';
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'ann-link';
+        more.textContent = '去信封里看';
+        const ok = document.createElement('button');
+        ok.className = 'go go-sm';
+        ok.type = 'button';
+        ok.textContent = '知道了';
+        acts.append(more, ok);
+        card.append(title, body, acts);
+        mask.appendChild(card);
+
+        let closed = false;
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          this.markSectionNoteSeen(note.id);
+          const dot = document.querySelector('.hact-mail .hact-dot');
+          if (dot) dot.hidden = true;        // 信封上的未读点跟着灭（刚读过了）
+          document.removeEventListener('keydown', onKey);
+          mask.remove();
+          resolve();
+        };
+        function onKey(e) { if (e.key === 'Escape') close(); }
+        ok.addEventListener('click', close);
+        more.addEventListener('click', () => { close(); this.openSectionNotes(); });
+        mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(mask);
+        ok.focus();
+      });
+    });
+  },
+
+  /**
    * 上传一个文件到统一文件接口（docs/08 §8.5）：**multipart，不能走 `api()` 的 JSON 封装**。
    * 返回 `{id, originalName, contentType, sizeBytes}`，拿 `id` 去挂到曲目附件 / 演出照片 / 录音上。
    */
@@ -624,11 +999,11 @@ const BAND = {
   },
 
   /**
-   * 取文件内容为 `blob:` URL。**绝不能用裸 `<a href="/api/files/{id}">`**——
+   * 取文件内容为 `Blob`。**绝不能用裸 `<a href="/api/files/{id}">`**——
    * 裸链接不带 `Authorization` 头，永远 401（导出 CSV 早就踩过同一个坑，见 admin-members.html）。
-   * 用完记得 `URL.revokeObjectURL`。
+   * 失败**已 toast**（403 与其它分开说）并**抛出去**，由调用方决定怎么收场。
    */
-  async fileBlobUrl(fileId) {
+  async fileBlob(fileId) {
     const res = await fetch('/api/files/' + fileId, {
       headers: { Authorization: 'Bearer ' + this.token() },
     });
@@ -636,14 +1011,119 @@ const BAND = {
       this.toast(res.status === 403 ? '没有权限看这个文件' : '打不开这个文件（HTTP ' + res.status + '）');
       throw new Error('HTTP ' + res.status);
     }
-    return URL.createObjectURL(await res.blob());
+    return res.blob();
   },
 
-  /** 新窗口打开（谱子/图片）；音频由调用方拿去当 `<audio>` 的 src。 */
+  /** 取文件内容为 `blob:` URL（`fileBlob` 的薄包装）。用完记得 `URL.revokeObjectURL`。 */
+  async fileBlobUrl(fileId) {
+    return URL.createObjectURL(await this.fileBlob(fileId));
+  },
+
+  /** 打开附件（谱子 / 音频；`piece-detail.html` 的「查看 / 试听」）。
+      ⚠️ **手机与桌面走两条路**（`docs/08` §8.5，`#113`）——
+      起因：手机上报"点了毫无反应"。根因 = 原来那句 `window.open(await fileBlobUrl(id))`：
+      **`window.open` 在 `await` 之后才调用** ⇒ 那一刻**已经脱离用户手势** ⇒
+      手机浏览器 / 弹窗拦截器**直接把它拦掉**（返回 `null`），而代码**不校验返回值** ⇒ **静默失败**。
+      ⭐ **手机走页面内预览层**（完全绕开弹窗拦截，与公告 / 生日是同一族形态）；
+      桌面仍开新标签，但**先把窗同步开出来**（还在手势里）再填内容，且**校验 `null`**。
+      ⚠️ 这个 bug **在桌面上复现不出来**（桌面拦截宽松）——桌面测通 ≠ 修好，必须真机验。 */
   async openFile(fileId) {
+    if (this.isMobile()) {
+      return this.previewFile(fileId);
+    }
+    // ⚠️ **同步**开窗：这一行必须在任何 `await` **之前**，否则又脱离了用户手势（就是原来那个 bug）。
+    const w = window.open('', '_blank');
+    if (!w) {
+      this.toast('浏览器拦了新窗口——请允许本站的弹窗后重试');
+      return;
+    }
     try {
-      window.open(await this.fileBlobUrl(fileId), '_blank');
-    } catch (e) { /* toast 已弹 */ }
+      w.location = await this.fileBlobUrl(fileId);
+    } catch (e) {
+      try { w.close(); } catch (err) { /* 关不掉就算了，里面只是个空白页 */ }
+    }
+  },
+
+  /** 页面内全屏预览层（手机端走它，`#113`）：图片 `<img>` / PDF `<iframe>` / 音频 `<audio>`，
+      其它类型给一个下载链接兜底。**完全绕开弹窗拦截**。
+      关闭：关闭按钮 / `Esc` / 点遮罩（与「更新公告弹层」同一套）；`prefers-reduced-motion` 不播入场。 */
+  async previewFile(fileId) {
+    let blob;
+    try {
+      blob = await this.fileBlob(fileId);
+    } catch (e) {
+      return;   // toast 已弹
+    }
+    const url = URL.createObjectURL(blob);
+    const type = blob.type || '';
+    const reduced = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const mask = document.createElement('div');
+    mask.className = 'fview' + (reduced ? '' : ' fview-in');
+    mask.setAttribute('role', 'dialog');
+    mask.setAttribute('aria-modal', 'true');
+    mask.setAttribute('aria-label', '附件预览');
+    const card = document.createElement('div');
+    card.className = 'fview-card';
+    const cls = document.createElement('button');
+    cls.className = 'go go-ghost go-sm fview-cls';
+    cls.type = 'button';
+    cls.textContent = '关闭';
+    const parts = [cls];
+    let media;
+    if (type.startsWith('image/')) {
+      media = document.createElement('img');
+      media.className = 'fview-img';
+      media.alt = '';
+      media.src = url;
+    } else if (type === 'application/pdf') {
+      media = document.createElement('iframe');
+      media.className = 'fview-frame';
+      media.title = 'PDF 预览';
+      media.src = url;
+      // ⚠️ **iOS Safari 上 blob 的 PDF 经常是一片空白**（`docs/08` §8.5 提过这条）⇒
+      //    给一个"在新标签打开"当退路。它是**直接点击**打开的（落在手势里），不会被拦。
+      const alt = document.createElement('a');
+      alt.className = 'fview-alt';
+      alt.href = url;
+      alt.target = '_blank';
+      alt.rel = 'noopener';
+      alt.textContent = '上面是空白？点这里在新标签打开';
+      parts.push(media, alt);
+    } else if (type.startsWith('audio/')) {
+      media = document.createElement('audio');
+      media.className = 'fview-audio';
+      media.controls = true;
+      media.src = url;
+    } else {
+      // 白名单外的类型（PPT / Word 之类）：给一个下载链接，**别静默**
+      media = document.createElement('a');
+      media.className = 'fview-dl';
+      media.href = url;
+      media.download = '';
+      media.textContent = '下载这个文件';
+    }
+    if (parts.length === 1) parts.push(media);
+    card.append(...parts);
+    mask.appendChild(card);
+
+    let closed = false;
+    const shut = () => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey);
+      if (media.tagName === 'AUDIO') {            // 关掉预览层就把声音停掉，别让它在后台响
+        try { media.pause(); } catch (e) { /* 无所谓 */ }
+      }
+      URL.revokeObjectURL(url);
+      mask.remove();
+    };
+    function onKey(e) { if (e.key === 'Escape') shut(); }
+    cls.addEventListener('click', shut);
+    mask.addEventListener('click', (e) => { if (e.target === mask) shut(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(mask);
+    cls.focus();
   },
 
   /**
@@ -657,6 +1137,24 @@ const BAND = {
     BAND.roleLabel(member.role),
     member.joinedAt ? `${member.joinedAt.slice(0, 4)} 年入团` : null,
   ].filter(Boolean).join(' · '),
+
+  /**
+   * 「参演过 N 场专场」（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）。
+   * ⚠️ **`profile.html` 与 `member-detail.html` 共用这一个函数**（与 `identityTags` 同一条规矩：
+   * 两处各写一份必然飘）。调用方只负责给出那个 `<b>` 与 memberId。
+   * ⚠️ 拉不到才写 `—`；**服务端回的 0 就照实显示 `0`**（"一场没参演过"是个事实）。
+   */
+  async mountShowcaseCount(el, memberId) {
+    if (!el) {
+      return;
+    }
+    try {
+      const d = await this.must('/api/members/' + encodeURIComponent(memberId) + '/showcase-count');
+      el.textContent = String(d.count);
+    } catch (e) {
+      el.textContent = '—';   // toast 已弹；这里只是别让那一格空着
+    }
+  },
 
   /**
    * 上传前压缩图片（docs/07 §7.4 / `docs/08` §8.5 的**硬要求**）：canvas 缩到**长边 1920 / 质量 80%**。
@@ -763,23 +1261,29 @@ const BAND = {
     //    否则欢迎动画会重播、猫会叠一只、个人栏会插第二份。
     if (this.skeleton) {
       this.paintNav(this.skeleton, this.cachedMe(), active);
-      const [me] = await Promise.all([this.requireUser(), this.avatars()]);
+      const [me, , bds] = await Promise.all([this.requireUser(), this.avatars(), this.birthdaysToday()]);
       if (!me) return null;
+      this._bd = bds || [];
       this.paintNav(this.skeleton, me, active);
       return me;
     }
     const skeleton = this.mountSkeleton(active);       // ① 同步：布局一次到位
     this.skeleton = skeleton;                          // 存起来给上面那条"第二次进来"的分支复用
     this.paintNav(skeleton, this.cachedMe(), active);  // ② 先用缓存填（没有就留空，不编数据）
-    // 身份与头像清单**并行**取（清单很小）；avatars() 自带 catch，不会把这条链拖垮
-    const [me] = await Promise.all([this.requireUser(), this.avatars()]);
+    // 身份、头像清单、今天的寿星**并行**取（三份都是很小的清单）；avatars()/birthdaysToday() 自带 catch，
+    // 不会把这条链拖垮。⚠️ **寿星也走这条并行**（`#115`）：`paintNav` 的第二次填充在 `playWelcome()`
+    // 之前，所以**欢迎过渡那一屏的文案一开始就是对的**，不会先"欢迎回来"再跳成"生日快乐"
+    // （登录那一眼正好是最显眼的时刻）。
+    const [me, , bds] = await Promise.all([this.requireUser(), this.avatars(), this.birthdaysToday()]);
     if (!me) return null;                              // 401 已在 api() 里跳转；其他错误已 toast + 摘黑幕
+    this._bd = bds || [];
     this.paintNav(skeleton, me, active);               // ③ 再用服务端**权威**数据填一遍
 
     this.mountProfile(skeleton.layout, me);
     // ⚠️ `mountRailKeep` **不在这里**了：2026-09-25 起它随骨架**同步绑**（在 `mountSkeleton` 里），
     // 否则那几十~几百毫秒没监听，指针甩到正文会卡在展开态（详见它的方法注释）。
     this.refreshReleaseDot();
+    this.refreshSectionNoteDot();   // 信封上的未读点（有"我刚上任、还没读过"的那条才亮）
     // ⚠️ **三者顺序写死**（docs/15 §15.5）：欢迎过渡 → 更新公告 → **关掉公告才加载 oneko**。
     // 猫的 z-index 是最大整数，不等公告关掉就会从公告上跑过去（当年"从欢迎黑幕上跑过去"是同款坑）。
     // fromLogin **必须在 playWelcome 之前读**——它一进去就把 band_welcome 标记删了。
@@ -788,29 +1292,80 @@ const BAND = {
     this.playWelcome()
       .then(() => this.announce(fromLogin))
       .then(() => this.announceBirthday(fromLogin))   // 生日通告**排在公告之后**（docs/15 §15.5 的四者顺序）
+      // ⚠️ **第五个**：新部长上任那一次（`#111`）。规格写死的是"四者顺序"，
+      //    这一层必须排在 oneko **之前**——猫的 z-index 是最大整数，等不到所有弹层关掉就会从上面跑过去。
+      .then(() => this.announceSectionNote(fromLogin))
       .then(() => this.loadCat());
     return me;
   },
 
-  /** 图标列与页面标题表（docs/14 §14.6.4）：菜单项 [href, 名字, 图标字, 角色白名单]。 */
+  /** 图标列与页面标题表（docs/14 §14.6.4）：菜单项 [href, 名字, **图标 key**, 角色白名单]。
+      ⚠️ 第 3 位从 2026-09-30 起是 **`vendor/icons/` 里的图标 key**（不再是汉字占位）——
+      那正是 `docs/14` §14.6.4「DOM 契约」预留的"将来换真图标只改这一列"。
+      ⇒ **一一对应、不许两个页面共用一个 key**（`AGENTS.md` 前端节第 6 条）：
+      活动/活动管理、名册/团员管理、我的请假/请假审批 都是高危对。
+      ⚠️ 「更新公告」用 `megaphone` **不能用 `bell`**——铃铛已经给了右上角那个合并入口。
+      ⚠️ **换图标要同步三处**：`vendor/icons/` 的文件 + 那目录的 `manifest.json` + 本表；
+      对应的 `<svg>` 内层写在下面 `ICON_SVG`（**由脚本生成，别手抄**）。 */
   navItems: [
-    ['events.html', '活动', '活', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['members.html', '名册', '册', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['my-leave.html', '我的请假', '假', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
+    ['events.html', '活动', 'calendar-days', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['members.html', '名册', 'users', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['my-leave.html', '我的请假', 'calendar-minus', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER']],
     // 曲目 / 演出 / 录音：**所有角色都能看**（含荣誉团员——曲目附件另由文件接口按角色挡；
     // 荣誉团员在录音页只看得到"自己发过的"、上传区不渲染），增删改都在服务层收口
-    ['pieces.html', '曲目', '曲', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['concerts.html', '演出', '演', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['recordings.html', '录音', '录', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['stats.html', '考勤统计', '计', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
-    ['approve-leave.html', '请假审批', '批', ['ADMIN', 'LEADER', 'SECTION_LEADER']],
-    ['admin-events.html', '活动管理', '理', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER']],
-    ['admin-showcase.html', '专场策展', '专', ['ADMIN']],
-    ['admin-members.html', '团员管理', '员', ['ADMIN']],
-    ['admin-feedback.html', '反馈管理', '馈', ['ADMIN']],
-    ['admin-notes.html', '更新公告', '告', ['ADMIN']],
-    ['logs.html', '操作日志', '志', ['ADMIN', 'LEADER']],
+    ['pieces.html', '曲目', 'music', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['concerts.html', '演出', 'ticket', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['recordings.html', '录音', 'mic', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['stats.html', '考勤统计', 'chart-column', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER', 'MEMBER', 'HONORARY']],
+    ['approve-leave.html', '请假审批', 'clipboard-check', ['ADMIN', 'LEADER', 'SECTION_LEADER']],
+    ['admin-events.html', '活动管理', 'calendar-cog', ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER']],
+    ['admin-showcase.html', '专场策展', 'images', ['ADMIN']],
+    ['admin-members.html', '团员管理', 'user-cog', ['ADMIN']],
+    ['admin-feedback.html', '反馈管理', 'inbox', ['ADMIN']],
+    ['admin-notes.html', '更新公告', 'megaphone', ['ADMIN']],
+    ['logs.html', '操作日志', 'scroll-text', ['ADMIN', 'LEADER']],
   ],
+
+  /* 图标内层 markup（`vendor/icons/` 是唯一权威）。⚠️ **本区块由 `design-samples/_gen_icons_js.py`
+     从 `vendor/icons/` 现算生成，别手改** —— 手抄一遍就会漂，本项目**刚因为"手抄哈希表少打一个字符"
+     翻过车**（`work_log` 2026-09-30）。改图标的正确姿势：换 `vendor/icons/<file>.svg` + 更新那目录的
+     `manifest.json` + 改上面 `navItems` 的 key，然后重跑那个脚本。 */
+  /* ==ICON_SVG:begin== */
+  ICON_SVG: {
+    'bell': '<path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />',
+    'calendar-cog': '<path d="m15.228 16.852-.923-.383" /><path d="m15.228 19.148-.923.383" /><path d="M16 2v3" /><path d="m16.47 14.305.382.923" /><path d="m16.852 20.772-.383.924" /><path d="m19.148 15.228.383-.923" /><path d="m19.53 21.696-.382-.924" /><path d="m20.773 16.852.924-.383" /><path d="m20.773 19.148.924.383" /><path d="M21 10.5V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h5.5" /><path d="M3 9h18" /><path d="M8 2v3" /><circle cx="18" cy="18" r="3" />',
+    'calendar-days': '<path d="M8 2v3" /><path d="M16 2v3" /><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M8 13h.01" /><path d="M12 13h.01" /><path d="M16 13h.01" /><path d="M8 17h.01" /><path d="M12 17h.01" /><path d="M16 17h.01" />',
+    'calendar-minus': '<path d="M16 18h6" /><path d="M16 2v3" /><path d="M21 14V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h8.3" /><path d="M3 9h18" /><path d="M8 2v3" />',
+    'chart-column': '<path d="M3 3v16a2 2 0 0 0 2 2h16" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" />',
+    'circle-user-round': '<path d="M17.925 20.056a6 6 0 0 0-11.851.001" /><circle cx="12" cy="11" r="4" /><circle cx="12" cy="12" r="10" />',
+    'clipboard-check': '<rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="m9 14 2 2 4-4" />',
+    'images': '<path d="m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16" /><path d="M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2" /><circle cx="13" cy="7" r="1" fill="currentColor" /><rect x="8" y="2" width="14" height="14" rx="2" />',
+    'inbox': '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />',
+    'laptop': '<path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z" /><path d="M20.054 15.987H3.946" />',
+    'mail': '<path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /><rect x="2" y="4" width="20" height="16" rx="2" />',
+    'megaphone': '<path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" /><path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" /><path d="M8 6v8" />',
+    'mic': '<path d="M12 19v3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><rect x="9" y="2" width="6" height="13" rx="3" />',
+    'music': '<path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />',
+    'newspaper': '<path d="M15 18h-5" /><path d="M18 14h-8" /><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2" /><rect width="8" height="4" x="10" y="6" rx="1" />',
+    'scroll-text': '<path d="M15 12h-5" /><path d="M15 8h-5" /><path d="M19 17V5a2 2 0 0 0-2-2H4" /><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" />',
+    'smartphone': '<rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" />',
+    'ticket': '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" /><path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />',
+    'user-cog': '<path d="M10 15H6a4 4 0 0 0-4 4v2" /><path d="m14.305 16.53.923-.382" /><path d="m15.228 13.852-.923-.383" /><path d="m16.852 12.228-.383-.923" /><path d="m16.852 17.772-.383.924" /><path d="m19.148 12.228.383-.923" /><path d="m19.53 18.696-.382-.924" /><path d="m20.772 13.852.924-.383" /><path d="m20.772 16.148.924.383" /><circle cx="18" cy="15" r="3" /><circle cx="9" cy="7" r="4" />',
+    'users': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" />',
+  },
+  /* ==ICON_SVG:end== */
+
+  /** 把图标 key 包成可直接塞进 `innerHTML` 的 `<svg>`。**wrapper 属性只在这里写一次**
+      （照 `vendor/icons/manifest.json` 的 `svg_attrs`），`ICON_SVG` 里只存内层 markup。
+      颜色走 `stroke="currentColor"` ⇒ **继承所在元素的 `color`**（侧栏收起态 `--shellmid`、
+      hover / 当前项 `--silk` / `--wood`），**不新造色阶**。
+      ⚠️ 查不到的 key **给空串**：宁可这个位置空着，也不要抛错把整个菜单拼不出来。 */
+  iconSvg(key) {
+    const inner = this.ICON_SVG[key];
+    if (!inner) return '';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+      + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+  },
 
   /** 抽屉里的分组归属表（`docs/14` §14.6.4 二，2026-09-28 定）。⚠️ **只影响手机端的抽屉**：
       桌面仍是那一列 14 项平铺（`.dgrp` 在桌面端是 `display: contents`、组标题不画）。
@@ -888,7 +1443,10 @@ const BAND = {
     // 欢迎行（docs/14 §14.6.4）：姓名朱砂、后面跟职称，不用标点；它是欢迎过渡的落点之一
     const welcome = document.createElement('p');
     welcome.className = 'welcome';
-    welcome.append('欢迎回来，');
+    // ⚠️ 开头那四个字**必须是具名节点**：生日当天要换成「生日快乐，」（`docs/14` §14.6.4
+    //    「欢迎行」/ `#115`）。写成 `welcome.append('欢迎回来，')` 就再也改不动它了。
+    const wlead = document.createTextNode('欢迎回来，');
+    welcome.append(wlead);
     const wname = document.createElement('span');
     wname.className = 'wname';
     const wrole = document.createElement('span');
@@ -909,6 +1467,11 @@ const BAND = {
     mbody.className = 'mbody';
     // 下拉刷新的提示条（`docs/14` §14.6.4 六）：挂在正文包裹层**内部**、常态 `translateY(-100%)`
     // ⇒ 正文被推下去时它"自然露出来"，不用再写一条会与主位移对不齐的跟随动画。
+    // ⚠️ **只在 `isNarrow()` 时挂进 DOM**（`#114`，2026-09-30）：它的样式全在 `band.css` §10·b 的
+    //    `@media (max-width: 720px)` 里 ⇒ 宽屏 / 触屏平板上它**没有任何规则命中**，
+    //    会退化成"没样式的裸 div **把『↓ 下拉刷新』直接显示出来**"（这正是用户报的电脑端那个障）。
+    //    干脆不创建 —— 于是宽屏上 `document.querySelector('.mhint')` 是 `null`、而不是"存在但被藏起来"。
+    //    `hint` 变量照旧传下去（`mountPullRefresh` 会拿到），只是非窄屏下它是个游离节点、永不显示。
     const hint = document.createElement('div');
     hint.className = 'mhint';
     const hArrow = document.createElement('span');
@@ -925,7 +1488,8 @@ const BAND = {
     skel.className = 'skel';
     skel.innerHTML = '<div class="sk tall"></div><div class="sk row"></div>' +
                      '<div class="sk row"></div><div class="sk"></div>';
-    mbody.append(hint, skel);
+    if (this.isNarrow()) mbody.append(hint);
+    mbody.append(skel);
     main.appendChild(mbody);
     layout.appendChild(main);
     // ⚠️⚠️ **骨架屏只对"有列表 / 数字那类内容"的页面开**（`ALIVE.play` 认得的那几样，静态标记里就有）。
@@ -959,7 +1523,6 @@ const BAND = {
     // 抽屉的开关同理：`mountSkeleton` 一个页面只跑**一次**（第二次 `renderNav()` 只走 `paintNav()`、
     // 不重建 DOM，`app.js` 上面那段注释）⇒ 这里同步绑，别挪进 `paintNav`。
     this.mountDrawer(layout);
-    this.mountRowSwipe();
     this.mountPullRefresh({ mbody, hint, hintTx, hArrow });
 
     return {
@@ -968,10 +1531,11 @@ const BAND = {
       av: layout.querySelector('.me .ic span'),
       mav: mavSpan,                       // 手机标题栏那颗（欢迎过渡在手机端的落点，见 `playWelcome`）
       mhTitle,
+      mhead,                              // 手机那条 sticky 标题栏本身（`mountHeadActions` 手机端把两个入口挂它里面）
       mbody, skel, hint, hintTx, hArrow,
       meName: layout.querySelector('.me-name'),
       meSec: layout.querySelector('.me-sec'),
-      wname, wrole, h1,
+      wname, wrole, wlead, h1,
       greet: headR.querySelector('.greet'),
       headR,
     };
@@ -990,7 +1554,7 @@ const BAND = {
     const byHref = new Map(allowed.map((it) => [it[0], it]));
     const link = ([href, label, icon]) =>
       `<a href="/${href}"${href === active ? ' class="on"' : ''}>` +
-      `<span class="ic" aria-hidden="true">${icon}</span><span class="tx">${label}</span></a>`;
+      `<span class="ic" aria-hidden="true">${this.iconSvg(icon)}</span><span class="tx">${label}</span></a>`;
     return this.navGroups.map(([name, hrefs], gi) => {
       const items = hrefs.map((h) => byHref.get(h)).filter(Boolean);
       if (!items.length) return '';               // 这个角色在这一组里一项都没有 ⇒ 连组标题都不画
@@ -1015,6 +1579,7 @@ const BAND = {
     if (!me) {
       s.meName.textContent = '';
       s.meSec.textContent = '';
+      s.wlead.nodeValue = '欢迎回来，';
       s.wname.textContent = '';
       s.wrole.textContent = '';
       s.greet.textContent = '';
@@ -1023,8 +1588,16 @@ const BAND = {
       this.paintAvatar(s.mav, me);  // 标题栏那颗走**同一个入口**（清单校验 + 首字回退都在它内部）
       s.meName.textContent = me.name;
       s.meSec.textContent = me.sectionName || '';
+      // 生日当天的欢迎行（`docs/14` §14.6.4「欢迎行」，2026-09-30 `#115`）：
+      // **我在今天的名单里** ⇒ 文案换「生日快乐，」、职称**用全角括号**包起来；
+      // **别人看到的仍是「欢迎回来，{姓名}{职称}」**（名单是"谁过生日"，我只跟自己比 `me.id`）。
+      // ⚠️ 姓名**仍走楷体 + 墨色**（`band.css` 的 `.wname`，**绝不改朱砂**）、那道手划笔划照旧；
+      //    与「生日通告」浮层**并存**（浮层 = 全团谁生日，这里 = 我自己生日）。
+      const mine = (this._bd || []).some((b) => b.id === me.id);
+      const role = this.roleLabel(me.role) || me.role;
+      s.wlead.nodeValue = mine ? '生日快乐，' : '欢迎回来，';
       s.wname.textContent = me.name;
-      s.wrole.textContent = this.roleLabel(me.role) || me.role;
+      s.wrole.textContent = mine ? `（${role}）` : role;
       s.greet.textContent = me.sectionName || '';
     }
     const activeLabel = this.navItems.find(([href]) => href === active);
@@ -1035,10 +1608,13 @@ const BAND = {
     // 与 `h1` 同一个字符串。⚠️ 详情页会把 `h1` 改写成具体演出名，但**手机端 h1 不显示**（`band.css` §10），
     // 所以标题栏照样是栏目名 —— 这是选定的口径，不是漏同步。
     s.mhTitle.textContent = title;
-    // 右上角操作区要重建（它按角色决定画不画「反馈」）：先清掉上一轮的，再画
+    // 右上角操作区要重建（它按角色决定画不画「反馈」）：先清掉上一轮的，再画。
+    // ⚠️ **两个宿主都要扫**（手机在 `.mhead`、桌面在 `.head-r`）—— 只扫一个的话，
+    //    一旦宿主跟着视口形态变过，另一处就会留下上一轮的残份（`mountHeadActions` 里选宿主）。
     s.headR.querySelectorAll('.hact').forEach((el) => el.remove());
+    s.mhead.querySelectorAll('.hact').forEach((el) => el.remove());
     if (me) {
-      this.mountHeadActions(s.headR, me);
+      this.mountHeadActions(s, me);
     }
   },
 
@@ -1081,6 +1657,16 @@ const BAND = {
       && window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   },
 
+  /** **只认"窄屏"**（`max-width: 720px`）——**下拉刷新专用**的门控（`docs/14` §14.6.4 九·b，`#114`）。
+      为什么与 `isMobile()` 分开：`isMobile()` 那条是「窄屏 **或** 触屏」，**抽屉需要它**
+      （触屏平板走抽屉是有意的，见 `band.css` §10 的说明）；而"下拉刷新是手机的姿势"——
+      在触屏笔记本 / 触屏平板上**没有意义**。用户报障原话：「电脑端上显示的下拉刷新改掉。」
+      ⚠️ **必须与 `band.css` §10·b 那条 `@media (max-width: 720px)` 同源**，只改一处会得到
+      "CSS 不显示、手势仍被接管"的诡异状态。 */
+  isNarrow() {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 720px)').matches);
+  },
+
   /** 手机端抽屉（`docs/14` §14.6.4「手机端（≤720px）」一）：**标题栏那颗头像**是开关，
       点遮罩（抽屉右边那一条）或 Esc 收回。
       ⚠️ 必须由 `mountSkeleton` **同步**调用：`renderNav()` 第二次只走 `paintNav()`、不重建 DOM。
@@ -1115,104 +1701,61 @@ const BAND = {
   },
 
   /** 手机端的「一行一人」卡片行（`docs/14` §14.6.4 八）：把 `thead th` 的文字抄进每格的
-      `data-label`（CSS 用它画"标签 · 值"），并标出**哪一行可左滑**（末格里有按钮 / 链接时）。
+      `data-label`（CSS 用它画"标签 · 值"），并标出**哪一行末格里有操作**（按钮 / 链接）。
       调用点：`BAND.alive(...)` 里、`ALIVE.play` **之前** —— 那是各页数据渲染完的**唯一汇合点**，
       而且**每次重渲染都会走到**（名册状态 / 声部、曲目状态、活动类型、录音范围那四处筛选器
       走的都是 `load() → alive()`）。⚠️ 幂等（只写 `data-label` 与类名）。
-      ⚠️ 桌面端**什么都不做**（卡片行是 `@media (max-width:720px), (pointer:coarse)` 里的版式）。 */
+      ⚠️ 桌面端**什么都不做**（卡片行是 `@media (max-width:720px), (pointer:coarse)` 里的版式）。
+      ⚠️ **类名的来由**（2026-09-28 改）：原来叫 `.swipable` / `.sw-act`，因为那时操作区藏在左滑后面；
+      **左滑已取消**（用户真机反馈"右滑展不出"）⇒ 操作区改成**常显**，名字也改诚实：
+      行标 **`.has-act`**、操作格标 **`.act`** —— `.act` 顺带与**桌面那套已有的列约定**同名
+      （`band.css` §8 `.tb .act { text-align: right; white-space: nowrap }`，6 个页面的末格本来就写着 `class="act"`，
+      同名叠加是幂等的）。⚠️ `tr.has-act` 只是给 CSS 一个"这行下面要接一条按钮带"的钩子。 */
   shapeRows(root) {
     if (!root || !this.isMobile()) return;
     const tables = root.matches && root.matches('table.tb')
       ? [root] : [...root.querySelectorAll('table.tb')];
     for (const tb of tables) {
-      const labels = [...tb.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      // ⚠️⚠️ **两行式（`.tb.t2`，`docs/14` §14.6.4 八，2026-09-30 `#105`）不走这一套**：
+      //    那种版式**不画"标签 · 值"**（格子自己带 `.t-head` / `.t-meta` / `.t-st` / `.t-ph`），
+      //    抄上去的 `data-label` 没人看；而且它的**末格已经不是操作格**了
+      //    （名册末格是 `.t-meta`、团员管理末格是后加的 `.t-pick`）⇒ 按"末格"判 `has-act` 必然判错。
+      //    ⚠️ 规格原话是"`data-label` 仍由 `shapeRows()` 抄…**对不上就以样张为准改 `shapeRows()`**"，
+      //    这里就是照样张改的那一处（已记 `交接单` §三）。
+      //    两行式里操作格**在标记里就叫 `.act`**（各页自己写死），所以按类找、不猜位置。
+      const twoLine = tb.classList.contains('t2');
+      const labels = twoLine ? [] : [...tb.querySelectorAll('thead th')].map((th) => th.textContent.trim());
       for (const tr of tb.querySelectorAll('tbody tr')) {
+        // ⚠️ **小节标题行要跳过**（名册的「历届成员」，`docs/03` §3.4，2026-09-30 `#109`）：
+        //    它不是一条数据；给它抄 `data-label` 会把它变成"只有标签没有值"的一行卡片。
+        if (tr.classList.contains('sec-h')) {
+          continue;
+        }
         const tds = [...tr.children].filter((c) => c.tagName === 'TD');
-        tds.forEach((td, i) => { td.dataset.label = labels[i] || ''; });
-        const last = tds[tds.length - 1];
-        const acts = (tds.length > 1 && last) ? last.querySelector('button, a, input, select') : null;
+        if (!twoLine) {
+          tds.forEach((td, i) => { td.dataset.label = labels[i] || ''; });
+        }
+        const cell = twoLine ? tr.querySelector('td.act') : tds[tds.length - 1];
+        const acts = cell && (twoLine || tds.length > 1)
+          ? cell.querySelector('button, a, input, select') : null;
         if (acts) {
-          last.classList.add('sw-act');
-          tr.classList.add('swipable');
-        } else if (last) {
-          last.classList.remove('sw-act');
-          tr.classList.remove('swipable');
+          if (!twoLine) cell.classList.add('act');
+          tr.classList.add('has-act');
+        } else {
+          if (!twoLine && cell) cell.classList.remove('act');
+          tr.classList.remove('has-act');
         }
       }
     }
   },
 
-  /** 手机端表格行的**左滑**（`docs/14` §14.6.4 八）：滑过操作区宽的**一半**才算开；
-      **一次只开一行**；滑动过就**吃掉紧随的那次 `click`**（表格行自带"点进详情"的监听，
-      不挡的话"滑一下"会顺带跳页）；**点已滑开的那行先收回、不跳详情**。
-      ⚠️ 用**事件委托**（行是各页每次渲染新建的，绑不上）；`pointermove/up` 挂 `window`——
-      手指滑出表格范围也不丢事件（不靠 pointer capture）。⚠️ 桌面端整段不动（`isMobile()` 拦着）。 */
-  mountRowSwipe() {
-    const swipeW = () => parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--swipe-w')) || 140;
-    const tracks = (tr) => [...tr.querySelectorAll('td:not(.sw-act)')];
-    const setX = (tr, px, instant) => {
-      tracks(tr).forEach((td) => {
-        td.style.transition = instant ? 'none' : '';
-        td.style.transform = px ? 'translateX(' + px + 'px)' : '';
-      });
-    };
-    const close = (tr) => { tr.classList.remove('open'); setX(tr, 0, false); };
-    // ⭐ **屏幕左缘让给系统返回手势**（2026-09-28；用户真机反馈"左滑时页面直接返回了"）。
-    // ⚠️ 先说清一件事：安卓（夸克等）的**边缘返回是系统级手势，网页关不掉**
-    //    —— 浏览器里没有 exclusion API，`preventDefault` 也管不着它。
-    //    所以这里能做的只有两条：① 起手点落在左缘保护区内就**根本不接管**（不跟它抢那一下）；
-    //    ② 要求**横向意图明确**才拖动（免得纵向滚动 / 斜滑被误判成左滑）。
-    //    ⇒ 用户在**屏幕最左缘**往右滑时页面**仍会返回上一页**：那是系统行为，不是本页的 bug。
-    const EDGE = 24;        // 左缘保护区宽度（CSS px）：这一条给系统返回手势
-    let row = null, x0 = 0, y0 = 0, dx = 0, dy = 0, moved = false;
-    const settle = (cancel) => {
-      if (!row) return;
-      const tr = row, w = swipeW(), wasMoved = moved;
-      const base = tr.classList.contains('open') ? -w : 0;
-      const open = !cancel && (base + dx) < -w / 2;
-      document.querySelectorAll('.tb tbody tr.swipable.open').forEach((o) => { if (o !== tr) close(o); });
-      tr.classList.toggle('open', open);
-      setX(tr, open ? -w : 0, false);
-      if (wasMoved) {
-        // 滑动过 ⇒ 吃掉紧随的那次 click（一次性捕获监听；`setTimeout(0)` 兜底摘掉）
-        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
-        window.addEventListener('click', eat, { capture: true, once: true });
-        setTimeout(() => window.removeEventListener('click', eat, { capture: true }), 0);
-      }
-      row = null; dx = 0; moved = false;
-    };
-    document.addEventListener('pointerdown', (e) => {
-      if (!this.isMobile() || e.button !== 0) return;
-      if (e.clientX < EDGE) return;   // ① 左缘保护区：交给系统返回手势，本页不接管
-      const tr = e.target && e.target.closest ? e.target.closest('.tb tbody tr.swipable') : null;
-      if (!tr) return;
-      row = tr; x0 = e.clientX; y0 = e.clientY; dx = 0; dy = 0; moved = false;
-    });
-    window.addEventListener('pointermove', (e) => {
-      if (!row) return;
-      dx = e.clientX - x0; dy = e.clientY - y0;
-      // ② 方向意图：横向要**明显**赢过纵向才接管（1.5 倍是明确的"这是横划"判据）。
-      //    没赢之前**一格都不动**——`moved` 也跟着它走，所以"吃点击"那半段同样不会被误触发。
-      if (!moved && !(Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5)) return;
-      moved = true;
-      const w = swipeW();
-      const base = row.classList.contains('open') ? -w : 0;
-      setX(row, Math.max(-w, Math.min(0, base + dx)), true);
-    });
-    window.addEventListener('pointerup', () => settle(false));
-    window.addEventListener('pointercancel', () => settle(true));
-    // 已经滑开的那行：点一下**先收回、不跳详情**。⚠️ 操作区（`.sw-act`）里的点击要放行
-    document.addEventListener('click', (e) => {
-      if (!this.isMobile()) return;
-      if (e.target && e.target.closest && e.target.closest('.sw-act')) return;
-      const tr = e.target && e.target.closest ? e.target.closest('.tb tbody tr.swipable.open') : null;
-      if (!tr) return;
-      e.preventDefault();
-      e.stopPropagation();
-      close(tr);
-    }, true);
-  },
+  // ⚠️ **2026-09-28 删掉了整个 `mountRowSwipe()`**（原来是"手机端表格行左滑露出操作按钮"）：
+  //    用户真机反馈**右滑展不出**「编辑」那些按钮 ⇒ 改成**操作直接显示**在卡片底部（纯 CSS，见 `band.css` §10），
+  //    手势这一整块（含 2026-09-28 为"让开系统返回手势"加的左缘保护区与方向意图判定）**不再需要**，一并删除。
+  //    ⭐ 副作用是好的：本页从此**没有任何横向手势**，也就不会再跟浏览器/系统的边缘返回抢那一下
+  //    （那种手势是系统级的、网页本来就关不掉——删掉才是根治）。
+  //    留给将来的：若哪天要恢复"滑动露出"，**别照抄 `pointerdown` + `window.pointermove` 那套**，
+  //    先读 `band.css` §10 与 `docs/14` §14.6.4 八 当时撤销的理由（卡片下方已有常显按钮，滑动与点按会互相打架）。
 
   /** 撤骨架屏（手机端，`docs/14` §14.6.4 六 + 「界面的活性」8）：**必须在 `BAND.alive(...)`
       跑之前撤掉**——那一批"只播一次"的入场快照会把骨架一起拍进去，等入了场就已经是终态。
@@ -1238,7 +1781,8 @@ const BAND = {
       `showcase.html` 那些 `position: fixed` 层与 `#wel` 的参照系会一起乱）。
       ⚠️ 触摸必须走 `touchmove` + `{ passive: false }`，而且**只有确认在下拉才 `preventDefault`**
       （别抢正常滚动）；Pointer Events 做不到这件事。
-      ⚠️ 鼠标分支只为**桌面验收**（鼠标拖不触发原生滚动，没有要压的东西）；整段仍由 `isMobile()` 圈住。 */
+      ⚠️ 鼠标分支只为**窄窗口下的验收**（鼠标拖不触发原生滚动，没有要压的东西）；
+      整段由 `isNarrow()`（**只认窄屏**，`#114`）圈住 —— 见 `allowed()`。 */
   mountPullRefresh(s) {
     if (!s || !s.mbody || !this.refresher()) return;   // 没有刷新器就别给这个手势（空承诺）
     const THRESHOLD = 64, DECAY = .5, CAP = 96;
@@ -1249,7 +1793,7 @@ const BAND = {
     // ⚠️ **抽屉开着时不许接管**（2026-09-28 补）：`band.css` 里 `html.drawer-open` 已经锁了
     // `<html>/<body>` 的滚动，但这段手势是**用 transform 推 `.mbody`**、根本不走滚动
     // ⇒ 不拦的话，"锁住主页面"就成了半句话（正文照样被拖着走）。
-    const allowed = () => this.isMobile() && !busy
+    const allowed = () => this.isNarrow() && !busy
       && !root.classList.contains('drawer-open') && atTop();
     const paint = () => {
       root.classList.toggle('ptr-drag', dy > 0);
@@ -1297,7 +1841,7 @@ const BAND = {
     }, { passive: false });
     document.addEventListener('touchend', end);
     document.addEventListener('touchcancel', () => { if (dragging) { dragging = false; reset(); } });
-    // 鼠标分支（桌面验收）：只在窄窗口 / 触屏形态下生效（`isMobile()` 圈着）
+    // 鼠标分支（窄窗口下验收用）：只在窄屏生效（`isNarrow()` 圈着，见 `allowed()`）
     document.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button === 0) begin(e.clientY);
     });
@@ -1540,8 +2084,15 @@ const BAND = {
       const wname = tx.querySelector('.wname');
       const me = this.me;
       this.paintAvatar(av, me);   // 落点那份也要跟着头像走（第三处，最容易漏）
+      // ⚠️ 生日当天（`#115`）**遮罩里那行也要一起换**：规格要求遮罩里那行与页面上那行**逐字一致**
+      //    （同号 33px、飞行时 `scale ≈ 1`——它们本来就是"同一行在飞"）。只换页面那行的话，
+      //    飞过去的一瞬间会从「欢迎回来」跳成「生日快乐」，而那正好是用户最看得见的一刻。
+      //    ⚠️ 这行的开头几个字是**各页 HTML 里写死的文本节点**（24 个页面都有），所以只能改节点值。
+      const mine = (this._bd || []).some((b) => b.id === me.id);
+      const role = this.roleLabel(me.role) || me.role;
+      tx.childNodes[0].nodeValue = mine ? '生日快乐，' : '欢迎回来，';
       wname.textContent = me.name;
-      tx.append(this.roleLabel(me.role));   // 名字与职称之间不用标点（docs/14 §14.6.4）
+      tx.append(mine ? `（${role}）` : role);   // 名字与职称之间不用标点（docs/14 §14.6.4）
 
       const timers = [];
       const after = (ms, fn) => timers.push(setTimeout(fn, ms));
@@ -1573,12 +2124,12 @@ const BAND = {
       const finish = (delay) => {
         after(delay, () => {
           // 先让遮罩里的头像/文字淡掉，**再**淡黑底：否则会和页面自己那一份重叠一瞬（双影）
-          av.style.transition = tx.style.transition = 'opacity 160ms linear';
+          av.style.transition = tx.style.transition = 'opacity 240ms linear';   // ⑥-1 先淡掉头像/文字 0.24s
           av.style.opacity = tx.style.opacity = '0';
-          after(170, () => {
-            wel.style.transition = 'opacity 260ms linear';
+          after(240, () => {
+            wel.style.transition = 'opacity 400ms linear';                     // ⑥-2 再淡黑底 0.40s
             wel.style.opacity = '0';
-            after(280, () => {
+            after(400, () => {
               disarm();
               playing = false;
               document.removeEventListener('keydown', onKey);
@@ -1615,15 +2166,26 @@ const BAND = {
       document.addEventListener('keydown', onKey);   // 点任意处 / 任意键可跳过
 
       reset();
+      // ⚠️ 下面这几个毫秒值 = `docs/14` §14.6.4「欢迎过渡」**六步表**那一行（2026-09-30 整体延长）：
+      //    用户原话「登录界面登录到主页面的**过场动画太短了**，我觉得可以延长一下」⇒ 合计约 **2.7s**
+      //    （原来是 0.24/0.19/0.27/0.62/0.16/0.26，合计约 1.8s）。
+      //    ⚠️⚠️ **延长的是"每一段"，不是只把位移拉长**——只拉位移会变成"停得太短、飞得太久"的**慢动作**。
+      //    ⇒ **六个一起改**，改完对着那张表逐段核一遍。⚠️ 这条的来历有点特别：规格只在表里改了值、
+      //    **没开交接单条目、也没挂 🚧**，所以按"交接单剩余项"分批时**整条漏掉了**（见 `交接单` §三）。
       requestAnimationFrame(() => {
-        av.style.transition = tx.style.transition = 'opacity 240ms linear';
+        av.style.transition = tx.style.transition = 'opacity 380ms linear';   // ④-1 头像淡入 0.38s
         av.style.opacity = '1';
-        after(190, () => { tx.style.opacity = '1'; });
-        after(700, () => {                            // 停一下，再飞
+        after(300, () => { tx.style.opacity = '1'; });                        // ④-2 +0.30s 欢迎行淡入
+        // ⚠️⚠️ 这个数是**前三段累加**得来的，不是规格表里那个"0.50"：那张六步表是**累加**口径
+        //    （0.38 头像淡入 → +0.30 欢迎行淡入 → **停 0.50** → 飞 0.92 → 0.24 → 0.40，合计 2.74s）。
+        //    照"0.50"直接写会变成"从 t=0 起 500ms 就飞" ⇒ 整条只有 2.08s（旧值 1.81s，只差 270ms，
+        //    而规格要的是差 900ms）——**是探针量墙钟把这个错误当场抓出来的**（反例验算里旧值 1999ms，
+        //    我的第一版 2192ms，两个窗口挨着，一眼看出没做够）。
+        after(1180, () => {                           // ⑤ 停一下，再飞（= 0.38 + 0.30 + 0.50）
           av.style.transition = tx.style.transition =
-            'transform 620ms cubic-bezier(.44, 0, .2, 1), opacity 200ms linear';
+            'transform 920ms cubic-bezier(.44, 0, .2, 1), opacity 200ms linear';   // ⑤ 飞行 0.92s
           place();
-          finish(660);
+          finish(940);
         });
       });
     });

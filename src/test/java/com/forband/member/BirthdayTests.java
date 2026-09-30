@@ -46,6 +46,9 @@ class BirthdayTests extends IntegrationTestBase {
                 .andExpect(jsonPath("$.data[0].sectionName").value("吹管声部"))
                 .andExpect(jsonPath("$.data[0].instrument").value("笙"))
                 .andExpect(jsonPath("$.data[0].role").value("MEMBER"))
+                // ⭐ `#115`：**要带 `id`** —— 欢迎行那条文案的判据是"今天我在不在这个名单里"，
+                // 而前端手里只有 `me.id`。它不泄露新东西（名单本来就是公开通告，姓名职称都在里面）
+                .andExpect(jsonPath("$.data[0].id").value((int) memberAId))
                 // ⭐ 规格的硬要求：只给姓名与职称，**不下发生日**——
                 // 否则"生日对外只到「月-日」"那条可见性口径就被绕过了
                 .andExpect(jsonPath("$.data[0].birthday").doesNotExist());

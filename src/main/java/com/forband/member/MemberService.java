@@ -2,7 +2,6 @@ package com.forband.member;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.forband.auth.CurrentUser;
 import com.forband.auth.PermissionService;
 import com.forband.auth.Role;
@@ -287,20 +286,78 @@ public class MemberService {
 
     // ---------- 名册 ----------
 
-    public PageResult<MemberView> list(String status, Long sectionId, int page, int size, CurrentUser viewer) {
+    /**
+     * 名册（`docs/03` §3.4，排序口径由用户 2026-09-30 拍板）。
+     * <p>
+     * ⚠️ **次序不在 SQL 里排**：`member` 表上没有 `section.order_no`、现实现也没有 JOIN `section`——
+     * 规格的"实现注意"给了这条路：「JOIN **或先查 `section` 做映射**」。所以这里
+     * **取全集 → Java 里排 → 自己切片**。副作用是好的：「排序是权威的、分页必须建立在同一个排序上」
+     * 这条**天然成立**（全集排完再切页 ⇒ 第 2 页不重不漏）。名册是几十人，全量取不必担心。
+     * <p>
+     * ⚠️ **退团（`LEFT`）默认不显示**：只有显式给了 `status`（例如 `status=LEFT`，规格要求保留这个能力）
+     * 或调用方明确要 `includeLeft=true`（管理端名册 / 演出参演名单要看到退团的人）时才带上。
+     */
+    public PageResult<MemberView> list(String status, Long sectionId, boolean includeLeft,
+                                       int page, int size, CurrentUser viewer) {
+        boolean filteredByStatus = status != null && !status.isBlank();
         LambdaQueryWrapper<Member> wrapper = new LambdaQueryWrapper<Member>()
-                .eq(Member::getIsSystem, false)
-                .eq(status != null && !status.isBlank(), Member::getStatus, status)
+                .eq(Member::getIsSystem, false)                       // 系统账号不是团员（docs/13 不变式 3）
+                .eq(filteredByStatus, Member::getStatus, status)
                 .eq(sectionId != null, Member::getSectionId, sectionId)
-                .orderByAsc(Member::getSectionId)
-                .orderByAsc(Member::getId);
-        Page<Member> result = memberMapper.selectPage(Page.of(page, size), wrapper);
+                // 显式给了 status 就**以 status 为准**；没给才轮到"默认不含 LEFT"
+                .ne((!filteredByStatus) && !includeLeft, Member::getStatus, MemberStatus.LEFT)
+                .orderByAsc(Member::getId);                           // 稳定兜底，真正的次序见 rosterOrder()
+        List<Member> all = new java.util.ArrayList<>(memberMapper.selectList(wrapper));
+        all.sort(rosterOrder());
+        int from = Math.max(0, (page - 1) * size);
+        List<Member> slice = from >= all.size()
+                ? List.of() : all.subList(from, Math.min(all.size(), from + size));
         Map<Long, String> sectionNames = sectionNamesOf(
-                result.getRecords().stream().map(Member::getSectionId).toList());
-        List<MemberView> views = result.getRecords().stream()
+                slice.stream().map(Member::getSectionId).toList());
+        List<MemberView> views = slice.stream()
                 .map(member -> toView(member, viewer, sectionNames))
                 .toList();
-        return PageResult.of(views, result.getTotal(), page, size);
+        return PageResult.of(views, all.size(), page, size);
+    }
+
+    /** `docs/03` §3.4 的次序：**在团 → 非在团（整块沉底）→ 荣誉**，组内再 指挥 → 团长 → 声部 `order_no`
+     *  → 声部长 → 团员 → id。⚠️ 声部那一档按 **`section.order_no`**（不是 id，两者顺序不保证一致）。 */
+    private java.util.Comparator<Member> rosterOrder() {
+        Map<Long, Integer> sectionOrder = new java.util.HashMap<>();
+        int n = 0;
+        for (Section s : sectionMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Section>()
+                        .orderByAsc("order_no"))) {
+            sectionOrder.put(s.getId(), n++);
+        }
+        return java.util.Comparator
+                .comparingInt(MemberService::rosterGroup)
+                .thenComparingInt(MemberService::rosterRole)
+                .thenComparingInt((Member m) -> sectionRank(m, sectionOrder))
+                .thenComparingInt((Member m) -> Role.SECTION_LEADER.name().equals(m.getRole()) ? 0 : 1)
+                .thenComparingLong(Member::getId);
+    }
+
+    /** 0 = 在团且非荣誉；1 = 非在团（休团 / 毕业等）且非荣誉 —— **整块**沉到最后，不混在声部里；
+     *  2 = 荣誉团员 —— 前端在它前面插一节「历届成员」。 */
+    private static int rosterGroup(Member m) {
+        if (Role.HONORARY.name().equals(m.getRole())) {
+            return 2;
+        }
+        return MemberStatus.ACTIVE.equals(m.getStatus()) ? 0 : 1;
+    }
+
+    private static int rosterRole(Member m) {
+        if (Role.CONDUCTOR.name().equals(m.getRole())) {
+            return 0;
+        }
+        return Role.LEADER.name().equals(m.getRole()) ? 1 : 2;
+    }
+
+    /** 没有声部的（指挥 / 团长 / 未分配）排在最后——它们本来就靠 `rosterRole` 站到了前面。 */
+    private static int sectionRank(Member m, Map<Long, Integer> sectionOrder) {
+        Integer rank = m.getSectionId() == null ? null : sectionOrder.get(m.getSectionId());
+        return rank == null ? Integer.MAX_VALUE : rank;
     }
 
     public MemberView get(long id, CurrentUser viewer) {

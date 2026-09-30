@@ -12,6 +12,16 @@ spring:
 
 server:
   port: 8080
+  compression:
+    # 打开响应压缩。起因：`docs/12` §12.6 的 Nginx 配置**没有 gzip/brotli**，
+    # 于是首屏那几份资源是明文传的（实测 `bootstrap.min.css` 232KB + `band.css` 117KB +
+    # `app.js` 122KB + `bootstrap.bundle.min.js` 81KB），网络慢时会把"打开页面"那一下的
+    # 白窗拉长（见 `debug_log` 2026-09-30「首帧白闪」：白窗长度 = 提交 → first-paint）。
+    # ⚠️ **本机 localhost 收益 ≈ 0**（同一台机器传输本来只要 ~13ms），它治的是**网络上**那一段。
+    # ⚠️ 在 jar 这层开，是为了**不依赖服务器有没有配 Nginx gzip**。
+    enabled: true
+    mime-types: text/html,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024   # 默认 2048；小文件（如 band-nav.js 3.5KB）不值得压
 
 band:
   storage:

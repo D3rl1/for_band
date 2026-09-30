@@ -1,0 +1,156 @@
+{
+  "_comment": "菜单与右上角图标的清单（唯一权威）。图标 key 写在 app.js 的 navItems 第 3 位；图标库与入库规矩见 docs/14 §14.6.4「DOM 契约」，来源与哈希见本目录 SOURCE.md。⚠️ 两个页面绝不能填同一个 key（AGENTS.md 前端节第 6 条）。每条必须显式写 file——前端只读 file，不留\"拼 key + 后缀\"的回退分支。",
+  "source": "lucide-static",
+  "version": "1.49.0",
+  "license": "ISC（其中 2 个派生自 Feather，MIT——见 LICENSE）",
+  "svg_attrs": {
+    "viewBox": "0 0 24 24",
+    "fill": "none",
+    "stroke": "currentColor",
+    "stroke-width": 2,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round"
+  },
+  "icons": [
+    {
+      "key": "bell",
+      "file": "bell.svg",
+      "sha256": "5227140d3559a4794233779b5008c75e2475db4f761aaa4fdbec14c914721f8a",
+      "usage": "**右上角铃铛**——「反馈 + 更新」合并成的那个入口",
+      "note": "点开小面板两项，未读时带朱砂红点"
+    },
+    {
+      "key": "calendar-cog",
+      "file": "calendar-cog.svg",
+      "sha256": "11b86595e9e006c919881a2f59f1a44f4331746ae2f450302536f040b62432f6",
+      "usage": "菜单 · 活动管理",
+      "note": "⚠️ 日历三兄弟之一"
+    },
+    {
+      "key": "calendar-days",
+      "file": "calendar-days.svg",
+      "sha256": "efdf0439170fc012e02925b369cbe63ff3898651591e4a84eccec46f400c6d8d",
+      "usage": "菜单 · 活动安排",
+      "note": ""
+    },
+    {
+      "key": "calendar-minus",
+      "file": "calendar-minus.svg",
+      "sha256": "febf6a359f6d25b334e31051089b0caf0c13600af8fbb0233c3f9d8689257129",
+      "usage": "菜单 · 我的请假",
+      "note": "⚠️ 日历三兄弟之一"
+    },
+    {
+      "key": "chart-column",
+      "file": "chart-column.svg",
+      "sha256": "66198f9492d925bf92ce3f4c8275aef118560e04e1416a401d1ce16e8e553c4d",
+      "usage": "菜单 · 考勤统计",
+      "note": ""
+    },
+    {
+      "key": "circle-user-round",
+      "file": "circle-user-round.svg",
+      "sha256": "a49787554b78a4d1dd32359f740481ebdbee03e8c7737cf1401a8fce32926da0",
+      "usage": "**样张用**：我的资料（离线项）",
+      "note": "⚠️ 同上，`profile.html` 不占菜单"
+    },
+    {
+      "key": "clipboard-check",
+      "file": "clipboard-check.svg",
+      "sha256": "68eaddbd27b258feb7bdd22b4404152a194046bb9e83e13c1603a6929a29cfdd",
+      "usage": "菜单 · 请假审批",
+      "note": "与「我的请假」是配对概念，但**形状必须不同**"
+    },
+    {
+      "key": "images",
+      "file": "images.svg",
+      "sha256": "22606eb41e5abee2d747925b584ae99f12f309750721f15fd832fd8c66337fdf",
+      "usage": "菜单 · 专场策展",
+      "note": "⚠️ 样张里它曾和「活动安排」撞过（都用了 `◈`）"
+    },
+    {
+      "key": "inbox",
+      "file": "inbox.svg",
+      "sha256": "1ea0261415ddf6fc6cb468ced520a8a75ca2f99e2581f388cf513b8c3f6856af",
+      "usage": "菜单 · 反馈管理",
+      "note": ""
+    },
+    {
+      "key": "laptop",
+      "file": "laptop.svg",
+      "sha256": "ba31e3905885a10332b0b54b7491415672f571b351187e5f815d1f4383369125",
+      "usage": "**样张用**：登录设备列表里的\"电脑\"",
+      "note": "⚠️ 真站 `sessions.html` 渲染的是服务端给的设备文字，当前**不需要**"
+    },
+    {
+      "key": "mail",
+      "file": "mail.svg",
+      "sha256": "a96db905ade0fbf9bb58a07118f2c24051c7d4714f847ff74813eef45a1fa562",
+      "usage": "**右上角信封**——声部长留言",
+      "note": "⚠️ **条件渲染**：只有历任/现任 `SECTION_LEADER` 看得到"
+    },
+    {
+      "key": "megaphone",
+      "file": "megaphone.svg",
+      "sha256": "b5a11e8998b92dd160e839ffd45c8d9ab4b9611d1a433345d9d343dbc2997e3f",
+      "usage": "菜单 · 更新公告（管理端发布）",
+      "note": "⚠️ **不能与右上角铃铛共用**——`bell` 已给合并入口"
+    },
+    {
+      "key": "mic",
+      "file": "mic.svg",
+      "sha256": "b1be29238f563ba7e3623ad8e0e0bc51285f17c8bd5d4c37aa5c6b6263e2dbf8",
+      "usage": "菜单 · 练习录音",
+      "note": ""
+    },
+    {
+      "key": "music",
+      "file": "music.svg",
+      "sha256": "4342c822e4599beda6eed52d63b754a0511e447b5c19a13ad636b2c3c7594f94",
+      "usage": "菜单 · 曲目库",
+      "note": "⚠️ 派生自 Feather（见 LICENSE 第二节）"
+    },
+    {
+      "key": "newspaper",
+      "file": "newspaper.svg",
+      "sha256": "594c08f861753af41a6e7239bed08620b7f2419d6d5946b33290883ef2739ccf",
+      "usage": "**样张用**：更新日志（离线项）",
+      "note": "⚠️ 真站 `updates.html` 不占菜单，当前**不需要**这个图标"
+    },
+    {
+      "key": "scroll-text",
+      "file": "scroll-text.svg",
+      "sha256": "c94cd7e157e10a8b1e5d806dc63625c1a91282235de0dc7830508487389fdfe6",
+      "usage": "菜单 · 操作日志",
+      "note": "⚠️ 样张里它曾和「更新公告」撞过（都用了 `☰`）"
+    },
+    {
+      "key": "smartphone",
+      "file": "smartphone.svg",
+      "sha256": "b260bfa6b7c1e53c8fb9c1ec253c5cc6abdf4bb75ce61d8e3eb55d9eb227d5b1",
+      "usage": "**样张用**：登录设备列表里的\"手机\"",
+      "note": "⚠️ 同上；派生自 Feather"
+    },
+    {
+      "key": "ticket",
+      "file": "ticket.svg",
+      "sha256": "30a7a9c122706741387f4254012de1ce01830736d85662a74303785d24164d4f",
+      "usage": "菜单 · 演出",
+      "note": ""
+    },
+    {
+      "key": "user-cog",
+      "file": "user-cog.svg",
+      "sha256": "be449e2d70f97275c0143ceb2e3d72862c9f1fa39a928dd097b5dfc56ac9af1a",
+      "usage": "菜单 · 团员管理",
+      "note": ""
+    },
+    {
+      "key": "users",
+      "file": "users.svg",
+      "sha256": "8a88a935b10bc68abff339291915223e0f79e3b581e466e8fec92631482d6081",
+      "usage": "菜单 · 名册",
+      "note": "⚠️ 与 `user-cog` 同为\"人形\"，收起态靠内部记号区分"
+    }
+  ]
+}

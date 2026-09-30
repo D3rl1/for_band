@@ -50,7 +50,7 @@ public class BirthdayService {
 
         Map<Long, String> sectionNames = sectionNamesOf(hit);
         return hit.stream()
-                .map(m -> new BirthdayView(m.getName(), sectionNames.get(m.getSectionId()),
+                .map(m -> new BirthdayView(m.getId(), m.getName(), sectionNames.get(m.getSectionId()),
                         m.getInstrument(), m.getRole()))
                 .toList();
     }

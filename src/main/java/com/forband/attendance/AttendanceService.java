@@ -1,6 +1,7 @@
 package com.forband.attendance;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.forband.attendance.dto.AttendanceDtos.AggregateStats;
 import com.forband.attendance.dto.AttendanceDtos.AttendanceMarkRequest;
 import com.forband.attendance.dto.AttendanceDtos.AttendanceRow;
@@ -8,11 +9,13 @@ import com.forband.attendance.dto.AttendanceDtos.CheckInRequest;
 import com.forband.attendance.dto.AttendanceDtos.EventAttendance;
 import com.forband.attendance.dto.AttendanceDtos.KindSummary;
 import com.forband.attendance.dto.AttendanceDtos.MemberSummary;
+import com.forband.attendance.dto.AttendanceDtos.SessionView;
 import com.forband.auth.CurrentUser;
 import com.forband.auth.PermissionService;
 import com.forband.auth.Role;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
+import com.forband.common.PageResult;
 import com.forband.event.Event;
 import com.forband.event.EventKind;
 import com.forband.event.EventMapper;
@@ -220,6 +223,70 @@ public class AttendanceService {
         KindSummary rehearsal = aggregateKind(events, EventKind.REHEARSAL);
         KindSummary sectionClass = aggregateKind(events, EventKind.SECTION_CLASS);
         return new AggregateStats(List.of(rehearsal, sectionClass));
+    }
+
+    /**
+     * 「历次场次」列表（`docs/05` §5.4 的主视图改版，`交接单 #110`）：**每行一场**，按时间倒序。
+     * <p>
+     * ⚠️ **不新算一套**：每行的四个数就是 {@link #eventAttendance} 的口径
+     * （{@code expectedMembers} + {@code summarize}）——「**应到场次的计算口径一个字不动**」是规格的硬要求。
+     * <p>
+     * ⚠️ **按角色裁剪**（照 {@code canViewPhone} 的先例，判在 service、**不拆成两个接口**）：
+     * 管理层拿得到每场的四个数；**普通团员 / 荣誉团员拿到的五个数是 `null`**，
+     * 只拿 {@code mine}（我在这场是出勤 / 请假 / 缺勤 / 没轮到我）。
+     */
+    public PageResult<SessionView> sessions(int page, int size, CurrentUser viewer) {
+        boolean canSeeAll = viewer.role() != Role.MEMBER && viewer.role() != Role.HONORARY;
+        LambdaQueryWrapper<Event> wrapper = new LambdaQueryWrapper<Event>()
+                .eq(Event::getStatus, EventStatus.NORMAL)      // 取消掉的活动不进统计（口径同 aggregate）
+                .orderByDesc(Event::getDate)
+                .orderByDesc(Event::getId);
+        // 声部课按声部收窄：**声部长与团员都只该看到本声部的声部课**（团级活动大家都看得到）。
+        // ⚠️ 这一步**必须写进 SQL**：放到 Java 里过滤会让分页算错（第 1 页可能凭空少几行）。
+        if (viewer.role() == Role.SECTION_LEADER || !canSeeAll) {
+            if (viewer.sectionId() == null) {
+                wrapper.ne(Event::getKind, EventKind.SECTION_CLASS);
+            } else {
+                wrapper.and(w -> w.ne(Event::getKind, EventKind.SECTION_CLASS)
+                        .or().eq(Event::getSectionId, viewer.sectionId()));
+            }
+        }
+        Page<Event> result = eventMapper.selectPage(Page.of(page, size), wrapper);
+
+        Member me = memberMapper.selectById(viewer.memberId());
+        Map<Long, String> myStatuses = attendanceMapper.selectList(
+                        new LambdaQueryWrapper<Attendance>().eq(Attendance::getMemberId, viewer.memberId()))
+                .stream().collect(Collectors.toMap(Attendance::getEventId, Attendance::getStatus, (a, b) -> a));
+
+        List<SessionView> views = result.getRecords().stream().map(event -> {
+            String mine = mineAt(event, me, myStatuses.get(event.getId()));
+            if (!canSeeAll) {
+                return new SessionView(event.getId(), event.getTitle(), event.getDate(), event.getKind(),
+                        null, null, null, null, null, mine);
+            }
+            List<Member> expected = expectedMembers(event);
+            List<Attendance> records = attendanceMapper.selectList(
+                    new LambdaQueryWrapper<Attendance>().eq(Attendance::getEventId, event.getId()));
+            Summary summary = summarize(expected.size(),
+                    records.stream().filter(r -> AttendanceStatus.PRESENT.equals(r.getStatus())).count(),
+                    records.stream().filter(r -> AttendanceStatus.LEAVE.equals(r.getStatus())).count());
+            return new SessionView(event.getId(), event.getTitle(), event.getDate(), event.getKind(),
+                    summary.expected(), summary.present(), summary.leave(), summary.absent(),
+                    summary.rate(), mine);
+        }).toList();
+        return PageResult.of(views, result.getTotal(), page, size);
+    }
+
+    /** 「应到却没签」——⚠️ **不是 `attendance` 表里的值**（表里只有 `PRESENT` / `LEAVE`），
+     *  是这一列自己跟"应到名单"合起来判出来的。 */
+    private static final String ABSENT = "ABSENT";
+
+    /** 我在这场是什么状态：有行就用行里的（出勤 / 请假），没行再判"我该不该到"（该到 = 缺勤）。 */
+    private String mineAt(Event event, Member me, String recordStatus) {
+        if (recordStatus != null) {
+            return recordStatus;
+        }
+        return (me != null && isExpected(event, me)) ? ABSENT : null;
     }
 
     // ---------- 导出 ----------

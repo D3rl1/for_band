@@ -69,6 +69,7 @@ public abstract class IntegrationTestBase {
             "concert_photo", "concert_piece", "concert_cast", "showcase_photo", "concert",   // 期 4 演出四张（+期 1.7 专场策展图）
             "recording_comment", "recording",   // 期 5：录音与点评
             "profile_visit",   // 期 1.6：访客记录（两个 FK 都指向 member，必须排在它前面）
+            "section_note",    // 上任声部长的留言（section_id / author_id 各指一张表，必须排在它们前面）
             "member", "section",
     };
 

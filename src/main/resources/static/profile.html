@@ -21,6 +21,11 @@
       <div class="p-tags" id="big-tags"></div>
     </div>
   </div>
+  <!-- ⭐ 「参演过 N 场专场」（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）：
+       ⚠️ 与 `member-detail.html`（**别人的**主页）**共用同一块**（同一个 `mountShowcaseCount`）。
+       ⚠️ 它是**别人也能看的** ⇒ **只放这一个数**（出勤率之类有可见性口径的别搬过来）。
+       ⚠️ **0 也照常显示 `0`**：「一场没参演过」是**事实**，与"0/0 无意义"不是一回事。 -->
+  <p class="p-count mt-2">参演过 <b id="showcase-n">—</b> 场专场</p>
   <!-- ⚠️ 只读说明行**必须有**：这就是"不能改名"的落地方式，免得用户以为页面坏了（docs/14 §14.6.4） -->
   <p class="chip mb-0">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
   <!-- 荣誉团员整页只读（docs/02 §2.3）：下面两个可编辑的格子对他们是隐藏的，这句是给他们看的解释 -->
@@ -119,6 +124,7 @@ async function load() {
   document.getElementById('f-contact').value = profile.contact || '';
   document.getElementById('f-birthday').value = profile.birthday || '';
   renderIdentity();
+  await BAND.mountShowcaseCount(document.getElementById('showcase-n'), profile.id);
   // 荣誉团员只读（docs/02 §2.3）：**整块隐藏**编辑入口，别让他们点进去撞 403。
   // 用 hidden 而不是删节点——下面 #save / #clear-bd 的监听器是模块顶层绑的，删了会炸。
   if (me.role === 'HONORARY') {

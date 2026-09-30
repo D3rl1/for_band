@@ -47,4 +47,19 @@ public final class AttendanceDtos {
     /** 聚合：两类口径并排展示；出勤率与请假数永远成对出现（docs/05）。 */
     public record AggregateStats(List<KindSummary> kinds) {
     }
+
+    /**
+     * 「历次场次」的一行（`docs/05` §5.4 的主视图改版，`交接单 #110`）。
+     * <p>
+     * ⚠️ **五个汇总数按角色裁剪**：只有管理层（ADMIN / LEADER / CONDUCTOR / SECTION_LEADER）拿得到；
+     * 普通团员与荣誉团员拿到的是 **`null`**（他们只看得到**自己那一格**），照 `canViewPhone` 的先例。
+     * <p>
+     * {@code mine} = **我在这场是什么状态**：`PRESENT` 出勤 / `LEAVE` 请假 / `ABSENT` 缺勤（应到却没签）
+     * / `null` 没轮到我（活动早于我入团之类）。⚠️ 缺勤在 `attendance` 表里**没有行**（表里只有
+     * PRESENT / LEAVE 两种），所以这个值要跟"应到名单"合起来判，**不是**查一下有没有行就完了。
+     */
+    public record SessionView(long eventId, String title, LocalDate date, String kind,
+                              Integer expected, Integer present, Integer leave, Integer absent,
+                              Double rate, String mine) {
+    }
 }
