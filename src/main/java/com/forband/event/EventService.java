@@ -14,7 +14,7 @@ import com.forband.event.dto.EventBatchRequest;
 import com.forband.event.dto.EventCreateRequest;
 import com.forband.event.dto.EventUpdateRequest;
 import com.forband.event.dto.EventView;
-import com.forband.log.OpLogRecorder;
+import com.forband.log.OperationLogRecorder;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
 import com.forband.section.Section;
@@ -187,7 +187,7 @@ public class EventService {
     @Transactional
     public EventView update(long id, EventUpdateRequest request, CurrentUser operator) {
         Event event = requireEvent(id);
-        OpLogRecorder.putBefore(Map.of(
+        OperationLogRecorder.putBefore(Map.of(
                 "title", event.getTitle(),
                 "date", event.getDate().toString(),
                 "startTime", event.getStartTime().toString(),

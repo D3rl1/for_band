@@ -9,12 +9,12 @@ import java.util.Map;
  * 这种签名那会记成**路径变量 id**，等于没有 after。所以需要准确 after 的端点要在改完后调
  * {@link #putAfter}。
  */
-public final class OpLogRecorder {
+public final class OperationLogRecorder {
 
     private static final ThreadLocal<Map<String, Object>> BEFORE = new ThreadLocal<>();
     private static final ThreadLocal<Map<String, Object>> AFTER = new ThreadLocal<>();
 
-    private OpLogRecorder() {
+    private OperationLogRecorder() {
     }
 
     public static void putBefore(Map<String, Object> snapshot) {

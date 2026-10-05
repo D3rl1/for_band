@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -24,7 +24,7 @@ public class AdminSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(AdminSeeder.class);
 
     private final MemberMapper memberMapper;
-    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    private final PasswordEncoder encoder;
 
     @Value("${band.admin.account:}")
     private String account;
@@ -32,8 +32,9 @@ public class AdminSeeder implements ApplicationRunner {
     @Value("${band.admin.password:}")
     private String password;
 
-    public AdminSeeder(MemberMapper memberMapper) {
+    public AdminSeeder(MemberMapper memberMapper, PasswordEncoder encoder) {
         this.memberMapper = memberMapper;
+        this.encoder = encoder;
     }
 
     @Override

@@ -16,4 +16,10 @@ public @interface OpLog {
     String action();
 
     String targetType() default "";
+
+    /**
+     * 取第几个入参当 `target_id`。默认 {@code -1} = 保持原启发式「第一个 Long 参数」；
+     * 显式给了下标就取该下标（须是 Long），否则为 null。改动此值会改变审计行，谨慎。
+     */
+    int targetIdArg() default -1;
 }

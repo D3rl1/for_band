@@ -12,6 +12,7 @@ import com.forband.auth.Role;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
 import com.forband.common.PageResult;
+import com.forband.common.SectionLookup;
 import com.forband.event.Event;
 import com.forband.event.EventKind;
 import com.forband.event.EventMapper;
@@ -23,8 +24,6 @@ import com.forband.leave.dto.LeaveDtos.RequestView;
 import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
-import com.forband.section.Section;
-import com.forband.section.SectionMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,20 +43,20 @@ public class LeaveService {
     private final LeaveApprovalMapper approvalMapper;
     private final EventMapper eventMapper;
     private final MemberMapper memberMapper;
-    private final SectionMapper sectionMapper;
+    private final SectionLookup sectionLookup;
     private final AttendanceMapper attendanceMapper;
     private final PermissionService permissionService;
     private final OperationLogWriter opLogWriter;
 
     public LeaveService(LeaveRequestMapper requestMapper, LeaveApprovalMapper approvalMapper,
                         EventMapper eventMapper, MemberMapper memberMapper,
-                        SectionMapper sectionMapper, AttendanceMapper attendanceMapper,
+                        SectionLookup sectionLookup, AttendanceMapper attendanceMapper,
                         PermissionService permissionService, OperationLogWriter opLogWriter) {
         this.requestMapper = requestMapper;
         this.approvalMapper = approvalMapper;
         this.eventMapper = eventMapper;
         this.memberMapper = memberMapper;
-        this.sectionMapper = sectionMapper;
+        this.sectionLookup = sectionLookup;
         this.attendanceMapper = attendanceMapper;
         this.permissionService = permissionService;
         this.opLogWriter = opLogWriter;
@@ -317,7 +316,7 @@ public class LeaveService {
                 event == null ? null : event.getStatus(),
                 leaveRequest.getMemberId(),
                 requester == null ? null : requester.getName(),
-                requester == null ? null : sectionNameOf(requester.getSectionId()),
+                requester == null ? null : sectionLookup.sectionNameOf(requester.getSectionId()),
                 leaveRequest.getReason(), leaveRequest.getStatus(), leaveRequest.getAppliedAt(),
                 overdue, approvalViews, attendanceOverridden);
     }
@@ -351,13 +350,5 @@ public class LeaveService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "请假申请不存在");
         }
         return request;
-    }
-
-    private String sectionNameOf(Long sectionId) {
-        if (sectionId == null) {
-            return null;
-        }
-        Section section = sectionMapper.selectById(sectionId);
-        return section == null ? null : section.getName();
     }
 }

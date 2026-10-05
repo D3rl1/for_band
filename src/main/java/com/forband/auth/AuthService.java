@@ -5,13 +5,12 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.forband.auth.dto.LoginRequest;
 import com.forband.common.BusinessException;
 import com.forband.common.ErrorCode;
+import com.forband.common.SectionLookup;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
 import com.forband.member.MemberRoleHistory;
 import com.forband.member.MemberRoleHistoryMapper;
-import com.forband.section.Section;
-import com.forband.section.SectionMapper;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -21,23 +20,24 @@ import java.time.LocalDateTime;
 public class AuthService {
 
     private final MemberMapper memberMapper;
-    private final SectionMapper sectionMapper;
+    private final SectionLookup sectionLookup;
     private final MemberRoleHistoryMapper historyMapper;
     private final TokenService tokenService;
     private final LoginThrottle loginThrottle;
     private final PermissionService permissionService;
-    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    private final PasswordEncoder encoder;
 
-    public AuthService(MemberMapper memberMapper, SectionMapper sectionMapper,
+    public AuthService(MemberMapper memberMapper, SectionLookup sectionLookup,
                        MemberRoleHistoryMapper historyMapper,
                        TokenService tokenService, LoginThrottle loginThrottle,
-                       PermissionService permissionService) {
+                       PermissionService permissionService, PasswordEncoder encoder) {
         this.memberMapper = memberMapper;
-        this.sectionMapper = sectionMapper;
+        this.sectionLookup = sectionLookup;
         this.historyMapper = historyMapper;
         this.tokenService = tokenService;
         this.loginThrottle = loginThrottle;
         this.permissionService = permissionService;
+        this.encoder = encoder;
     }
 
     public record LoginResponse(String token, LocalDateTime expiresAt, MemberBrief member) {
@@ -87,7 +87,7 @@ public class AuthService {
             throw new BusinessException(ErrorCode.TOKEN_INVALID);
         }
         return new MeResponse(member.getId(), member.getAccount(), member.getName(),
-                member.getRole(), member.getSectionId(), sectionNameOf(member), member.getStatus(),
+                member.getRole(), member.getSectionId(), sectionLookup.sectionNameOf(member.getSectionId()), member.getStatus(),
                 member.getJoinedAt(), member.getInstrument(), member.getAvatar(),
                 everSectionLeader(member.getId()));
     }
@@ -180,14 +180,6 @@ public class AuthService {
 
     private MemberBrief toBrief(Member member) {
         return new MemberBrief(member.getId(), member.getName(), member.getRole(),
-                member.getSectionId(), sectionNameOf(member));
-    }
-
-    private String sectionNameOf(Member member) {
-        if (member.getSectionId() == null) {
-            return null;
-        }
-        Section section = sectionMapper.selectById(member.getSectionId());
-        return section == null ? null : section.getName();
+                member.getSectionId(), sectionLookup.sectionNameOf(member.getSectionId()));
     }
 }
