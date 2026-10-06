@@ -4,6 +4,7 @@ import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.auth.Role;
 import com.forband.common.ApiResponse;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import com.forband.member.dto.MemberCreateRequest;
 import com.forband.member.dto.MemberCreateResponse;
@@ -34,14 +35,14 @@ public class AdminMemberController {
     }
 
     @PostMapping("/members")
-    @OpLog(action = "ACCOUNT_CREATE", targetType = "member")
+    @OpLog(action = OpAction.ACCOUNT_CREATE, targetType = "member")
     public ApiResponse<MemberCreateResponse> create(@RequestBody @Valid MemberCreateRequest request,
                                                     CurrentUser operator) {
         return ApiResponse.ok(memberService.create(request, operator));
     }
 
     @PutMapping("/members/{id}")
-    @OpLog(action = "ACCOUNT_UPDATE", targetType = "member")
+    @OpLog(action = OpAction.ACCOUNT_UPDATE, targetType = "member")
     public ApiResponse<MemberView> update(@PathVariable long id,
                                           @RequestBody @Valid MemberUpdateRequest request,
                                           CurrentUser operator) {
@@ -49,21 +50,21 @@ public class AdminMemberController {
     }
 
     @PostMapping("/members/{id}/reset-password")
-    @OpLog(action = "ACCOUNT_RESET_PASSWORD", targetType = "member")
+    @OpLog(action = OpAction.ACCOUNT_RESET_PASSWORD, targetType = "member")
     public ApiResponse<String> resetPassword(@PathVariable long id) {
         return ApiResponse.ok(memberService.resetPassword(id));
     }
 
     /** 踢某人下线：作废其全部 token，但不动账号状态（docs/01 §1.3；可重新登录）。 */
     @PostMapping("/members/{id}/revoke-sessions")
-    @OpLog(action = "ACCOUNT_REVOKE_SESSIONS", targetType = "member")
+    @OpLog(action = OpAction.ACCOUNT_REVOKE_SESSIONS, targetType = "member")
     public ApiResponse<Void> revokeSessions(@PathVariable long id) {
         memberService.revokeSessions(id);
         return ApiResponse.ok();
     }
 
     @GetMapping("/accounts/export")
-    @OpLog(action = "ACCOUNT_EXPORT")
+    @OpLog(action = OpAction.ACCOUNT_EXPORT)
     public ResponseEntity<String> exportAccounts() {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=accounts.csv")

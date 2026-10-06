@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
@@ -60,22 +61,43 @@ public abstract class IntegrationTestBase {
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-    private static final String[] TABLES_IN_DELETE_ORDER = {
-            "leave_approval", "leave_request", "attendance", "event",
-            "member_role_history", "user_token", "operation_log",
-            "feedback", "release_note",   // 期 1.5：两表都依赖 member，必须排在它前面
-            "file",                       // 文件表：owner_id 指向 member，也必须排在它前面
-            "event_piece", "piece_attachment", "piece",   // 期 3：曲目相关三张表
-            "concert_photo", "concert_piece", "concert_cast", "showcase_photo", "concert",   // 期 4 演出四张（+期 1.7 专场策展图）
-            "recording_comment", "recording",   // 期 5：录音与点评
-            "profile_visit",   // 期 1.6：访客记录（两个 FK 都指向 member，必须排在它前面）
-            "section_note",    // 上任声部长的留言（section_id / author_id 各指一张表，必须排在它们前面）
-            "member", "section",
-    };
-
+    /**
+     * 清空**当前库里所有表**（每个用例前调）。
+     * <p>
+     * 2026-10-06 重写：**表清单改为从 `information_schema` 自动发现，不再手工维护**。
+     * <p>
+     * 原做法维护一个按"外键顺序"排好的 `TABLES_IN_DELETE_ORDER` 数组。实测发现：
+     * ⓐ 那份顺序**从来没起过作用**——`sql/schema.sql` 里**一条 DB 级 `FOREIGN KEY` 都没有**，
+     *    全部是"逻辑外键"（只有普通索引 + 注释写 `FK→section`，约束落在服务层，见 `docs/13`）。
+     *    也就是说 `DELETE` 顺序无所谓，注释里的"必须排在它前面"是**流传下来的错觉**。
+     * ⓑ 真正的坑只有一个：**新加表忘了登记 ⇒ 旧用例带着它的脏数据跑，静默不报**
+     *    （本项目最怕的失败形态：不报错、只是结果悄悄错）。现在自动发现 ⇒ **"忘了加"不再可能**。
+     * <p>
+     * ⚠️ 唯一要守的是：**只许清测试库**（这是全库 `DELETE`，配错 profile = 清掉真实数据）。
+     * 见 {@link #requireTestSchema}。
+     */
     protected void cleanTables() {
-        for (String table : TABLES_IN_DELETE_ORDER) {
-            jdbc.update("DELETE FROM " + table);
+        String schema = jdbc.queryForObject("SELECT DATABASE()", String.class);
+        requireTestSchema(schema);
+        List<String> tables = jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables "
+                        + "WHERE table_schema = ? AND table_type = 'BASE TABLE'",
+                String.class, schema);
+        for (String table : tables) {
+            jdbc.update("DELETE FROM `" + table + "`");
+        }
+    }
+
+    /**
+     * 库名不像测试库就**拒删**。全库 `DELETE` 是这里唯一的破坏性动作：把 `application-test.yml`
+     * 的 url 误改成正式库（或在 `local` 里覆盖），`mvn test` 就会把真实名册清空。
+     * 报错总好过静默清库——而且这个错误会在**清表那一刻**就炸，不会拖到断言失败才暴露。
+     */
+    static void requireTestSchema(String schema) {
+        if (schema == null || !schema.toLowerCase().contains("test")) {
+            throw new IllegalStateException(
+                    "cleanTables() 只允许清测试库，当前连的是：" + schema
+                            + "。请检查 application-test.yml 的 spring.datasource.url。");
         }
     }
 

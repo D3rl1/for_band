@@ -48,7 +48,7 @@ public final class ShowcaseDtos {
     }
 
     /** 整批设顺序：按数组顺序即最终顺序（**whole-replace**，照 `07` 的 `PUT .../program` 先例）。 */
-    public record OrderRequest(List<Long> photoIds) {
+    public record OrderRequest(@NotNull(message = "photoIds 不能为空") List<Long> photoIds) {
     }
 
     /** 改这一张的文案。 */

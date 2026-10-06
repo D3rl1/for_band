@@ -24,6 +24,7 @@ import com.forband.event.EventStatus;
 import com.forband.leave.LeaveRequest;
 import com.forband.leave.LeaveRequestMapper;
 import com.forband.leave.LeaveStatus;
+import com.forband.log.OpAction;
 import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberLookup;
@@ -125,7 +126,7 @@ public class AttendanceService {
             throw new BusinessException(ErrorCode.ALREADY_CHECKED_IN);
         }
         if (markingForOther) {
-            opLogWriter.write(requester, "ATTENDANCE_MARK_FOR", "attendance", target.getId(),
+            opLogWriter.write(requester, OpAction.ATTENDANCE_MARK_FOR, "attendance", target.getId(),
                     null, Map.of("eventId", eventId, "memberId", target.getId(),
                             "memberName", target.getName()));
         }
@@ -146,7 +147,7 @@ public class AttendanceService {
         String beforeStatus = attendance.getStatus();   // 留痕要"改前 → 改后"两个都给（docs/11 §11.2）
         attendance.setStatus(request.status());
         attendanceMapper.updateById(attendance);
-        opLogWriter.write(operator, "ATTENDANCE_SET_STATUS", "attendance", attendanceId,
+        opLogWriter.write(operator, OpAction.ATTENDANCE_SET_STATUS, "attendance", attendanceId,
                 Map.of("status", beforeStatus),
                 Map.of("eventId", attendance.getEventId(),
                         "memberId", attendance.getMemberId(), "status", request.status()));

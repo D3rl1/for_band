@@ -46,11 +46,11 @@
        团员原先"手机录音机 + 另一个节拍器 App"，而**录音机一启动就抢走音频焦点、把节拍器静音**；
        网页里 `MediaRecorder` 抓的是麦克风流，**不会静音页面自己的音频输出**。 -->
   <div class="metro" id="metro">
-    <div class="lab">节拍器 <span class="chip">（对着它录：录音全程它都响）</span></div>
+    <div class="lab">节拍器 <span>（对着它录：录音全程它都响）</span></div>
     <div class="metro-row">
       <label class="metro-f" for="m-bpm">速度
         <input id="m-bpm" type="number" min="30" max="240" step="1" inputmode="numeric">
-        <span class="chip">BPM</span>
+        <span>BPM</span>
       </label>
       <label class="metro-f" for="m-beats">拍号
         <select id="m-beats">
@@ -105,8 +105,8 @@ async function load() {
   document.getElementById('upload-box').hidden = me.role === 'HONORARY';
   if (me.role !== 'HONORARY') {
     const pieces = await BAND.must('/api/pieces?size=100');
-    document.getElementById('u-piece').innerHTML = '<option value="">不关联曲目</option>'
-      + pieces.list.map((p) => `<option value="${p.id}">${p.title}</option>`).join('');
+    BAND.fillSelect(document.getElementById('u-piece'),
+      pieces.list.map((p) => ({ value: p.id, label: p.title })), '不关联曲目');
     if (!wired) {          // ⚠️ 只绑一次（见 `wired` 的说明）
       wired = true;
       setupRecorder();
@@ -135,7 +135,7 @@ function card(r) {
   meta.className = 'chip mb-0';
   meta.textContent = [r.memberName, r.sectionName, r.pieceTitle,
     r.durationSec ? Math.round(r.durationSec) + ' 秒' : null,
-    BAND.sizeText(r.sizeBytes), (r.uploadedAt || '').slice(0, 16).replace('T', ' ')]
+    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)]
     .filter(Boolean).join(' · ');
   head.append(who, meta);
   el.appendChild(head);

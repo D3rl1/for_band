@@ -13,6 +13,7 @@ import com.forband.concert.dto.ConcertDtos.PhotoRequest;
 import com.forband.concert.dto.ConcertDtos.PhotoRow;
 import com.forband.concert.dto.ConcertDtos.ProgramRequest;
 import com.forband.concert.dto.ConcertDtos.ProgramRow;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -64,7 +65,7 @@ public class ConcertController {
     }
 
     @PutMapping("/{id}")
-    @OpLog(action = "CONCERT_UPDATE", targetType = "concert")
+    @OpLog(action = OpAction.CONCERT_UPDATE, targetType = "concert")
     public ApiResponse<ConcertView> update(@PathVariable long id,
                                            @RequestBody @Valid ConcertRequest request,
                                            CurrentUser operator) {
@@ -73,18 +74,18 @@ public class ConcertController {
 
     /** 曲目单：**整体替换**，顺序即演出顺序（曲目从曲目库选，不自由填写）。 */
     @PutMapping("/{id}/program")
-    @OpLog(action = "CONCERT_UPDATE", targetType = "concert")
+    @OpLog(action = OpAction.CONCERT_UPDATE, targetType = "concert")
     public ApiResponse<List<ProgramRow>> setProgram(@PathVariable long id,
-                                                    @RequestBody ProgramRequest request,
+                                                    @RequestBody @Valid ProgramRequest request,
                                                     CurrentUser operator) {
         return ApiResponse.ok(concertService.setProgram(id, request, operator));
     }
 
     /** 参演名单：**整体替换**（可含已毕业 / 休团 / 荣誉团员——"毕业了回团参演"很常见）。 */
     @PutMapping("/{id}/cast")
-    @OpLog(action = "CONCERT_UPDATE", targetType = "concert")
+    @OpLog(action = OpAction.CONCERT_UPDATE, targetType = "concert")
     public ApiResponse<List<CastRow>> setCast(@PathVariable long id,
-                                              @RequestBody CastRequest request,
+                                              @RequestBody @Valid CastRequest request,
                                               CurrentUser operator) {
         return ApiResponse.ok(concertService.setCast(id, request, operator));
     }
@@ -92,13 +93,13 @@ public class ConcertController {
     /** **登录全员都能传照片**——演出当天拍照的往往是普通团员，限制上传只会让照片永远集不起来。 */
     @PostMapping("/{id}/photos")
     public ApiResponse<PhotoRow> addPhoto(@PathVariable long id,
-                                          @RequestBody PhotoRequest request,
+                                          @RequestBody @Valid PhotoRequest request,
                                           CurrentUser uploader) {
         return ApiResponse.ok(concertService.addPhoto(id, request, uploader));
     }
 
     @DeleteMapping("/{id}/photos/{photoId}")
-    @OpLog(action = "CONCERT_PHOTO_DELETE", targetType = "concert")
+    @OpLog(action = OpAction.CONCERT_PHOTO_DELETE, targetType = "concert")
     public ApiResponse<Void> deletePhoto(@PathVariable long id, @PathVariable long photoId,
                                          CurrentUser operator) {
         concertService.deletePhoto(id, photoId, operator);

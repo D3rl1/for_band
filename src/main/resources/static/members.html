@@ -19,7 +19,7 @@
 <body>
 <div id="navbar"></div>
 
-<div class="d-flex gap-2 mb-3">
+<div class="d-flex gap-2 mb-3 filters">
   <select id="section" class="w-auto"></select>
   <select id="status" class="w-auto">
     <option value="">全部状态</option>
@@ -41,8 +41,7 @@ async function load() {
   if (!me) return;
   const sections = await BAND.must('/api/sections');
   const sel = document.getElementById('section');
-  sel.innerHTML = '<option value="">全部声部</option>' +
-    sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  BAND.fillSelect(sel, sections.map((s) => ({ value: s.id, label: s.name })), '全部声部');
   sel.addEventListener('change', load);
   document.getElementById('status').addEventListener('change', load);
 

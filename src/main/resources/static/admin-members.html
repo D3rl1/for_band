@@ -119,16 +119,10 @@ async function load() {
   const me = await BAND.renderNav('admin-members.html');
   if (!me) return;
   sections = await BAND.must('/api/sections');
-  document.getElementById('c-section').innerHTML =
-    '<option value="">无声部</option>' + sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  document.getElementById('c-joined').value = todayLocal();
+  BAND.fillSelect(document.getElementById('c-section'),
+    sections.map((s) => ({ value: s.id, label: s.name })), '无声部');
+  document.getElementById('c-joined').value = BAND.localDayKey();
   await loadRows();
-}
-
-/** 本地时区的今天（不能用 toISOString——它是 UTC，早上 8 点前会差一天）。 */
-function todayLocal() {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 async function loadRows() {
@@ -179,8 +173,10 @@ async function loadRows() {
     joinedInput.addEventListener('change', async () => {
       const next = joinedInput.value || null;
       if (next === (m.joinedAt || null)) return;
-      if (!confirm(`把 ${m.name} 的入团日期改为 ${next || '（清空）'}？\n`
-          + '它会动出勤率分母——应到名单按入团日期算。')) {
+      if (!await BAND.confirm({
+        title: `把 ${m.name} 的入团日期改为 ${next || '（清空）'}？`,
+        body: '它会动出勤率分母——应到名单按入团日期算。',
+      })) {
         joinedInput.value = m.joinedAt || '';
         return;
       }
@@ -199,7 +195,7 @@ async function loadRows() {
     resetBtn.className = 'go go-ghost go-sm me-1';
     resetBtn.textContent = '重置密码';
     resetBtn.addEventListener('click', async () => {
-      if (!confirm(`确定重置 ${m.name} 的密码？原密码与登录态立即失效。`)) return;
+      if (!await BAND.confirm({ title: `确定重置 ${m.name} 的密码？`, body: '原密码与登录态立即失效。' })) return;
       const pw = await BAND.must(`/api/admin/members/${m.id}/reset-password`, { method: 'POST' });
       showPassword(pw);
     });
@@ -207,7 +203,7 @@ async function loadRows() {
     kickBtn.className = 'go go-ghost go-sm me-1';
     kickBtn.textContent = '踢下线';
     kickBtn.addEventListener('click', async () => {
-      if (!confirm(`确定把 ${m.name} 踢下线？其全部登录态立即失效，但账号状态不变、可重新登录。`)) return;
+      if (!await BAND.confirm({ title: `确定把 ${m.name} 踢下线？`, body: '其全部登录态立即失效，但账号状态不变、可重新登录。' })) return;
       await BAND.must(`/api/admin/members/${m.id}/revoke-sessions`, { method: 'POST' });
       BAND.toast('已踢下线', 'success');
     });
@@ -216,7 +212,10 @@ async function loadRows() {
     toggleBtn.textContent = m.status === 'ACTIVE' ? '停用' : '恢复在团';
     toggleBtn.addEventListener('click', async () => {
       const status = m.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-      if (!confirm(`${m.name} → ${BAND.statusLabel(status)}？${status !== 'ACTIVE' ? '其登录态将被吊销。' : ''}`)) return;
+      if (!await BAND.confirm({
+        title: `${m.name} → ${BAND.statusLabel(status)}？`,
+        body: status !== 'ACTIVE' ? '其登录态将被吊销。' : '',
+      })) return;
       await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { status } });
       BAND.toast('已更新', 'success');
       loadRows();
@@ -258,7 +257,7 @@ function openHonModal(m, until) {
 function plusTwoYears(dateStr) {
   const d = dateStr ? new Date(dateStr) : new Date();
   d.setFullYear(d.getFullYear() + 2);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return BAND.dayKey(d);
 }
 
 document.getElementById('hon-save').addEventListener('click', async () => {
@@ -295,8 +294,7 @@ function openEditModal(m) {
   roleSel.innerHTML = roleOptions.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
   roleSel.value = m.role;
   const secSel = document.getElementById('edit-section');
-  secSel.innerHTML = '<option value="">无声部</option>'
-    + sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  BAND.fillSelect(secSel, sections.map((s) => ({ value: s.id, label: s.name })), '无声部');
   secSel.value = m.sectionId == null ? '' : String(m.sectionId);
   const stSel = document.getElementById('edit-status');
   stSel.innerHTML = EDIT_STATUS_OPTIONS
@@ -320,7 +318,10 @@ document.getElementById('edit-save').addEventListener('click', async () => {
   const status = document.getElementById('edit-status').value;
   if (status !== m.status) {
     if (status !== 'ACTIVE'
-        && !confirm(`${m.name} → ${BAND.statusLabel(status)}？\n他会被立即踢下线、不能再登录。`)) return;
+        && !await BAND.confirm({
+          title: `${m.name} → ${BAND.statusLabel(status)}？`,
+          body: '他会被立即踢下线、不能再登录。',
+        })) return;
     body.status = status;
   }
   if (!Object.keys(body).length) {
@@ -377,7 +378,7 @@ bulkStop.addEventListener('click', async () => {
   const ids = checkedIds();
   const victims = rowsCache.filter((m) => ids.includes(m.id) && m.status !== 'PAUSED');
   if (!victims.length) { BAND.toast('选中的都是在休团状态，无需停用'); return; }
-  if (!confirm(`把这 ${victims.length} 人改成「休团（停用）」？其登录态将被吊销。`)) return;
+  if (!await BAND.confirm({ title: `把这 ${victims.length} 人改成「休团（停用）」？`, body: '其登录态将被吊销。' })) return;
   let ok = 0, fail = 0;
   for (const m of victims) {
     try {
@@ -422,7 +423,7 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
   const created = await BAND.must('/api/admin/members', { method: 'POST', body });
   showPassword(created.initialPassword);
   e.target.reset();
-  document.getElementById('c-joined').value = todayLocal();   // reset 会清空日期，补回默认当天
+  document.getElementById('c-joined').value = BAND.localDayKey();   // reset 会清空日期，补回默认当天
   loadRows();
 });
 

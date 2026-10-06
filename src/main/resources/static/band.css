@@ -360,6 +360,38 @@ button.bulk-toggle { display: none; }
 .rail .foot a { color: inherit; text-decoration: none; cursor: pointer; }
 .rail .foot a:hover { color: var(--silk); }
 
+/* ---- 侧栏顶部的「视图开关」（日常 / 管理，2026-10-06）----
+   排在身份行（`.me`）与菜单之间；**只有能看见管理视图的角色**才画（`BAND.paintViewSwitch` 里决定，
+   看不见时用 `[hidden]` 藏掉）。位置与菜单文字列对齐（`padding-left` 同 `.foot`）；
+   ⚠️ 桌面**收起态**（92px 图标柱）放不下 → 整条不显示，展开 / 手机抽屉里才出现。
+   ⚠️ 按钮用 `textContent` 建（视图名是配置里的中文），**不走 innerHTML**。 */
+.vswitch {
+  display: flex; gap: 6px;
+  padding-left: calc(var(--rail-w) - var(--nav-pad));
+  margin-bottom: 12px;
+}
+.vswitch[hidden] { display: none; }
+.vswitch button {
+  flex: 1 1 auto;
+  border: 0; cursor: pointer; font-family: inherit;
+  padding: 5px 0; border-radius: 8px;
+  background: rgba(247, 243, 236, .08); color: var(--shellmid);
+  font-size: calc(var(--tx) * .86); letter-spacing: .08em;
+  transition: color var(--t-fast) ease-out, background var(--t-fast) ease-out;
+}
+.vswitch button:hover { color: var(--silk); }
+.vswitch button.on { background: var(--shellhi); color: var(--shell); }
+/* ⚠️ 桌面收起态藏、展开（悬停 / `rail-keep` / `:focus-within`）时显示——与 §4 那几条展开门控同理。
+   显示那几条**都带 `:not([hidden])`**：这样"给看不见管理视图的角色藏起来的开关"绝不会随悬停又冒出来
+   （`.vswitch[hidden]` 与 `.railwrap:hover .vswitch` 特异性同为 (0,2,0)，靠 `:not` 绕开顺序之争）。 */
+@media (hover: hover) and (pointer: fine) and (min-width: 721px) {
+  .vswitch { display: none; }
+  .railwrap:hover .vswitch:not([hidden]),
+  .nav-slot:has(.hit:hover) .vswitch:not([hidden]),
+  .railwrap:focus-within .vswitch:not([hidden]),
+  html.rail-keep .vswitch:not([hidden]) { display: flex; }
+}
+
 /* ---- 展开：只在"真有悬停能力"的设备上自动展开（防 iOS 首点只展开不跳转） ----
    ⚠️ **2026-09-24 改（旧文与旧理由保留，别抹）**：这里原来写的是
    「悬停目标是**侧栏自己**（不是预留位）—— 鼠标划过留白不会误展开」。
@@ -1427,13 +1459,16 @@ body.cat-off #oneko { display: none; }
     font-size: var(--tx); font-weight: 600; color: var(--deep); letter-spacing: .02em;
     flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  /* 标题栏里那两个入口（`app.js` 在手机端把 `.hact` 挂进 `.mhead`；用户 2026-09-28 从样张里挑的 **B 档**）。
+  /* 标题栏里那两个入口（`app.js` 在手机端把 `.hact` 挂进 `.mhead`）。
      ⚠️ **热区 34×34** 照头像那颗 `.mav-toggle span` 的先例 —— 桌面那套 `.hact` 只有 15px 图标，
-     手机上按不准（这也是"点不动"的一半原因）。⚠️ B 档 = **浅底圆角块**：一眼看得出是能点的。
+     手机上按不准（这也是"点不动"的一半原因）。
+     ⚠️⚠️ 2026-10-02：用户报"铃铛不在方框之内，干脆把方框删了、只留个图标" ⇒ **撤掉批 1 的 B 档浅底圆角块**
+     （`background` / `border-radius`），与桌面 `.hact` 的"纯图标"形态一致。**34×34 热区保留**（看不见但可按）。
+     ⚠️ 必须补 `justify-content: center`：18px 图标要在 34 宽的热区里**居中** —— 不补的话它贴左、看着像"跑出框"。
      ⚠️ `position: relative` 是给 `.hact-dot`（红点）当定位基准的。 */
   .mhead .hact {
     flex: 0 0 auto; position: relative; min-width: 34px; min-height: 34px;
-    background: var(--cell); border-radius: 9px;
+    justify-content: center;
   }
   .mhead .hact .hact-ic { font-size: 16px; }
   /* 红点在 34×34 的块里要往里收一点 —— 桌面那套是 `top:-3px; right:-6px`（贴着 15px 图标量出来的），
@@ -1449,8 +1484,11 @@ body.cat-off #oneko { display: none; }
   .head-l { padding: var(--sp4) 18px 0; }
   /* ⚠️ 手机端 `.head-r` **整块不显示**（2026-09-28）：它那两个入口已经挪进标题栏 `.mhead` 了，
      而剩下那个 `.greet`（声部名）**用户已定一并收掉** —— 信息没丢，抽屉里的身份行（`.me-sec`）还写着。
-     原来这里是 `padding: 6px 18px 0`（那行会占一道 6px 的空隙）。 */
-  .head-r { display: none; }
+     原来这里是 `padding: 6px 18px 0`（那行会占一道 6px 的空隙）。
+     ⚠️⚠️ **必须带 `.head` 前缀**（2026-10-02）：基规则是 `.head .head-r`（§5，0,2,0），
+     裸 `.head-r`（0,1,0）**特异性输给它** ⇒ 这条 `display:none` 从 2026-09-28 起一直**没生效**，
+     声部名照样显示在手机页头（用户 2026-10-02 报"某某声部删了去"）。补上祖先前缀才真赢。 */
+  .head .head-r { display: none; }
 
   /* ---- 二、抽屉：就是**桌面那根柱子**（`.railwrap > .rail`），改成从左侧滑出的浮层 ----
      单份 DOM：桌面与手机共用同一棵侧栏（`mountSkeleton` 只建一次）。 */
@@ -1482,6 +1520,8 @@ body.cat-off #oneko { display: none; }
   }
   .rail .me { margin-bottom: 14px; }        /* 身份行（`.me`）本身的行高与 flex 居中沿用桌面那份
                                                ——漏掉 `align-items: center` 时头像与文字中心差 37px */
+  /* 视图开关（日常 / 管理）：抽屉里占满宽 —— 桌面那点 `padding-left` 是给"收起态裁掉"用的，这里不需要 */
+  .rail .vswitch { padding-left: 0; }
   /* 抽屉里唯一会滚的东西（`.menu` 桌面那份已经 `overflow-y:auto`）；**不显示滚动条**
      —— 2026-09-28 起**桌面展开态也不再显示**了（原委见 §4 那条留痕）。
      ⚠️ 是"隐藏滚动条"、不是"取消滚动"；老内核的兜底（`::-webkit-scrollbar{display:none}`）写在 §4 基规则旁，这里不重复。 */
@@ -1539,9 +1579,13 @@ body.cat-off #oneko { display: none; }
   :root {
     --pad: 18px; --gap: 14px;
     --fs-hero: 27px;    /* 33 → 27：欢迎行在 390px 上原来大得离谱（用户反馈的"字号混乱"主要就这一处） */
-    --fs-title: 22px;   /* 26 → 22 */
+    --fs-title: 21px;   /* 26 → 21（`#142` 照搬 mv5 样张的卡内标题档；桌面仍 26） */
     --fs-body: 15px;    /* 14 → 15：手机离眼远、正文比桌面**大一档**更好读 */
     --fs-field: 16px;   /* 14 → 16：**必须 ≥16px**，否则 iOS 聚焦时会把整页放大 */
+    /* `#142` 照搬 mv5 样张：细标题栏 52→54、名册行头像 28→32
+       （`.t-meta` 的左缩进随之 28+12=40 → 32+12=44，无需另写）。 */
+    --mhead-h: 54px;
+    --av-sm: 32px;
   }
   body:not(.page-showcase) .main { padding: 0; }        /* 标题栏要贴到屏幕顶与左右两边 */
   body:not(.page-showcase) .mbody { padding: 0 18px 30px; }
@@ -1696,12 +1740,8 @@ body.cat-off #oneko { display: none; }
   .tb:not(.t2) tr.has-act td.act::before { content: none; }
 
   /* ---- 七、下拉刷新：**已搬到文件末尾的 §10·b**（2026-09-30，`#114`）----
-     ⚠️ **它原来就在这个位置**，与上面那一大堆共用 `(max-width:720px), (pointer:coarse)` 这条门控。
-     那条门控**是「或」**：触屏笔记本、或窗口拖窄到 ≤720px 的机器都会命中 ⇒ **电脑上也有下拉刷新**；
-     更直接的是 —— `.mhint` **只在那个媒体查询里才有任何样式** ⇒ 在"**宽屏 + 精确指针**"的桌面上
-     它是个**没有任何规则命中的裸 `<div>`**，于是**把"↓ 下拉刷新"几个字直接显示出来**。
-     两条叠加 = 用户报的"电脑端上显示的下拉刷新"。**整块已搬去末尾只认 `max-width: 720px` 的 §10·b**，
-     并改由 `app.js` 的 `isNarrow()` 决定**要不要创建**这个元素（桌面/平板上它是 `null`）。 */
+     ⚠️ 它**只认窄屏**（`max-width: 720px`，**不是** §10 这条「或」门控），手势与参数在 `app.js`
+     的 `mountPullRefresh`。⚠️ 2026-10-02：提示条 `.mhint` 已**整条删除**（用户嫌占地方），手势保留。 */
 
   /* ---- 八、骨架屏（`docs/14` §14.6.4 六 + 「界面的活性」8）----
      ⚠️ 必须在 `BAND.alive(...)` **之前**撤掉：那一批"只播一次"的入场快照会把骨架一起拍进去。
@@ -1765,43 +1805,200 @@ body.cat-off #oneko { display: none; }
   .metro-f input[type="number"] { width: 96px; }
   .metro-ck { justify-content: flex-start; }
   #m-toggle { width: 100%; }
+
+  /* ===== 手机端保真：照搬 design-samples/mv5-mock.html（2026-10-02，`#142` 第 1 批）=====
+     ⚠️ 只许动本块点名的这几条；`--open-w` / `--row-h` / §4 的 `.on::before/::after` 一个字都不许动。
+     ⚠️ 别整份粘样张的 CSS —— 它的 `.card/.ev/.hero/.stat` 在本站 DOM 里一个都不存在，必须映射到本站选择器。 */
+
+  /* ② 卡片 §6 `.cell` → 样张 `.card`（只取圆角/内距，`.card+.card` 那条外边距不取：本站是 bento） */
+  .cell { border-radius: 18px; padding: var(--sp4); }
+
+  /* ③ 小节标签 §6 `.lab` → 样张 `.sec`（只取字号·字距·字重；`.sec` 的上外边距不取） */
+  .lab { font-size: var(--fs-meta); letter-spacing: .14em; font-weight: 600; }
+
+  /* ④ 按钮 §7 `.go` → 样张 `.btn`（字距归零） */
+  .go {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 0 var(--sp5);
+    border-radius: 12px; font-size: var(--fs-body); font-weight: 600;
+    letter-spacing: normal;
+  }
+  .go-sm { min-height: 36px; padding: 0 var(--sp4); font-size: var(--fs-meta); }
+  .go-ghost { border: 1px solid var(--edge); }
+
+  /* ⑤ chip §7 → 样张 `.chip`：**状态徽标**改成木色药丸
+     ⚠️ 只给 `span.chip`（表格/卡片里的状态徽标）；`p.chip`（段落式小字摘要）/`label.chip`（周几标签）保持纯文字。
+     `#142` 已把 5 处非徽标的 `span.chip` 从 HTML 挪走（recordings ×2 / profile `#saved` / updates `#pageinfo` / admin-showcase），
+     ⇒ 这里可以安全一刀切。 */
+  span.chip {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    background: var(--wood); color: var(--onwood);
+    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  }
+  span.chip.warn { background: var(--cinna); color: var(--onwood); }
+
+  /* ⑥ 表单 §7.5 → 样张 `.field`
+     ⚠️ 必须 `:not([type=checkbox]):not([type=radio])`：否则 `min-height:44` 会把复选框撑变样、
+     `background:#fff` 这条**简写**会把 Bootstrap `.form-check-input` 用 `background-image` 画的勾一起抹掉。 */
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    min-height: 44px; padding: var(--sp2) var(--sp4);
+    border: 1px solid var(--pale); border-radius: 12px; background: #fff;
+  }
+  textarea { min-height: 88px; }
+
+  /* ⑦ 细标题栏 §10 `.mhead` → 样张 `.mhead`（`position: sticky` 保留：本站行程靠 `.head{display:contents}`） */
+  .mhead {
+    gap: var(--sp3); padding: 0 var(--sp4);
+    background: rgba(247, 243, 236, .94);
+    backdrop-filter: saturate(1.4) blur(8px);
+  }
+  .mav-toggle span { width: 36px; height: 36px; font-size: 14px; }
+  /* 批 1 那条 `.mhead .hact { border-radius: 10px }` 已随"去掉方框"一起删（2026-10-02）。 */
+  .mhead .hact-dot { top: 5px; right: 5px; }
+
+  /* ⑧ 抽屉 §10 → 样张 `.drawer`（覆盖几何，但**不动** `--open-w` / `--row-h` 令牌） */
+  .railwrap { width: 300px; }                       /* 320 → 300 */
+  .rail { padding-left: var(--sp4); padding-right: var(--sp4); }
+  .rail .menu { gap: 2px; }                         /* 6 → 2 */
+  .rail .menu a, .rail .me {
+    height: auto; min-height: 46px; gap: var(--sp3); /* 图标位不再吃掉 80px */
+    padding: 0 var(--sp3); border-radius: 10px;
+  }
+  .rail .menu a .ic, .rail .me .ic { flex: 0 0 22px; }   /* 80 → 22（本批最显眼的一处） */
+  .rail .me .ic { flex: 0 0 auto; }                      /* 身份行那颗头像不在 22px 列里 */
+  .rail .me .ic span { width: 46px; height: 46px; font-size: 17px; }  /* 52 → 样张 `.who .av` 46 */
+  .rail .menu a .ic svg { width: 18px; height: 18px; }   /* 样张 `.drawer nav svg` 18 */
+  .rail .menu a .tx, .rail .me .tx { padding-left: 0; font-size: var(--fs-body); }
+  .rail .menu a.on { background: rgba(192, 138, 94, .16); color: var(--silk); border-radius: 10px; }
+  .rail .menu a.on .ic { color: var(--shellhi); }
+  .rail .menu a.on .ic::after { content: none; }     /* 去掉 2px 细环（样张没有） */
+  .dgrp-h { font-size: 11.5px; letter-spacing: .16em; color: var(--shellmid); }
+
+  /* ⑨ 红线：入口卡标题钉回 22px —— `--fs-title` 22→21 会连带把 `.sc-card-t` 也缩 1px，
+     而「我们的专场」入口卡是用户点名的红线（`docs/14` §四.3）。§一#12 与 §四.3 的冲突见 `交接单` #142。 */
+  .sc-card-t { font-size: 22px; }
+
+  /* ===== 手机端保真 · 第 2a 批：逐屏版式（`docs/14` §14.6.4 §三 表第 1-6 行，`#142`，2026-10-02）=====
+     ⚠️ 整块只在 §10 内 ⇒ 桌面逐像素不变（这是硬线，别把这些规则挪到 §6/§7/§8 基规则区）。
+     做法：照 `design-samples/mv5-mock.html` 对应 `#v-xxx` 屏的**块结构**，映射到本站既有选择器
+     （样张类名一个都不存在，别整份粘）。app 特有块**一格不删**；样张独有物（`.flag` / `rail` 预览 / 演示物）不抄。
+     值：令牌优先；只有样张专属数字（日期块 56、日期数字 22、大头像 76…）才写死。 */
+
+  /* 页面级小节标题（「活动安排」「考勤」）→ 样张 `.sec`（小字 + 宽字距）。
+     ⚠️ 只打**直接落在 `.mbody` 下的一级 `h2`**；卡片内 `h2`（`#info-title`）与 `.hero h2` 不受影响。 */
+  .mbody > h2 {
+    font-size: var(--fs-meta); letter-spacing: .14em; color: var(--mid); font-weight: 600;
+    margin: var(--sp4) 0 var(--sp2);
+  }
+  .mbody > h2:first-child { margin-top: 0; }
+
+  /* 筛选条 → 样张 `.filters`（把下拉画成药丸） */
+  .filters { display: flex; gap: var(--sp2); margin-bottom: var(--sp3); }
+  .filters select {
+    flex: 1 1 auto; min-width: 0; min-height: 40px;
+    border: 1px solid var(--pale); border-radius: 999px; background: var(--cell);
+  }
+
+  /* ---- 1. `events.html` ⇄ 样张 `v-events` ---- */
+  /* bento 改两列：hero / wide 跨两列，s1 / s2 并排 = 样张 `.stats` 两格（覆盖 §10 那条 1fr） */
+  .grid { grid-template-columns: 1fr 1fr; }
+  .grid > .cell.hero, .grid > .cell.wide { grid-column: 1 / -1; }
+  .cell.hero .go { background: var(--shellhi); color: var(--shell); }   /* hero 里那颗「签到」（样张 `.hero` 内的 `.btn`） */
+
+  /* 活动列表 → 样张 `.ev` 日期块行（`<tr>` 由页内 JS 在手机分支建成 `.ev-*` 三格） */
+  .tb.ev-list tbody tr {
+    display: flex; align-items: stretch; gap: var(--sp3);
+    background: transparent; border-radius: 0; overflow: visible;
+  }
+  .tb.ev-list tbody tr:hover td { background: transparent; }
+  .tb.ev-list tbody td { display: block; padding: 0; }
+  .tb.ev-list tbody td::before { content: none; }        /* 压掉「标签 · 值」的 data-label（顺序靠后取胜） */
+  .tb.ev-list tbody tr td.ev-date {
+    flex: 0 0 56px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--cell); border-radius: 12px; padding: var(--sp2) 0;
+    font-size: inherit; font-weight: 400;
+  }
+  .tb.ev-list tbody tr td.ev-date b { font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tb.ev-list tbody tr td.ev-date em {
+    font-style: normal; font-size: 11px; letter-spacing: .1em; color: var(--mid); margin-top: 3px;
+  }
+  .tb.ev-list tbody tr td.ev-main {
+    flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+    justify-content: center; gap: 3px;
+  }
+  .tb.ev-list tbody tr td.ev-main b { font-size: var(--fs-lead); font-weight: 600; color: var(--deep); }
+  .tb.ev-list tbody tr td.ev-main s { color: var(--mid); }
+  .tb.ev-list tbody tr td.ev-main span { font-size: var(--fs-meta); color: var(--mid); }
+  .tb.ev-list tbody tr td.ev-go { flex: 0 0 auto; align-self: center; color: var(--wood); font-size: 18px; }
+
+  /* ---- 2. `event-detail.html` ⇄ 样张 `v-event-detail` ---- */
+  #info .big { font-size: 34px; font-weight: 600; line-height: 1.1; letter-spacing: -.02em; margin: var(--sp2) 0; }
+  .dl { display: grid; grid-template-columns: auto 1fr; gap: var(--sp2) var(--sp4); margin: var(--sp3) 0 0; }
+  .dl dt { font-size: var(--fs-meta); color: var(--mid); white-space: nowrap; padding-top: 2px; }
+  .dl dd { margin: 0; font-size: var(--fs-body); }
+  .signed {
+    display: flex; align-items: center; gap: var(--sp3);
+    padding: var(--sp4); border: 1px dashed var(--edge); border-radius: 12px;
+    background: rgba(122, 81, 54, .07);
+  }
+  .signed .sd-mark { font-size: 22px; color: var(--wood); line-height: 1; }
+  .signed .sd-body b { display: block; font-size: var(--fs-lead); font-weight: 600; }
+  .signed .sd-body span { font-size: var(--fs-meta); color: var(--mid); }
+  #att-sum .attbar { margin: var(--sp2) 0 0; }
+
+  /* ---- 3. `stats.html` ⇄ 样张 `v-stats`（`.big` 守 D25：17px，不取样张 27 —— 探针 ㉕ 锁值）---- */
+  #cards { gap: var(--sp3); }
+  #cards .attbar { margin: var(--sp2) 0; }
+  #cards .penta { margin-bottom: var(--sp2); }
+
+  /* ---- 4. `members.html` ⇄ 样张 `v-members`（「历届成员」小节行 → 样张 `.sec`）---- */
+  .tb.t2 tbody tr.sec-h td {
+    padding-top: var(--sp4); padding-bottom: var(--sp2);
+    font-size: var(--fs-meta); letter-spacing: .14em; color: var(--mid); font-weight: 600;
+  }
+
+  /* ---- 5. `member-detail.html` ⇄ 样张 `v-member-detail` ---- */
+  /* 资料头 → 样张 `.prof-top`（头像 76 居中）；桌面 `.p-id` 是横向，覆盖只写在 §10 内 */
+  .p-id { flex-direction: column; align-items: center; text-align: center; gap: var(--sp2); margin-bottom: var(--sp3); }
+  .p-id .p-av { width: 76px; height: 76px; font-size: 28px; }
+  .p-id .p-name { font-size: var(--fs-title); margin-top: var(--sp1); }
+  .p-id .p-tags { font-size: var(--fs-meta); }
+  .p-count { text-align: center; }
+  /* 简介/生日/入团 → 样张 `.rows`（键值行 + 行间分隔）。不改结构：那个 `.cell` 的子节点本就是
+     `[.lab, p, .lab, p, .lab, p]`，两列网格天然把「标签 | 值」配成行。 */
+  .rows { display: grid; grid-template-columns: auto 1fr; column-gap: var(--sp4); }
+  .rows > .lab { margin: 0; padding: var(--sp3) 0; align-self: center; }
+  .rows > p { margin: 0; padding: var(--sp3) 0; align-self: center; }
+  .rows > :nth-child(n+3) { border-top: 1px solid rgba(210, 195, 174, .6); }
+
+  /* ---- 6. `my-leave.html` ⇄ 样张 `v-my-leave` ---- */
+  .hint-card {
+    background: rgba(122, 81, 54, .06); border-radius: 12px;
+    padding: var(--sp3) var(--sp4); font-size: var(--fs-meta); color: var(--mid);
+    margin-bottom: var(--sp4);
+  }
+  #list .cell { margin-bottom: var(--sp2); }
+  #list h2 { font-size: var(--fs-lead); font-weight: 600; }
 }
 
 /* ============ §10·b 下拉刷新（**只认窄屏**，2026-09-30 起）============
    ⚠️⚠️ **门控故意与 §10 那条不一样**（`docs/14` §14.6.4 九·b，`#114` 用户报障"电脑端显示下拉刷新"）：
    §10 是 `(max-width: 720px), (pointer: coarse)`（**是「或」**）—— 抽屉**需要**它（触屏平板走抽屉是有意的）；
    而"下拉刷新"**是手机的姿势**，在电脑 / 触屏平板上没有意义 ⇒ 这里**只认 `max-width: 720px`**。
-   ⚠️ **两处必须一起改**：`app.js` 的 `mountPullRefresh.allowed()` 也写死了同一条判据（现改用 `isNarrow()`），
-   只改 CSS 会得到"看不见提示条、手势却仍被接管"的诡异状态。
-   ⚠️ `.mhint` 元素本身也只在这个宽度下**创建**（`mountSkeleton` 里按 `isNarrow()` 判）——
-   所以宽屏上 `document.querySelector('.mhint')` 是 `null`，而不是"存在但被藏起来"。
+   ⚠️ **两处必须一起改**：`app.js` 的 `mountPullRefresh.allowed()` 也写死了同一条判据（现改用 `isNarrow()`）。
+   ⚠️⚠️ **2026-10-02：提示条 `.mhint` 已整条删除**（用户报"页面顶部的下拉刷新纯占地方"）——
+   **手势本身一字未动**（拉动时正文被推下去当反馈、松手照旧重新取数），只是不再有那行字 / 箭头 / 转圈。
+   于是这里只剩两条：`overscroll-behavior-y`（压住 Chromium 原生刷新）与打在 `.mbody` 上的位移过渡。
    参数**写死**（阈值 64 / 位移衰减 ×0.5 / 封顶 96，见 `app.js` 的 `mountPullRefresh`）。
    ⚠️ **`transform` 只许打在 `.mbody` 上**（正文包裹层）：打在 `.main` 上会建 containing block，
    `showcase.html` 那些 `position: fixed` 层与 `#wel` 的参照系会一起乱（规格原文）。
-   ⚠️ 提示条**挂在 `.mbody` 内部**、常态 `translateY(-100%)` ⇒ 正文被推下去时它"自然露出来"，
-   不需要再写一条会与主位移对不齐的跟随动画。 */
+   ⚠️ `position: relative` 留着（去掉它会让 `.mbody` 内的绝对定位后代改认更外层的参照系）。 */
 @media (max-width: 720px) {
   html { overscroll-behavior-y: contain; }   /* 关掉 Chromium 原生下拉刷新，别和自绘的抢 */
-  .mhint {
-    position: absolute; top: 0; left: 0; right: 0; height: 44px;
-    display: flex; align-items: center; justify-content: center; gap: var(--sp2);
-    color: var(--mid); font-size: 13px;
-    transform: translateY(-100%);
-  }
-  .mhint .arrow { display: block; font-size: 15px; line-height: 1;
-                  transition: transform var(--t-base) var(--ease); }
-  .mhint .spin { display: none; width: 15px; height: 15px; border-radius: 50%;
-                 border: 2px solid var(--pale); border-top-color: var(--wood); }
-  html.ptr-load .mhint .arrow { display: none; }
-  html.ptr-load .mhint .spin { display: block; animation: mhintSpin 700ms linear infinite; }
-  html.ptr-drag .mhint .arrow { transform: rotate(var(--mh-rot, 0deg)); transition: none; }
   .mbody { position: relative; transition: transform 320ms var(--ease); }
   html.ptr-drag .mbody { transition: none; }
 }
-/* ⚠️ 转的是 **`transform: rotate`**（不是 `border-color` / `background-position` —— 不在白名单）。
-   这个旋转**不是 idle 循环**：只在真在加载时转、加载完就停（`docs/14` §14.6.6）。
-   ⚠️ `@keyframes` **不放进媒体查询**（放里面只是多一层无谓的限定）。 */
-@keyframes mhintSpin { to { transform: rotate(360deg); } }
 
 /* ---- 专场策展页（`admin-showcase.html`）：候选 / 已选图的缩略图方块 ----
    方块封面 = 顺序里第一张（页面上给它标「第 1 张（方块封面）」，不另设"指定封面"字段）。 */
@@ -1814,15 +2011,12 @@ body.cat-off #oneko { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .railwrap { transition-duration: 0s; }
   /* 手机端四样手感（`docs/14` §14.6.6 降级清单 ⑧，2026-09-28）：抽屉开合与遮罩、下拉刷新、
-     骨架屏的过渡**全部归零**、各自**直接给终态** —— 抽屉直接出现、下拉指示器**不转圈**
-     （内容照常刷新）、**骨架照常显示只是不扫光**。
+     骨架屏的过渡**全部归零**、各自**直接给终态** —— 抽屉直接出现、**骨架照常显示只是不扫光**。
      ⚠️ 降级是"减少"不是"删掉"：功能一样不缺（抽屉照样开、下拉照样刷、骨架照样占位）。
      ⚠️ 原来这里还有一项"左滑直接到位"——**左滑已于 2026-09-28 取消**（操作改常显，见 §10 卡片行），
-     选择器一并删掉；留着它只是个永不命中的死选择器。 */
-  .scrim, .mbody, .mhint .arrow { transition: none; }
-  /* ⚠️ 这里**必须 `!important`**：手机段那条是 `html.ptr-load .mhint .spin`（0,3,1），
-     比 `.mhint .spin`（0,2,0）特异 —— 不写它的话 reduced-motion 下照样转圈（实测踩过）。 */
-  .mhint .spin { animation: none !important; }
+     选择器一并删掉；留着它只是个永不命中的死选择器。
+     ⚠️ 下拉刷新那两条（`.mhint .arrow` 过渡 / `.mhint .spin` 转圈）**随提示条一起已删**（2026-10-02）。 */
+  .scrim, .mbody { transition: none; }
   .skel .sk::after { animation: none; }
   .hpanel { animation: none; }        /* 铃铛小面板的入场（`#118`）：降级 = 直接出现，不是不出现 */
   /* `.tb tbody tr` 已在下面那条里；这里再补「界面的活性」新加的两处过渡（点阵内层 / 出勤横条）。

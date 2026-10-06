@@ -8,6 +8,7 @@ import com.forband.event.dto.EventBatchRequest;
 import com.forband.event.dto.EventCreateRequest;
 import com.forband.event.dto.EventUpdateRequest;
 import com.forband.event.dto.EventView;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import com.forband.piece.PieceService;
 import com.forband.piece.dto.PieceDtos;
@@ -54,21 +55,21 @@ public class EventController {
     }
 
     @PostMapping
-    @OpLog(action = "EVENT_CREATE", targetType = "event")
+    @OpLog(action = OpAction.EVENT_CREATE, targetType = "event")
     public ApiResponse<EventView> create(@RequestBody @Valid EventCreateRequest request,
                                          CurrentUser operator) {
         return ApiResponse.ok(eventService.create(request, operator));
     }
 
     @PostMapping("/batch")
-    @OpLog(action = "EVENT_BATCH_CREATE", targetType = "event")
+    @OpLog(action = OpAction.EVENT_BATCH_CREATE, targetType = "event")
     public ApiResponse<List<EventView>> batchCreate(@RequestBody @Valid EventBatchRequest request,
                                                     CurrentUser operator) {
         return ApiResponse.ok(eventService.batchCreate(request, operator));
     }
 
     @PutMapping("/{id}")
-    @OpLog(action = "EVENT_UPDATE", targetType = "event")
+    @OpLog(action = OpAction.EVENT_UPDATE, targetType = "event")
     public ApiResponse<EventView> update(@PathVariable long id,
                                          @RequestBody @Valid EventUpdateRequest request,
                                          CurrentUser operator) {
@@ -76,7 +77,7 @@ public class EventController {
     }
 
     @PostMapping("/{id}/cancel")
-    @OpLog(action = "EVENT_CANCEL", targetType = "event")
+    @OpLog(action = OpAction.EVENT_CANCEL, targetType = "event")
     public ApiResponse<EventView> cancel(@PathVariable long id, CurrentUser operator) {
         return ApiResponse.ok(eventService.cancel(id, operator));
     }
@@ -86,10 +87,10 @@ public class EventController {
      * 与演出曲目单（`PUT /api/concerts/{id}/program`）同一套做法。
      */
     @PutMapping("/{id}/pieces")
-    @OpLog(action = "EVENT_SET_PIECES", targetType = "event")
+    @OpLog(action = OpAction.EVENT_SET_PIECES, targetType = "event")
     public ApiResponse<List<PieceDtos.EventPieceView>> setPieces(
             @PathVariable long id,
-            @RequestBody PieceDtos.EventPiecesRequest request,
+            @RequestBody @Valid PieceDtos.EventPiecesRequest request,
             CurrentUser operator) {
         return ApiResponse.ok(pieceService.setEventPieces(id, request.pieceIds(), operator));
     }

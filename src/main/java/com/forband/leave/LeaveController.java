@@ -7,6 +7,7 @@ import com.forband.common.PageResult;
 import com.forband.leave.dto.LeaveDtos.CreateRequest;
 import com.forband.leave.dto.LeaveDtos.DecideRequest;
 import com.forband.leave.dto.LeaveDtos.RequestView;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +28,7 @@ public class LeaveController {
     }
 
     @PostMapping("/api/events/{id}/leave-requests")
-    @OpLog(action = "LEAVE_APPLY", targetType = "leave_request")
+    @OpLog(action = OpAction.LEAVE_APPLY, targetType = "leave_request")
     public ApiResponse<RequestView> create(@PathVariable long id,
                                            @RequestBody(required = false) @Valid CreateRequest request,
                                            CurrentUser applicant) {
@@ -36,7 +37,7 @@ public class LeaveController {
     }
 
     @PostMapping("/api/leave-requests/{id}/cancel")
-    @OpLog(action = "LEAVE_CANCEL", targetType = "leave_request")
+    @OpLog(action = OpAction.LEAVE_CANCEL, targetType = "leave_request")
     public ApiResponse<RequestView> cancel(@PathVariable long id, CurrentUser applicant) {
         return ApiResponse.ok(leaveService.cancel(id, applicant));
     }
@@ -53,7 +54,7 @@ public class LeaveController {
     }
 
     @PostMapping("/api/leave-approvals/{id}/decide")
-    @OpLog(action = "LEAVE_DECIDE", targetType = "leave_approval")
+    @OpLog(action = OpAction.LEAVE_DECIDE, targetType = "leave_approval")
     public ApiResponse<RequestView> decide(@PathVariable long id,
                                            @RequestBody @Valid DecideRequest request,
                                            CurrentUser decider) {

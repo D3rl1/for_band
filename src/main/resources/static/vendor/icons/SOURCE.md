@@ -67,14 +67,14 @@
   `stroke-linecap="round"` `stroke-linejoin="round"`（见 `manifest.json` 的 `svg_attrs`）。
   ⚠️ 这与项目**原有**那个搜索放大镜（`concerts.html` 的 `.sc-sicon` + `band.css` 里那条）**一字不差**——
   D26 选这个库就是因为这个。
-- **`navItems` 第 3 位存 key**（如 `calendar-days`），`menuMarkup` 查表后包成 `<svg>`。
-  ⚠️ **别把 SVG 源码抄进 `navItems`**（那一列要能一眼读完）。
-- **图标数据放在 `app.js`**——它已被 23 个页面加载，符合"单一 `app.js`"的既有口径。
+- **`menu` 第 3 位存 key**（如 `calendar-days`），`menuMarkup` 查表后包成 `<svg>`。
+  ⚠️ **别把 SVG 源码抄进 `menu`**（那一列要能一眼读完）。
+- **图标数据放在 `band-shell.js`**（导航骨架模块，23 个页面都引入它；`ICON_SVG` 由 `design-samples/_gen_icons_js.py` 生成，与菜单同址）。
   ⚠️ **不要为此给 21 个页面各加一个 `<script>` 标签。**
 - 颜色由 `stroke: currentColor` 继承：收起态取 `--shellmid`、hover / 当前项取 `--silk`（与原来那个汉字同一条色路）。
   ⚠️ **细描边比实心字更吃对比度**——换完要在深木底上**重测 ≥ 4.5:1**（原来汉字版实测约 6.5:1）。
 - ⚠️ **别整包搬**：整包约 1600 个图标。要新的就照上面那条命令取单个、补哈希、把本表与 `manifest.json` 一起更新。
-- ⚠️ **换图标要同步三处**：本目录的文件 + `manifest.json` + `app.js` 的 `navItems`。
+- ⚠️ **换图标要同步三处**：本目录的文件 + `manifest.json` + `band-shell.js` 的 `menu`。
 
 ## 五、这 20 个各用在哪
 

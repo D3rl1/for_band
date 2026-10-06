@@ -60,7 +60,7 @@
 </section>
 
 <h2 class="mb-3">活动安排</h2>
-<div class="d-flex gap-2 mb-3">
+<div class="d-flex gap-2 mb-3 filters">
   <select id="kind" class="w-auto">
     <option value="">全部类型</option>
     <option value="REHEARSAL">排练</option>
@@ -195,11 +195,49 @@ async function renderTodo(me) {
   }
 }
 
+/** 手机端活动行（样张 `v-events` 的 `.ev` 日期块行）：日期块 + 主文 + `›`。
+    桌面仍走下面那套 6 列表格，一个字没动（`docs/14` §14.6.4 §三 表第 1 行）。 */
+function evRow(e) {
+  const tr = document.createElement('tr');
+  tr.className = 'link';
+  const date = document.createElement('td');
+  date.className = 'ev-date';
+  const day = document.createElement('b');
+  day.textContent = e.date.slice(8, 10);
+  const wd = document.createElement('em');
+  wd.textContent = '周' + DAY_NAMES[(new Date(`${e.date}T12:00`).getDay() + 6) % 7];
+  date.append(day, wd);
+  const main = document.createElement('td');
+  main.className = 'ev-main';
+  const title = document.createElement('b');
+  if (e.status === 'CANCELED') {
+    const s = document.createElement('s');
+    s.textContent = e.title;
+    title.appendChild(s);
+  } else {
+    title.textContent = e.title;
+  }
+  const meta = document.createElement('span');
+  meta.textContent = [
+    `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}`, e.location, e.sectionName,
+  ].filter(Boolean).join(' · ');
+  main.append(title, meta);
+  const go = document.createElement('td');
+  go.className = 'ev-go';
+  go.textContent = '›';
+  tr.append(date, main, go);
+  tr.addEventListener('click', () => { location.href = `/event-detail.html?id=${e.id}`; });
+  return tr;
+}
+
 function renderList(list) {
+  const mobile = BAND.isMobile();
+  document.getElementById('events-table').classList.toggle('ev-list', mobile);
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
   document.getElementById('empty').hidden = list.length > 0;
   for (const e of list) {
+    if (mobile) { tbody.appendChild(evRow(e)); continue; }
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><span class="chip"></span></td>';
     tr.children[0].textContent = e.date;

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>调音器 · 乐团管理系统</title>
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 占位页（2026-10-06）：菜单里先占位置。多乐器调音器是"模块地基"的第一个真实用例，功能待建。 -->
+<div class="cell">
+  <h2 class="mb-2">建设中</h2>
+  <p class="chip mb-0">「调音器」还在做，先占个位置。</p>
+</div>
+
+<script>
+async function load() {
+  await BAND.renderNav('tuner.html');
+}
+load();
+</script>
+</body>
+</html>

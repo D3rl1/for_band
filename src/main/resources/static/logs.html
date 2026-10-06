@@ -106,7 +106,7 @@ async function showBackup() {
   const stale = !d.known || !d.lastSuccessAt || d.staleHours > 48;
   el.hidden = false;
   if (d.known && d.lastSuccessAt) {
-    const t = d.lastSuccessAt.replace('T', ' ').slice(0, 19);
+    const t = BAND.stamp(d.lastSuccessAt, 'sec');
     el.textContent = `上次成功备份：${t}（${d.staleHours} 小时前）`;
   } else {
     el.textContent = '上次成功备份：未知';
@@ -130,7 +130,7 @@ async function load() {
   for (const log of d.list) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td>';
-    tr.children[0].textContent = log.createdAt.replace('T', ' ').slice(0, 19);
+    tr.children[0].textContent = BAND.stamp(log.createdAt, 'sec');
     tr.children[1].textContent = log.operatorName || log.operatorId;
     tr.children[2].textContent = actionLabels[log.action] || log.action;
     tr.children[3].textContent = (log.targetType || '') + (log.targetId ? ' #' + log.targetId : '');

@@ -50,7 +50,7 @@ function row(n) {
   title.textContent = n.title;
   const when = document.createElement('span');
   when.className = 'chip ms-2 mb-0';
-  when.textContent = (n.publishedAt || '').replace('T', ' ').slice(0, 16);
+  when.textContent = BAND.stamp(n.publishedAt);
   const body = document.createElement('p');
   body.className = 'ann-body mt-2 mb-0';
   body.textContent = n.content;

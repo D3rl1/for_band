@@ -1,6 +1,7 @@
 package com.forband.piece.dto;
 
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -44,7 +45,7 @@ public final class PieceDtos {
     }
 
     /** 活动关联曲目（`PUT /api/events/{id}/pieces` 的入参）。 */
-    public record EventPiecesRequest(List<Long> pieceIds) {
+    public record EventPiecesRequest(@NotNull(message = "pieceIds 不能为空") List<Long> pieceIds) {
     }
 
     /** 活动关联曲目的一行（给活动详情页用）。 */

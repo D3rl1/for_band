@@ -1,5 +1,6 @@
 package com.forband.concert.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -31,14 +32,14 @@ public final class ConcertDtos {
                               @Size(max = 255) String note) {
     }
 
-    public record ProgramRequest(List<ProgramItem> items) {
+    public record ProgramRequest(@NotNull(message = "曲目单不能为空") @Valid List<ProgramItem> items) {
     }
 
     /** 参演名单：`memberId` **可以是已毕业 / 休团的人**（"毕业了回团参演"很常见）。 */
     public record CastItem(Long memberId, @Size(max = 64) String note) {
     }
 
-    public record CastRequest(List<CastItem> members) {
+    public record CastRequest(@NotNull(message = "参演名单不能为空") @Valid List<CastItem> members) {
     }
 
     public record PhotoRequest(Long fileId, @Size(max = 128) String caption) {

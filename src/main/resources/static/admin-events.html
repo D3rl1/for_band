@@ -110,10 +110,9 @@ async function load() {
   me = await BAND.renderNav('admin-events.html');
   if (!me) return;
   sections = await BAND.must('/api/sections');
-  const options = '<option value="">无声部</option>' +
-    sections.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  document.getElementById('k-section').innerHTML = options;
-  document.getElementById('b-section').innerHTML = options;
+  const sectionOptions = sections.map((s) => ({ value: s.id, label: s.name }));
+  BAND.fillSelect(document.getElementById('k-section'), sectionOptions, '无声部');
+  BAND.fillSelect(document.getElementById('b-section'), sectionOptions, '无声部');
   document.getElementById('k-kind').addEventListener('change',
     (e) => syncSectionSelect(e.target.value, document.getElementById('k-section')));
   document.getElementById('b-kind').addEventListener('change',
@@ -155,7 +154,7 @@ async function loadRows() {
       cancelBtn.className = 'go go-ghost go-sm';
       cancelBtn.textContent = '取消';
       cancelBtn.addEventListener('click', async () => {
-        if (!confirm(`取消「${e.title}」${e.date}？签到将关闭，统计整场排除。`)) return;
+        if (!await BAND.confirm({ title: `取消「${e.title}」${e.date}？`, body: '签到将关闭，统计整场排除。' })) return;
         await BAND.must(`/api/events/${e.id}/cancel`, { method: 'POST' });
         BAND.toast('已取消', 'success');
         loadRows();

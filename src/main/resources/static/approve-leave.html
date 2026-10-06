@@ -72,7 +72,8 @@ function card(r) {
       btn.className = `go go-sm ${cls}`;
       btn.textContent = label;
       btn.addEventListener('click', async () => {
-        if (decision === 'REJECTED' && !confirm(`驳回 ${r.memberName} 的申请？整单将立即驳回。`)) return;
+        if (decision === 'REJECTED'
+            && !await BAND.confirm({ title: `驳回 ${r.memberName} 的申请？`, body: '整单将立即驳回。' })) return;
         const res = await BAND.must(`/api/leave-approvals/${mine[0].id}/decide`, {
           method: 'POST',
           body: { decision, note: note.value.trim() || null },

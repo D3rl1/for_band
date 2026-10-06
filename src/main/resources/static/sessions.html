@@ -30,7 +30,7 @@
 </div>
 
 <script>
-const fmt = (iso) => iso ? iso.replace('T', ' ').slice(0, 16) : '—';
+const fmt = (iso) => iso ? BAND.stamp(iso) : '—';
 
 async function load() {
   const me = await BAND.renderNav('sessions.html');
@@ -58,7 +58,7 @@ async function load() {
       btn.className = 'go go-ghost go-sm';
       btn.textContent = '踢';
       btn.addEventListener('click', async () => {
-        if (!confirm(`确定踢掉「${s.device}」？该设备会立即退出登录。`)) return;
+        if (!await BAND.confirm({ title: `确定踢掉「${s.device}」？`, body: '该设备会立即退出登录。' })) return;
         await BAND.must(`/api/auth/sessions/${s.id}/revoke`, { method: 'POST' });
         BAND.toast('已踢掉', 'success');
         load();
@@ -72,7 +72,7 @@ async function load() {
 
 // 「踢掉其他所有设备」放列表下方——它跟"某一台"不是一档操作，别混在同一列按钮里（docs/14 §14.6.4）
 document.getElementById('revoke-others').addEventListener('click', async () => {
-  if (!confirm('确定踢掉其他所有设备？当前这台会保留。')) return;
+  if (!await BAND.confirm({ title: '确定踢掉其他所有设备？', body: '当前这台会保留。' })) return;
   await BAND.must('/api/auth/sessions/revoke-others', { method: 'POST' });
   BAND.toast('已踢掉其他所有设备', 'success');
   load();

@@ -10,7 +10,7 @@ for_band 规格 ↔ 代码一致性检查。
 用法（在 for_band/ 下）：  python tools/spec_check.py
 退出码：0 = 无 ❌；1 = 有 ❌（便于以后接 CI）。
 
-十条规则（R1–R5 与 R10 查"文档↔代码"，R6–R9 查"文档体系自己不乱"）：
+十三条规则（R1–R5、R10 与 R13 查"文档↔代码"，R6–R9 查"文档体系自己不乱"，R11–R12 查"前端页面的隐式契约"）：
   R1 无标记的表 / 列（含 NOT NULL 约束）/ 端点 → 代码里必须存在
   R2 `🚧 待实现（#N）` → 必须在 `交接单.md` 里找得到 #N
   R3 `❌ 不做` / `⏸ 暂缓` → 代码里不许存在；端点的路径不许被别的文档引用（取消的功能常被当"先例"引用）
@@ -22,6 +22,13 @@ for_band 规格 ↔ 代码一致性检查。
   R9 `docs/archive/` 下每个文件前 6 行必须有 `🧊 已冻结` 横幅（让"这份还算数吗"一眼可判）
   R10 `docs/10` §10.5 的 (码, HTTP, message) → 必须与 `ErrorCode.java` **逐条一致**（双向）
       （起因：那张表曾经承诺了 `50001`–`50004` 而代码里**一个都没有**，客户端照它写分支永远命中不了）
+  R11 `band-shell.js` 的菜单：图标 key 不许被**两个不同页面**共用（`AGENTS.md` 前端第 6 条）、
+      同一个页面在两个视图下必须同图标、icon key 必须在 `vendor/icons/manifest.json` 里（否则空图标）、
+      菜单项不许指向不存在的页面、菜单项不许重复
+  R12 带导航的每个页面：`<script src="/band-*.js">` 的**集合与顺序**必须一致
+      （页头脚本串是隐式契约，少抄一个/顺序抄错不报错、只出怪症状）
+  R13 `sql/schema.sql` 建的每张表 → `docs/13` 里必须有 `` `表名` ``（表结构的唯一权威，
+      "加一个模块"的第一步；建了表不登记 = 权威当场过期，而没有任何东西会报错）
 
 另有一段**只提示、不判罚**的报告区：规格条目行里出现"未实现/待实现"这类词却没挂标记
 （这类词在散文里合法，做成 fail 会天天爆红被无视）。
@@ -33,8 +40,10 @@ for_band 规格 ↔ 代码一致性检查。
 "它会不会对合法内容报错"——宁可少报，不可乱报（下面 R3 的引用检查就为此刻意分了 fail / warn 两档）。
 """
 
+import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 # Windows 控制台默认不是 utf-8，中文输出会炸（本机踩过的坑）
@@ -46,6 +55,9 @@ DOCS_DIR = ROOT / "docs"
 ARCHIVE_DIR = DOCS_DIR / "archive"
 SCHEMA_SQL = ROOT / "sql" / "schema.sql"
 JAVA_DIR = ROOT / "src" / "main" / "java"
+STATIC_DIR = ROOT / "src" / "main" / "resources" / "static"
+BAND_SHELL_JS = STATIC_DIR / "band-shell.js"
+ICON_MANIFEST = STATIC_DIR / "vendor" / "icons" / "manifest.json"
 HANDOVER = ROOT / "交接单.md"
 DOC00 = DOCS_DIR / "00-总览与架构.md"
 DOC13 = DOCS_DIR / "13-数据模型总表.md"
@@ -575,6 +587,140 @@ else:
                     f"`{num}`：docs/10-接口规范与错误码.md:{ln} 写「{d_msg}」，"
                     f"`ErrorCode.java` 是「{j_msg}」 → 文档那版是给团员看的话，**改代码对齐**"
                     f"（口径见 docs/10 §10.5 顶部）{tail}")
+
+# ---------------------------------------------------------------- R11 菜单图标 / 菜单项一致性
+# 起因（2026-10-06）：`AGENTS.md` 前端第 6 条写着「**两页不许共用图标 key**」，但**没有任何检查**——
+# 两页撞图标只会让侧栏看着像同一个入口，**不报错、测试也不红**；图标 key 写错（manifest 里没有）
+# 则会渲染成空图标，同样静默。菜单结构 2026-10-06 起是「两视图开关」形态，正好一并把
+# 「同页两个视图必须同图标」钉住（`concerts.html` / `members.html` 各出现两次，是**正常**的）。
+MENU_ENTRY_RE = re.compile(
+    r"\{[^{}]*?view:\s*'([^']+)'[^{}]*?href:\s*'([^']+)'[^{}]*?icon:\s*'([^']+)'[^{}]*?\}", re.S)
+MENU_FIELDS_RE = {
+    "title": re.compile(r"title:\s*'([^']+)'"),
+    "group": re.compile(r"group:\s*'([^']+)'"),
+}
+if not BAND_SHELL_JS.exists():
+    add("warn", "R11 无法核实", f"找不到 {BAND_SHELL_JS.relative_to(ROOT)} → 菜单图标/唯一性核不了")
+else:
+    shell_js = BAND_SHELL_JS.read_text(encoding="utf-8")
+    menu_entries = []
+    for m in MENU_ENTRY_RE.finditer(shell_js):
+        view, href, icon = m.groups()
+        title = MENU_FIELDS_RE["title"].search(m.group(0))
+        menu_entries.append((view, href, title.group(1) if title else "?", icon))
+    stats["菜单项"] = len(menu_entries)
+    if not menu_entries:
+        add("warn", "R11 无法核实",
+            f"{BAND_SHELL_JS.name} 里没解析出菜单项（`menu` 的定义形状可能变了）→ 需人看")
+    icon_keys = set()
+    if ICON_MANIFEST.exists():
+        try:
+            man = json.loads(ICON_MANIFEST.read_text(encoding="utf-8"))
+            for it in (man.get("icons") or []):
+                icon_keys.add(it["key"])
+            if not icon_keys:
+                add("warn", "R11 无法核实",
+                    f"{ICON_MANIFEST.name} 里没有 `icons` 清单 → 图标 key 核不了（形状可能变了）")
+        except Exception as e:      # noqa: BLE001
+            add("warn", "R11 无法核实", f"{ICON_MANIFEST.name} 解析失败：{e}")
+    else:
+        add("warn", "R11 无法核实", f"找不到 {ICON_MANIFEST.relative_to(ROOT)} → 图标 key 核不了")
+    stats["图标库"] = len(icon_keys)
+
+    href_icon = {}      # href -> icon（同页必须只有一个图标）
+    icon_hrefs = {}     # icon -> {href}（一个图标不许被两个页面共用）
+    seen_triples = {}
+    for view, href, title, icon in menu_entries:
+        seen_triples.setdefault((view, href, title), 0)
+        seen_triples[(view, href, title)] += 1
+        prev = href_icon.get(href)
+        if prev is not None and prev != icon:
+            add("fail", "R11 同页图标不一致",
+                f"`{href}` 在菜单里用了两个图标（`{prev}` 与 `{icon}`）→ "
+                f"同一个页面在两个视图下应显示同一个图标")
+        href_icon[href] = icon
+        icon_hrefs.setdefault(icon, set()).add(href)
+        if icon_keys and icon not in icon_keys:
+            add("fail", "R11 图标不存在",
+                f"菜单项「{title}」(`{href}`) 的 icon key `{icon}` 不在 "
+                f"vendor/icons/manifest.json 里 → 侧栏会渲染成**空图标**（静默）")
+        if not (STATIC_DIR / href).exists():
+            add("fail", "R11 菜单指向不存在的页",
+                f"菜单项「{title}」指向 `{href}`，但 src/main/resources/static/ 下没有这个文件 "
+                f"→ 点了就是 404（要建占位页就别只挂菜单）")
+    for icon, hrefs in sorted(icon_hrefs.items()):
+        if len(hrefs) > 1:
+            add("fail", "R11 两页共用图标 key",
+                f"图标 key `{icon}` 被 {len(hrefs)} 个**不同页面**共用（{'、'.join(sorted(hrefs))}）"
+                f"→ AGENTS.md 前端第 6 条要求「两页不许共用图标 key」")
+    for (view, href, title), n in sorted(seen_triples.items()):
+        if n > 1:
+            add("fail", "R11 菜单项重复",
+                f"菜单项「{title}」(`{view}` → `{href}`) 出现了 {n} 次 → 菜单项应当唯一")
+
+# ---------------------------------------------------------------- R12 各页脚本引用一致性
+# 起因（2026-10-06）：每个页面**手抄**同一串 `<script src="/band-*.js">`，加载顺序是**隐式契约**
+# （`band-nav` 必须最先反闪、`band-welcome` 最后）。少抄一个 / 顺序抄错**不报错**，只在那一个页面
+# 出现难查的怪症状（本项目就踩过"个人页少了入班年份"这类同源飘移）。闸门按"多数页用的那一串"当基准，
+# 偏离即报——**不写死清单**（写死就会随页面增删而漂）。
+NAV_MARKER = 'id="navbar"'
+BAND_SRC_RE = re.compile(r'<script[^>]*\bsrc="/?(band-[\w\-]+\.js)"', re.I)
+if not STATIC_DIR.is_dir():
+    add("warn", "R12 无法核实", f"找不到 {STATIC_DIR.relative_to(ROOT)} → 页面脚本引用核不了")
+else:
+    page_seqs = {}      # 文件名 -> (序列)
+    nav_pages = 0
+    for p in sorted(STATIC_DIR.glob("*.html")):
+        html = p.read_text(encoding="utf-8")
+        if NAV_MARKER not in html:
+            continue        # `login.html`（无导航）/ `index.html`（跳转壳）**本来就不该引全套**
+        nav_pages += 1
+        page_seqs[p.name] = tuple(BAND_SRC_RE.findall(html))
+    stats["带导航页面"] = nav_pages
+    if nav_pages:
+        ref = Counter(page_seqs.values()).most_common(1)[0][0]
+        for name, seq in sorted(page_seqs.items()):
+            if seq == ref:
+                continue
+            missing = [s for s in ref if s not in seq]
+            extra = [s for s in seq if s not in ref]
+            if missing or extra:
+                add("fail", "R12 脚本引用不一致",
+                    f"{name} 的 `<script>` 与多数页不一致：缺 {missing or '—'}、多 {extra or '—'}"
+                    f" → 页头脚本串是**隐式契约**（少一个/多一个会在这一页出怪症状）")
+            else:
+                add("fail", "R12 脚本顺序不一致",
+                    f"{name} 引用齐全但**顺序**与多数页不同 → 加载顺序是隐式契约"
+                    f"（应在 {' → '.join(ref)}）")
+
+# ---------------------------------------------------------------- R13 schema.sql 的每张表必须在 docs/13
+# 起因（2026-10-06）：`AGENTS.md`「规格优先」第 2 条把 `docs/13-数据模型总表.md` 定为**全库唯一权威**
+# （表清单 + 跨表不变式 + 建表顺序）；"加一个模块"的第一步就是「建表 → 同步 docs/13」。
+# R1 查"文档有、代码没有"、R5 查"Java 端点跑在文档前面"，**这条是表的反向**：
+# 脚本里建了表、docs/13 却没登记 ⇒ 权威文档当场过期，而**没有任何东西会报错**（"漏了不会报错"的典型）。
+# 判据用**反引号形式** `` `表名` ``：docs/13 的表一律这么写；用裸词会让 `note` 之类的常见英文词
+# 命中散文、把没登记的表悄悄放行（宁可漏报，不可误报）。
+DOC13 = DOCS_DIR / "13-数据模型总表.md"
+CREATE_TABLE_RE = re.compile(
+    r"create\s+table\s+if\s+not\s+exists\s+`?([a-z_][a-z0-9_]*)`?", re.I)
+if not SCHEMA_SQL.is_file():
+    add("warn", "R13 无法核实", f"找不到 {SCHEMA_SQL.relative_to(ROOT)} → 建表脚本核不了")
+elif not DOC13.is_file():
+    add("warn", "R13 无法核实", f"找不到 docs/{DOC13.name} → 表清单核不了")
+else:
+    sheets = sorted(set(CREATE_TABLE_RE.findall(SCHEMA_SQL.read_text(encoding="utf-8"))))
+    stats["schema.sql 表数"] = len(sheets)
+    if len(sheets) < 10:
+        # 解析器自检：解析不出东西（正则被上游改动弄失效）不能算通过
+        add("warn", "R13 无法核实",
+            f"从 schema.sql 只解析出 {len(sheets)} 张表 → 正则可能已失效，请人看一眼")
+    doc13_text = DOC13.read_text(encoding="utf-8")
+    for table in sheets:
+        if f"`{table}`" not in doc13_text:
+            add("fail", "R13 表未登记 docs/13",
+                f"`sql/schema.sql` 建了表 `{table}`，但 `docs/13` 里找不到 `` `{table}` ``"
+                f" → docs/13 是表结构的**唯一权威**（AGENTS.md 规格优先第 2 条）："
+                f"新表必须同时登记它的表清单 / 建表顺序 / 字段定义")
 
 # --------------------------------------------- 报告区（只提示，不影响退出码）
 NEVER_DONE_WORDS = ("未实现", "待实现", "尚未实现", "暂未实现", "没有实现")

@@ -71,6 +71,9 @@ public class AuthController {
 
     private String bearer(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
-        return header == null ? null : header.substring("Bearer ".length()).trim();
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;   // 与 AuthInterceptor 同款判断：前缀不对不硬切，免得 substring 越界
+        }
+        return header.substring("Bearer ".length()).trim();
     }
 }

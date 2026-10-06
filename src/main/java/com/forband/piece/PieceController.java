@@ -4,6 +4,7 @@ import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.common.ApiResponse;
 import com.forband.common.PageResult;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import com.forband.piece.dto.PieceDtos.AttachmentRequest;
 import com.forband.piece.dto.PieceDtos.AttachmentView;
@@ -57,7 +58,7 @@ public class PieceController {
     }
 
     @PutMapping("/{id}")
-    @OpLog(action = "PIECE_UPDATE", targetType = "piece")
+    @OpLog(action = OpAction.PIECE_UPDATE, targetType = "piece")
     public ApiResponse<PieceView> update(@PathVariable long id,
                                          @RequestBody @Valid PieceRequest request,
                                          CurrentUser operator) {
@@ -73,7 +74,7 @@ public class PieceController {
     }
 
     @DeleteMapping("/{id}/attachments/{attachmentId}")
-    @OpLog(action = "PIECE_ATTACHMENT_DELETE", targetType = "piece")
+    @OpLog(action = OpAction.PIECE_ATTACHMENT_DELETE, targetType = "piece")
     public ApiResponse<Void> detach(@PathVariable long id, @PathVariable long attachmentId,
                                     CurrentUser operator) {
         pieceService.detach(id, attachmentId, operator);

@@ -4,6 +4,7 @@ import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.common.ApiResponse;
 import com.forband.common.PageResult;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import com.forband.recording.dto.RecordingDtos.CommentRequest;
 import com.forband.recording.dto.RecordingDtos.CommentView;
@@ -61,7 +62,7 @@ public class RecordingController {
     }
 
     @DeleteMapping("/{id}")
-    @OpLog(action = "RECORDING_DELETE", targetType = "recording")
+    @OpLog(action = OpAction.RECORDING_DELETE, targetType = "recording")
     public ApiResponse<Void> delete(@PathVariable long id, CurrentUser operator) {
         recordingService.delete(id, operator);
         return ApiResponse.ok();

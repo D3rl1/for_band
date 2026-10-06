@@ -21,6 +21,7 @@ import com.forband.leave.dto.LeaveDtos.ApprovalView;
 import com.forband.leave.dto.LeaveDtos.CreateRequest;
 import com.forband.leave.dto.LeaveDtos.DecideRequest;
 import com.forband.leave.dto.LeaveDtos.RequestView;
+import com.forband.log.OpAction;
 import com.forband.log.OperationLogWriter;
 import com.forband.member.Member;
 import com.forband.member.MemberMapper;
@@ -199,7 +200,7 @@ public class LeaveService {
         after.put("eventId", existing.getEventId());
         after.put("memberId", existing.getMemberId());
         after.put("markedBy", finalApprover.memberId());
-        opLogWriter.write(finalApprover, "ATTENDANCE_OVERRIDE_BY_LEAVE", "attendance",
+        opLogWriter.write(finalApprover, OpAction.ATTENDANCE_OVERRIDE_BY_LEAVE, "attendance",
                 existing.getId(), before, after);
         return true;
     }

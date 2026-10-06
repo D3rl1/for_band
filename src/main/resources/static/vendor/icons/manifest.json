@@ -1,5 +1,5 @@
 {
-  "_comment": "菜单与右上角图标的清单（唯一权威）。图标 key 写在 app.js 的 navItems 第 3 位；图标库与入库规矩见 docs/14 §14.6.4「DOM 契约」，来源与哈希见本目录 SOURCE.md。⚠️ 两个页面绝不能填同一个 key（AGENTS.md 前端节第 6 条）。每条必须显式写 file——前端只读 file，不留\"拼 key + 后缀\"的回退分支。",
+  "_comment": "菜单与右上角图标的清单（唯一权威）。图标 key 写在 band-shell.js 的 menu 第 3 位（icon 字段）；图标库与入库规矩见 docs/14 §14.6.4「DOM 契约」，来源与哈希见本目录 SOURCE.md。⚠️ 两个不同的页面绝不能填同一个 key（AGENTS.md 前端节第 6 条；同一个页面在两个菜单里各出现一次不算）。每条必须显式写 file——前端只读 file，不留\"拼 key + 后缀\"的回退分支。",
   "source": "lucide-static",
   "version": "1.49.0",
   "license": "ISC（其中 2 个派生自 Feather，MIT——见 LICENSE）",
@@ -12,6 +12,13 @@
     "stroke-linejoin": "round"
   },
   "icons": [
+    {
+      "key": "audio-waveform",
+      "file": "audio-waveform.svg",
+      "sha256": "c9e69f467c652a44a96bab97cd14882ee4131b21fd85feb49f64cfd6d125b514",
+      "usage": "菜单 · 调音器（日常「工具」）",
+      "note": ""
+    },
     {
       "key": "bell",
       "file": "bell.svg",
@@ -34,6 +41,13 @@
       "note": ""
     },
     {
+      "key": "calendar-check",
+      "file": "calendar-check.svg",
+      "sha256": "d31f87242f8656e315b8684ae278764ab4af3b5cf5a051c65819355cf624bd21",
+      "usage": "菜单 · 我的考勤（日常「考勤与请假」，占位页）",
+      "note": "⚠️ 日历四兄弟之一（days/minus/cog/check），靠内层记号区分"
+    },
+    {
       "key": "calendar-minus",
       "file": "calendar-minus.svg",
       "sha256": "febf6a359f6d25b334e31051089b0caf0c13600af8fbb0233c3f9d8689257129",
@@ -51,8 +65,8 @@
       "key": "circle-user-round",
       "file": "circle-user-round.svg",
       "sha256": "a49787554b78a4d1dd32359f740481ebdbee03e8c7737cf1401a8fce32926da0",
-      "usage": "**样张用**：我的资料（离线项）",
-      "note": "⚠️ 同上，`profile.html` 不占菜单"
+      "usage": "菜单 · 个人资料（日常「我的」）",
+      "note": ""
     },
     {
       "key": "clipboard-check",
@@ -79,8 +93,8 @@
       "key": "laptop",
       "file": "laptop.svg",
       "sha256": "ba31e3905885a10332b0b54b7491415672f571b351187e5f815d1f4383369125",
-      "usage": "**样张用**：登录设备列表里的\"电脑\"",
-      "note": "⚠️ 真站 `sessions.html` 渲染的是服务端给的设备文字，当前**不需要**"
+      "usage": "菜单 · 登录设备（日常「我的」）",
+      "note": ""
     },
     {
       "key": "mail",
@@ -95,6 +109,13 @@
       "sha256": "b5a11e8998b92dd160e839ffd45c8d9ab4b9611d1a433345d9d343dbc2997e3f",
       "usage": "菜单 · 更新公告（管理端发布）",
       "note": "⚠️ **不能与右上角铃铛共用**——`bell` 已给合并入口"
+    },
+    {
+      "key": "metronome",
+      "file": "metronome.svg",
+      "sha256": "0ee3b6fff8734f8de450c5735c91bfd138e1089103134697cebf5231411b0aba",
+      "usage": "菜单 · 节拍器（日常「工具」，占位页）",
+      "note": ""
     },
     {
       "key": "mic",
@@ -114,8 +135,8 @@
       "key": "newspaper",
       "file": "newspaper.svg",
       "sha256": "594c08f861753af41a6e7239bed08620b7f2419d6d5946b33290883ef2739ccf",
-      "usage": "**样张用**：更新日志（离线项）",
-      "note": "⚠️ 真站 `updates.html` 不占菜单，当前**不需要**这个图标"
+      "usage": "菜单 · 更新日志（日常「我的」）",
+      "note": ""
     },
     {
       "key": "scroll-text",
@@ -130,6 +151,13 @@
       "sha256": "b260bfa6b7c1e53c8fb9c1ec253c5cc6abdf4bb75ce61d8e3eb55d9eb227d5b1",
       "usage": "**样张用**：登录设备列表里的\"手机\"",
       "note": "⚠️ 同上；派生自 Feather"
+    },
+    {
+      "key": "star",
+      "file": "star.svg",
+      "sha256": "6456b4232f3b690c4ac9d3b9a158986fb33880be6b9f966e891b2ff5c474c9ff",
+      "usage": "菜单 · 专场（日常「活动与演出」，我们的专场）",
+      "note": "⚠️ 与 `images`（专场**策展**）是配对概念，但**形状必须不同**"
     },
     {
       "key": "ticket",

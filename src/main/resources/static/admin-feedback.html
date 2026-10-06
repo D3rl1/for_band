@@ -46,7 +46,7 @@ function card(f) {
   who.textContent = f.memberName || '（已离团）';
   const when = document.createElement('span');
   when.className = 'chip mb-0';
-  when.textContent = (f.createdAt || '').replace('T', ' ').slice(0, 16);
+  when.textContent = BAND.stamp(f.createdAt);
   head.append(who, when);
 
   const meta = document.createElement('p');
@@ -81,7 +81,7 @@ function card(f) {
     const done = document.createElement('p');
     done.className = 'chip mb-0';
     done.textContent = `已处理${f.handledByName ? ' · ' + f.handledByName : ''}`
-      + (f.handledAt ? ' · ' + f.handledAt.replace('T', ' ').slice(0, 16) : '')
+      + (f.handledAt ? ' · ' + BAND.stamp(f.handledAt) : '')
       + (f.adminNote ? ' · ' + f.adminNote : '');
     el.appendChild(done);
   }

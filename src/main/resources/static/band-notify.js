@@ -299,7 +299,7 @@ Object.assign(BAND, {
     seal.textContent = (me.sectionName || '声部').replace(/声部$/, '') || '印';
     const sign = document.createElement('span');
     sign.className = 'letter-sign';
-    sign.textContent = (note.authorName || '') + ' · ' + String(note.createdAt || '').slice(0, 10)
+    sign.textContent = (note.authorName || '') + ' · ' + BAND.stamp(note.createdAt, 'day')
       + (note.updatedAt && note.updatedAt !== note.createdAt ? ' · 改过' : '');
     foot.append(seal, sign);
     el.append(body, foot);

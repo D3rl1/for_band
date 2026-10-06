@@ -4,18 +4,13 @@ Object.assign(BAND, {
 
   mountProfile(layout, me) {
     const meBtn = layout.querySelector('.me');
-    // 荣誉团员只读（docs/02 §2.3）：入口对他们**不显示**（docs/14 §14.6.4），
-    // 不然点进去只会撞 403。后端 `MeProfileService.update()` 才是真闸门。
-    // 底部去重（docs/14 §14.6.4「底部只留品牌一行」，2026-09-24）：
-    // 「声音 开/关」从侧栏底栏**搬到这里**；底栏原来那 4 项里「登录设备」「退出」与本行**逐字重复**、
-    // 已删掉。声音与身份无关，所以荣誉团员那一支也要有它（所以放在 `concat` 里，不在条件分支里）。
+    // 2026-10-06：**「编辑资料」「登录设备」已搬进侧栏菜单**（日常「我的」组）⇒ 浮层里删掉这两项
+    //（`updates.html` 本就不在浮层），避免逐字重复。这里只剩账号动作：改密码 / 声音 / 退出。
+    // 「声音 开/关」2026-09-25 从侧栏底栏搬到这里（docs/14 §14.6.4「底部只留品牌一行」）。
     const soundOn = localStorage.getItem('band_sound') !== '0';
-    const acts = (me.role === 'HONORARY' ? [] : ['<a href="/profile.html">编辑资料</a>'])
-      .concat(['<a href="#" id="p-pw">改密码</a>',
-               `<a href="#" id="p-sound">声音 ${soundOn ? '开' : '关'}</a>`,
-               '<a href="/sessions.html">登录设备</a>',
-               '<a href="#" id="p-logout">退出</a>'])
-      .join(' · ');
+    const acts = ['<a href="#" id="p-pw">改密码</a>',
+                  `<a href="#" id="p-sound">声音 ${soundOn ? '开' : '关'}</a>`,
+                  '<a href="#" id="p-logout">退出</a>'].join(' · ');
     const panel = document.createElement('aside');
     panel.className = 'profile';
     panel.id = 'profile';

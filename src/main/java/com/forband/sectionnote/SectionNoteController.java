@@ -4,6 +4,7 @@ import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
 import com.forband.common.ApiResponse;
 import com.forband.common.PageResult;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import com.forband.sectionnote.dto.SectionNoteDtos.CreateRequest;
 import com.forband.sectionnote.dto.SectionNoteDtos.NoteView;
@@ -44,7 +45,7 @@ public class SectionNoteController {
     }
 
     @PostMapping
-    @OpLog(action = "SECTION_NOTE_WRITE", targetType = "section_note")
+    @OpLog(action = OpAction.SECTION_NOTE_WRITE, targetType = "section_note")
     public ApiResponse<NoteView> create(@PathVariable long id,
                                         @RequestBody @Valid CreateRequest request,
                                         CurrentUser user) {
@@ -58,7 +59,7 @@ public class SectionNoteController {
      * 参数顺序不影响 Spring 的按名绑定，但影响这条日志记的是谁。
      */
     @PutMapping("/{noteId}")
-    @OpLog(action = "SECTION_NOTE_WRITE", targetType = "section_note")
+    @OpLog(action = OpAction.SECTION_NOTE_WRITE, targetType = "section_note")
     public ApiResponse<NoteView> update(@PathVariable long noteId, @PathVariable long id,
                                         @RequestBody @Valid UpdateRequest request,
                                         CurrentUser user) {

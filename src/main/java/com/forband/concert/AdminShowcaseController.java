@@ -12,6 +12,7 @@ import com.forband.concert.dto.ShowcaseDtos.OpenResult;
 import com.forband.concert.dto.ShowcaseDtos.OrderRequest;
 import com.forband.concert.dto.ShowcaseDtos.ShowcasePhotoRow;
 import com.forband.concert.dto.ShowcaseDtos.ToggleRequest;
+import com.forband.log.OpAction;
 import com.forband.log.OpLog;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -45,7 +46,7 @@ public class AdminShowcaseController {
 
     /** 开一个新时间点（`name` / `date` 必填；已是专场 → `10001`）。 */
     @PostMapping
-    @OpLog(action = "SHOWCASE_CREATE", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_CREATE, targetType = "concert")
     public ApiResponse<OpenResult> open(@RequestBody @Valid OpenRequest request,
                                         CurrentUser operator) {
         return ApiResponse.ok(showcaseService.open(request, operator));
@@ -53,7 +54,7 @@ public class AdminShowcaseController {
 
     /** 设为 / 取消专场：**必须双向**，且**只翻标记、绝不删演出档案**。 */
     @PutMapping("/{concertId}")
-    @OpLog(action = "SHOWCASE_TOGGLE", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_TOGGLE, targetType = "concert")
     public ApiResponse<Void> toggle(@PathVariable long concertId,
                                     @RequestBody @Valid ToggleRequest request,
                                     CurrentUser operator) {
@@ -69,7 +70,7 @@ public class AdminShowcaseController {
 
     /** 加一张策展图（`sort_no` 服务端追加到末尾）。 */
     @PostMapping("/{concertId}/photos")
-    @OpLog(action = "SHOWCASE_PHOTO_ADD", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_PHOTO_ADD, targetType = "concert")
     public ApiResponse<ShowcasePhotoRow> addPhoto(@PathVariable long concertId,
                                                   @RequestBody @Valid AddPhotoRequest request,
                                                   CurrentUser operator) {
@@ -78,16 +79,16 @@ public class AdminShowcaseController {
 
     /** 整批设顺序（按数组顺序即最终顺序；id 不属于这场 → `10001`）。 */
     @PutMapping("/{concertId}/photos/order")
-    @OpLog(action = "SHOWCASE_PHOTO_ORDER", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_PHOTO_ORDER, targetType = "concert")
     public ApiResponse<List<ShowcasePhotoRow>> setOrder(@PathVariable long concertId,
-                                                        @RequestBody OrderRequest request,
+                                                        @RequestBody @Valid OrderRequest request,
                                                         CurrentUser operator) {
         return ApiResponse.ok(showcaseService.setOrder(concertId, request, operator));
     }
 
     /** 改这一张的文案。 */
     @PutMapping("/{concertId}/photos/{photoId}")
-    @OpLog(action = "SHOWCASE_PHOTO_NOTE", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_PHOTO_NOTE, targetType = "concert")
     public ApiResponse<Void> setNote(@PathVariable long concertId, @PathVariable long photoId,
                                      @RequestBody @Valid NoteRequest request, CurrentUser operator) {
         showcaseService.setNote(concertId, photoId, request, operator);
@@ -96,7 +97,7 @@ public class AdminShowcaseController {
 
     /** 把这张移出专页（**只删关联行，不删 `file`**）。 */
     @DeleteMapping("/{concertId}/photos/{photoId}")
-    @OpLog(action = "SHOWCASE_PHOTO_DELETE", targetType = "concert")
+    @OpLog(action = OpAction.SHOWCASE_PHOTO_DELETE, targetType = "concert")
     public ApiResponse<Void> deletePhoto(@PathVariable long concertId, @PathVariable long photoId,
                                          CurrentUser operator) {
         showcaseService.deletePhoto(concertId, photoId, operator);

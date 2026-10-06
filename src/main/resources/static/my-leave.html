@@ -19,7 +19,7 @@
 <body>
 <div id="navbar"></div>
 
-<p class="chip mb-3">排练需声部长与团长都批，声部课只需声部长；活动开始前可撤回；逾期未批按缺勤计。</p>
+<p class="chip mb-3 hint-card">排练需声部长与团长都批，声部课只需声部长；活动开始前可撤回；逾期未批按缺勤计。</p>
 <div id="list"></div>
 <p id="empty" class="py-4" hidden>还没有请假记录</p>
 
@@ -66,7 +66,7 @@ async function load() {
       btn.className = 'go go-ghost go-sm mt-2';
       btn.textContent = '撤回';
       btn.addEventListener('click', async () => {
-        if (!confirm('确定撤回这条申请？')) return;
+        if (!await BAND.confirm({ title: '确定撤回这条申请？' })) return;
         await BAND.must(`/api/leave-requests/${r.id}/cancel`, { method: 'POST' });
         BAND.toast('已撤回', 'success');
         load();

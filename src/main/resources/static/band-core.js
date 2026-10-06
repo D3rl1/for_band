@@ -50,6 +50,30 @@ const BAND = {
     throw envelope;
   },
 
+  /**
+   * 安全地把一批条目填进 `<select>`：**先清空，再逐个建 `<option>` 用 `textContent` 填名字**。
+   * ⚠️ **别改成拼 `innerHTML`**：名字来自服务端（声部名、曲名…），拼字符串会把 `</option>`
+   * 之类当场拼坏、甚至执行脚本（存储型 XSS）。**全站下拉都走这里**，别再各处手拼。
+   * @param {HTMLSelectElement} select
+   * @param {Array<{value: (string|number), label: string}>} items
+   * @param {string} [placeholder] 传了就在最前面加一条 `value=""` 的占位项（如"全部声部"）
+   */
+  fillSelect(select, items, placeholder) {
+    select.textContent = '';
+    if (placeholder !== undefined) {
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = placeholder;
+      select.appendChild(ph);
+    }
+    for (const it of items) {
+      const opt = document.createElement('option');
+      opt.value = it.value;
+      opt.textContent = it.label;
+      select.appendChild(opt);
+    }
+  },
+
   toast(message, type = 'danger') {
     let host = document.getElementById('toast-host');
     if (!host) {
@@ -165,11 +189,27 @@ const BAND = {
     document.documentElement.classList.remove('wel-armed');
   },
 
-  /** 本地日期 `YYYY-MM-DD`。⚠️ **别用 `toISOString()`**——那是 UTC，跨日会错一天。 */
-  localDayKey() {
-    const d = new Date();
+  /** `Date` → 本地时区 `YYYY-MM-DD`。⚠️ **别用 `toISOString()`**——那是 UTC，东八区早上 8 点前会算成前一天。 */
+  dayKey: (d = new Date()) => {
     const p = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  },
+
+  /** 本地时区的今天 `YYYY-MM-DD`（`dayKey()` 的今天版）。 */
+  localDayKey() { return this.dayKey(new Date()); },
+
+  /**
+   * 把服务端回的 ISO 时间串（`2026-10-06T09:30:00`）截成**人能读**的样子。
+   * ⚠️ **只做"去 T + 按需截断"，故意不做时区换算**：库里存的就是本地墙上时间，
+   * 拐去 UTC（`toISOString`）会早晚差一天——和 `localDayKey` 同一条坑。
+   * @param {string} iso
+   * @param {'min'|'sec'|'day'} [mode] 默认 `min`（到分，`2026-10-06 09:30`）；`sec` 到秒；`day` 只到日。
+   */
+  stamp(iso, mode = 'min') {
+    if (!iso) return '';
+    const s = String(iso).replace('T', ' ');
+    if (mode === 'day') return s.slice(0, 10);
+    return mode === 'sec' ? s.slice(0, 19) : s.slice(0, 16);
   },
 
   kindLabel: (kind) => ({ REHEARSAL: '排练', SECTION_CLASS: '声部课', DRESS_REHEARSAL: '彩排' }[kind] || kind),
