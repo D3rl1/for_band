@@ -19,15 +19,77 @@
 <body>
 <div id="navbar"></div>
 
-<!-- 占位页（2026-10-06）：菜单里先占位置，功能待建。见 交接单 §三。 -->
-<div class="cell">
-  <h2 class="mb-2">建设中</h2>
-  <p class="chip mb-0">「我的考勤」还在做，先占个位置。</p>
-</div>
+<!-- 我的考勤（`docs/14` §14.6.4「我的考勤」/ `docs/05` §5.4，`交接单` #180）：**只读、只看自己**。
+     上块＝成对的「出勤率 / 请假次数」（排练、声部课各一张；分母 0 → `—`，走 `BAND.ratePct`）；
+     下块＝逐场明细（日期 / 活动 / 我的状态，只读 `mine`）。
+     ⚠️ 本页**不提供签到**——签到仍在活动详情页（`event-detail.html`）。 -->
+<div class="row2" id="cards"></div>
+
+<table class="tb mt-3" id="sessions-table">
+  <thead><tr><th>日期</th><th>活动</th><th>我的状态</th></tr></thead>
+  <tbody id="sessions-rows"></tbody>
+</table>
+<p id="empty" class="py-4" hidden>还没有考勤记录</p>
 
 <script>
+/** 我在这场是什么状态（`mine` 由服务端判：有行就是行里的，没行但该到 = 缺勤，没轮到 = null）。 */
+const MINE = { PRESENT: '出勤', LEAVE: '请假', ABSENT: '缺勤' };
+function mineLabel(mine) {
+  return MINE[mine] || '—';
+}
+
+/** 上块的一张卡：**出勤率与请假次数成对**（`docs/05` §5.4 硬规则，不许只留一个）。
+    ⚠️ 出勤率必须走 `BAND.ratePct(rate, expected)`——分母为 0（指挥 / 荣誉团员）它返回「—」，
+    而不是「0%」（`band-core.js` 是这条口径的唯一入口）。 */
+function kindCard(label, k) {
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.innerHTML = '<div class="lab"></div><p class="big" data-count></p><p class="chip mb-0"></p>';
+  el.querySelector('.lab').textContent = label;
+  el.querySelector('.big').textContent = BAND.ratePct(k.rate, k.expected);
+  // 数字各自一个 span（「界面的活性」①：要数的数字必须各自在独立元素里）
+  el.querySelector('.chip').innerHTML = `请假 <span class="n" data-count>${k.leave}</span> 次`;
+  return el;
+}
+
+/** 逐场明细的一行。⚠️ 团员 / 荣誉团员拿到的行里五个汇总数是 `null`（服务端按角色裁剪）⇒ **只读 `mine`**。 */
+function attendanceRow(s) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td></td><td></td><td></td>';
+  tr.children[0].textContent = s.date || '';
+  const a = document.createElement('a');
+  a.href = '/event-detail.html?id=' + s.eventId;
+  a.textContent = (s.title || '（未命名）') + ' · ' + BAND.kindLabel(s.kind);
+  tr.children[1].appendChild(a);
+  tr.children[2].textContent = mineLabel(s.mine);
+  return tr;
+}
+
 async function load() {
-  await BAND.renderNav('my-attendance.html');
+  const me = await BAND.renderNav('my-attendance.html');
+  if (!me) return;
+
+  const cards = document.getElementById('cards');
+  const tbody = document.getElementById('sessions-rows');
+  cards.innerHTML = '';
+  tbody.innerHTML = '';
+
+  const [sum, d] = await Promise.all([
+    BAND.must(`/api/members/${me.id}/attendance-summary`),
+    BAND.must('/api/attendance/sessions?size=50'),
+  ]);
+
+  // 上块：排练与声部课并排（`docs/05` §5.4：两类分开算、两个数字并列）
+  cards.append(kindCard('排练出勤', sum.rehearsal), kindCard('声部课出勤', sum.sectionClass));
+
+  // 下块：逐场明细（服务端已按时间倒序）
+  const rows = d.list || [];
+  document.getElementById('empty').hidden = rows.length > 0;
+  document.getElementById('sessions-table').hidden = rows.length === 0;
+  for (const s of rows) tbody.appendChild(attendanceRow(s));
+
+  // ⚠️ 必须在卡片与行都建好**之后**才播（早调会快照到空点阵；"播过"的标志一置位就再也不播了）
+  BAND.alive(cards, document.getElementById('sessions-table'));
 }
 load();
 </script>

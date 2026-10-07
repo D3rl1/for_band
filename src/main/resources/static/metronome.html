@@ -19,15 +19,244 @@
 <body>
 <div id="navbar"></div>
 
-<!-- 占位页（2026-10-06）：菜单里先占位置。独立节拍器将来要做完整版（录音页里现有的偏残缺）。 -->
+<!-- 独立节拍器（`docs/14` §14.6.4「独立节拍器」/ `docs/08` §8.4，`交接单` #181）：
+     练琴用的独立工具页——录音页面板那套（BPM / 拍号 / 重音 / 拍点）**+ 进阶**（更多拍号、细分拍、重音花样、tap tempo）。
+     ⚠️ 与 `recordings.html` 里那个"录音时听得见"的面板**是两回事**、互不联动；共用同一个 `BAND.tick` 与全页唯一 `AudioContext`。
+     ⚠️ 声音**不受全局 `band_sound` 约束**（显式例外，同 §14.6.6）；`prefers-reduced-motion` 只降级视觉、**不静音**。 -->
 <div class="cell">
-  <h2 class="mb-2">建设中</h2>
-  <p class="chip mb-0">「节拍器」还在做，先占个位置。</p>
+  <div class="metro-row">
+    <label class="metro-f" for="m-bpm">速度 <input id="m-bpm" type="number" min="30" max="240" step="1" inputmode="numeric"><span>BPM</span></label>
+    <label class="metro-f" for="m-beats">拍号
+      <select id="m-beats">
+        <option value="2">2/4</option>
+        <option value="3">3/4</option>
+        <option value="4" selected>4/4</option>
+        <option value="6">6/8</option>
+        <option value="5">5/4</option>
+        <option value="7">7/8</option>
+        <option value="12">12/8</option>
+      </select></label>
+    <label class="metro-f" for="m-sub">细分
+      <select id="m-sub">
+        <option value="1" selected>不细分</option>
+        <option value="2">八分</option>
+        <option value="3">三连</option>
+        <option value="4">十六分</option>
+      </select></label>
+    <button id="m-tap" class="go go-ghost go-sm" type="button">TAP</button>
+    <button id="m-toggle" class="go go-sm" type="button">开始</button>
+  </div>
+  <div class="metro-row">
+    <span class="metro-f">重音 <span id="m-acc" role="group" aria-label="重音拍位"></span></span>
+  </div>
+  <div class="metro-dots" id="m-dots" aria-hidden="true"></div>
+  <p class="chip" id="m-hint">点「开始」起拍；「TAP」连点几下可算出速度。</p>
 </div>
 
 <script>
+const BPM_MIN = 30, BPM_MAX = 240, LOOKAHEAD_S = 0.1, TICK_MS = 25;
+const K_BPM = 'band_metronome_bpm', K_BEATS = 'band_metronome_beats',
+      K_SUB = 'band_metronome_sub', K_ACC = 'band_metronome_accents';
+
+// ⚠️ `sub` = 每拍拆几步（1/2/3/4）；`accents` = 长度 `beats` 的布尔数组（哪几拍重音）。
+const metro = { on: false, bpm: 80, beats: 4, sub: 1, step: 0, beat: 0, next: 0,
+                accents: [true, false, false, false], timer: null, epoch: 0 };
+// ⚠️ 可读钩子：探针读**实际排出去的拍**（别逐帧采样，见 `_rec_metro_check.py`）。
+window.__metro = { on: false, ticks: [] };
+
+function clampBpm(v) {
+  const n = Math.round(Number(v));
+  // ⚠️ `Number(null)` 是 **0**（不是 NaN）⇒ 不显式挡"没存过 / 空串"，会被当成 0 BPM 再夹到下限 30。
+  if (!Number.isFinite(n) || n <= 0) return 80;
+  return Math.min(BPM_MAX, Math.max(BPM_MIN, n));
+}
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式 */ } }
+function hint(text) { document.getElementById('m-hint').textContent = text; }
+
+/** 一拍一个点（不许当进度条），只点亮当前拍；`-1` = 全灭。只切 class，动画交给 CSS。 */
+function paintDots(i) {
+  document.querySelectorAll('#m-dots i').forEach((d, k) => d.classList.toggle('on', k === i));
+}
+function buildDots() {
+  const host = document.getElementById('m-dots');
+  host.innerHTML = '';
+  for (let i = 0; i < metro.beats; i++) host.appendChild(document.createElement('i'));
+}
+/** 重音花样：每拍一颗可点的拍位键（ON=实心、OFF=描边）。默认只有第 1 拍 on ⇒ 等价录音页的「首拍重音」。 */
+function buildAccents() {
+  const host = document.getElementById('m-acc');
+  host.innerHTML = '';
+  for (let i = 0; i < metro.beats; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'go go-sm';
+    b.dataset.beat = String(i);
+    b.textContent = String(i + 1);
+    host.appendChild(b);
+  }
+  paintAccents();
+}
+function paintAccents() {
+  document.querySelectorAll('#m-acc button').forEach((b) => {
+    const on = !!metro.accents[Number(b.dataset.beat)];
+    b.classList.toggle('go-ghost', !on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+/** 拍号变了 ⇒ `accents` 长度对齐 `beats`（保留原值、新增位默认不重音）。 */
+function resizeAccents() {
+  const next = [];
+  for (let i = 0; i < metro.beats; i++) next.push(!!metro.accents[i]);
+  metro.accents = next;
+}
+
+/** 视觉跟着**已排定的拍**走：延时按音频时钟算（音频时钟准，JS 定时器会漂）。
+    `epoch` 防"停→重开"时，上一轮遗留的 `setTimeout` 点亮错的点。 */
+function queueVisual(beat, when, epoch) {
+  const ac = BAND._ac;
+  const delay = Math.max(0, (when - (ac ? ac.currentTime : 0)) * 1000);
+  setTimeout(() => { if (metro.on && metro.epoch === epoch) paintDots(beat); }, delay);
+}
+
+/** lookahead 调度：**不用裸 `setInterval(60000/bpm)`**（会漂、怕标签页被节流）。细分拍 = 每拍拆 `sub` 步。 */
+function schedule() {
+  const ac = BAND._ac;
+  if (!ac || !metro.on) return;
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  let guard = 0;
+  while (metro.next < ac.currentTime + LOOKAHEAD_S) {
+    const accent = metro.step === 0 && !!metro.accents[metro.beat];
+    const t = BAND.tick(accent, metro.next);            // 按音频时钟排，不"到点才响"
+    if (t === null) { stop(); hint('这台设备出不了声（拿不到音频）。'); return; }
+    window.__metro.ticks.push({ t: metro.next, accent: accent, beat: metro.beat, step: metro.step });
+    if (metro.step === 0) queueVisual(metro.beat, metro.next, metro.epoch);   // 只在小节拍**头一步**点灯
+    metro.step = (metro.step + 1) % metro.sub;
+    if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.beats;
+    metro.next += stepSec;
+    if (++guard > 1000) break;                          // 兜底：万一 `next` 被改小，别死循环
+  }
+}
+
+function start() {
+  if (metro.on) return;
+  metro.beat = 0;
+  metro.step = 0;
+  const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响（顺便把唯一的 `_ac` 建出来）
+  if (t0 === null) { hint('这台设备出不了声（拿不到音频）。'); BAND.toast('这台设备出不了声（拿不到音频）'); return; }
+  metro.on = true;
+  window.__metro.on = true;
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintDots(0);
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;                           // ⚠️ 不是录音页那句 `beat = 1 % beats`（那只在 `sub===1` 时对）
+  if (metro.step === 0) metro.beat = 1 % metro.beats;
+  metro.next = t0 + stepSec;
+  metro.timer = setInterval(schedule, TICK_MS);
+  const btn = document.getElementById('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('go-ghost');
+  hint('点「开始」起拍；「TAP」连点几下可算出速度。');
+}
+
+function stop() {
+  if (metro.timer) clearInterval(metro.timer);
+  metro.timer = null;
+  metro.on = false;
+  window.__metro.on = false;
+  metro.epoch++;
+  paintDots(-1);
+  const btn = document.getElementById('m-toggle');
+  btn.textContent = '开始';
+  btn.classList.add('go-ghost');
+}
+
+/** tap tempo：连点取平均。⚠️ **只在显式点击时改 BPM**（规格），且**距上一次 >2s 就清窗重数**。 */
+let taps = [];
+function tap() {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+  taps.push(now);
+  if (taps.length > 5) taps = taps.slice(-5);
+  if (taps.length < 2) return;
+  let sum = 0;
+  for (let i = 1; i < taps.length; i++) sum += taps[i] - taps[i - 1];
+  const bpm = clampBpm(60000 / (sum / (taps.length - 1)));
+  metro.bpm = bpm;
+  document.getElementById('m-bpm').value = String(bpm);
+  store(K_BPM, String(bpm));
+}
+
+function init() {
+  const bpmInput = document.getElementById('m-bpm');
+  const beatsSel = document.getElementById('m-beats');
+  const subSel = document.getElementById('m-sub');
+
+  metro.bpm = clampBpm(localStorage.getItem(K_BPM));
+  bpmInput.value = String(metro.bpm);
+
+  // ⚠️ 每个新键都要显式校验兜底（`Number(null)===0`；`JSON.parse("")` 会抛）——只认选项里有的值。
+  const beatsOpts = [...beatsSel.options].map((o) => Number(o.value));
+  const savedBeats = Number(localStorage.getItem(K_BEATS));
+  metro.beats = beatsOpts.includes(savedBeats) ? savedBeats : 4;
+  beatsSel.value = String(metro.beats);
+
+  const subOpts = [...subSel.options].map((o) => Number(o.value));
+  const savedSub = Number(localStorage.getItem(K_SUB));
+  metro.sub = subOpts.includes(savedSub) ? savedSub : 1;
+  subSel.value = String(metro.sub);
+
+  let savedAcc = null;
+  try { const j = JSON.parse(localStorage.getItem(K_ACC)); if (Array.isArray(j)) savedAcc = j; } catch (e) { /* 脏数据 */ }
+  metro.accents = [];
+  for (let i = 0; i < metro.beats; i++) {
+    metro.accents.push(savedAcc && typeof savedAcc[i] === 'boolean' ? savedAcc[i] : i === 0);
+  }
+
+  buildDots();
+  buildAccents();
+
+  bpmInput.addEventListener('change', () => {
+    metro.bpm = clampBpm(bpmInput.value);
+    bpmInput.value = String(metro.bpm);                 // 夹过的值写回去，别让人以为 999 生效了
+    store(K_BPM, String(metro.bpm));
+  });
+  beatsSel.addEventListener('change', () => {
+    metro.beats = Number(beatsSel.value) || 4;
+    metro.beat = Math.min(metro.beat, metro.beats - 1);
+    resizeAccents();
+    buildDots();
+    buildAccents();
+    store(K_BEATS, String(metro.beats));
+    store(K_ACC, JSON.stringify(metro.accents));
+  });
+  subSel.addEventListener('change', () => {
+    metro.sub = Number(subSel.value) || 1;
+    metro.step = 0;                                     // 别让旧 step 超过新 sub
+    store(K_SUB, String(metro.sub));
+  });
+  document.getElementById('m-acc').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-beat]');
+    if (!b) return;
+    const i = Number(b.dataset.beat);
+    metro.accents[i] = !metro.accents[i];
+    paintAccents();
+    store(K_ACC, JSON.stringify(metro.accents));
+  });
+  document.getElementById('m-tap').addEventListener('click', tap);
+  document.getElementById('m-toggle').addEventListener('click', () => { if (metro.on) stop(); else start(); });
+
+  // ⚠️ 切到后台时浏览器会挂起音频 ⇒ 节拍器当场哑掉。**明确停掉**（不留"看着在跑却不出声"的假象）。
+  //    与录音页不同：本页没有在录的东西要保护，所以**不**弹"已停"警告；也**不** `suspend()` 共享的 `_ac`（会影响别处）。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && metro.on) stop();
+  });
+}
+
 async function load() {
-  await BAND.renderNav('metronome.html');
+  const me = await BAND.renderNav('metronome.html');
+  if (!me) return;
+  init();
 }
 load();
 </script>

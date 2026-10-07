@@ -32,14 +32,14 @@ Object.assign(BAND, {
     { view: '日常', group: '曲目与录音', href: 'pieces.html',        title: '曲目',    icon: 'music',             roles: NAV_ROLES.all },
     { view: '日常', group: '曲目与录音', href: 'recordings.html',    title: '录音',    icon: 'mic',               roles: NAV_ROLES.all },
     { view: '日常', group: '考勤与请假', href: 'my-leave.html',      title: '我的请假', icon: 'calendar-minus',    roles: NAV_ROLES.member },
-    { view: '日常', group: '考勤与请假', href: 'my-attendance.html', title: '我的考勤', icon: 'calendar-check',    roles: NAV_ROLES.member },
+    { view: '日常', group: '考勤与请假', href: 'my-attendance.html', title: '我的考勤', icon: 'calendar-check',    roles: NAV_ROLES.all },
     { view: '日常', group: '名册',      href: 'members.html',       title: '团员列表', icon: 'users',             roles: NAV_ROLES.all },
     // 「我的」三项 2026-10-06 从**个人栏浮层**搬进菜单（用户拍板"进菜单、删浮层"）：
     // 个人资料仅非荣誉可见（荣誉团员在浮层里本就没有"编辑资料"，免得点进去撞 403）。
     { view: '日常', group: '我的',      href: 'profile.html',       title: '个人资料', icon: 'circle-user-round', roles: NAV_ROLES.member },
     { view: '日常', group: '我的',      href: 'sessions.html',      title: '登录设备', icon: 'laptop',            roles: NAV_ROLES.all },
     { view: '日常', group: '我的',      href: 'updates.html',       title: '更新日志', icon: 'newspaper',         roles: NAV_ROLES.all },
-    // 「工具」：调音器/节拍器本轮只占位（`my-attendance.html` 同）。占位页 = 一句"建设中"。
+    // 「工具」：节拍器本轮只占位。占位页 = 一句"建设中"。
     { view: '日常', group: '工具',      href: 'metronome.html',     title: '节拍器',  icon: 'metronome',         roles: NAV_ROLES.all },
     { view: '日常', group: '工具',      href: 'tuner.html',         title: '调音器',  icon: 'audio-waveform',    roles: NAV_ROLES.all },
     // ---- 管理视图（仅管理角色；见 `canManage`）----

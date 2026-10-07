@@ -1416,6 +1416,23 @@ body.cat-off #oneko { display: none; }
 .metro-dots i:first-child.on { background: var(--cinna); border-color: var(--cinna); }
 #m-hint { margin-top: 10px; }
 
+/* ============ §9.7 工具 · 调音器入口页的竖排目录（`docs/18` §18.5）============
+   八件乐器各一行（**乐器名 + 副标题 + 箭头**），整行可点进对应成品页 `static/tuner/<slug>.html`。
+   ⚠️ 为什么是"竖排目录"而不是九宫格：副标题（弦数 / 定弦）是"找自己那件"的关键信息，格子里塞不下。
+   ⚠️ **成品页不套这套壳**（零依赖单文件、无导航、自带一行登录守卫，见 `docs/18` §18.6 / §18.7）；
+   **入口页才是系统的样子**——侧栏、页头都照常。
+   ⚠️ 这是**新组件**：按规矩要在 `docs/14` §14.6.8 速查表登记一行（`docs/14:2205`）——已记 `交接单` §三 移交。 */
+.tools { display: flex; flex-direction: column; }
+.tools > a {
+  display: flex; align-items: baseline; gap: var(--sp4);
+  padding: var(--sp4) 0; color: inherit; text-decoration: none;
+}
+.tools > a + a { border-top: 1px solid rgba(210, 195, 174, .6); }   /* 与 §10 `.rows` 同一条分隔线色 */
+.tools .nm  { font-size: var(--fs-lead); font-weight: 600; color: var(--deep); }
+.tools .sub { font-size: var(--fs-meta); color: var(--mid); }
+.tools .ar  { margin-left: auto; color: var(--mid); }
+.tools > a:hover .nm { color: var(--wood); }        /* 整行可点的轻反馈（只动名字色，不新增色阶） */
+
 /* ============ §10 手机 ============ */
 /* 手机端形态 = **左侧抽屉**（2026-09-28 定稿，结 `docs/00` 的 T9 / T10），
    规格见 `docs/14` §14.6.4「**手机端（≤720px）**」（细标题栏 / 抽屉 / 分组归属表 / 当前项高亮 /

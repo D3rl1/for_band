@@ -13,6 +13,7 @@ for_band 规格 ↔ 代码一致性检查。
 十三条规则（R1–R5、R10 与 R13 查"文档↔代码"，R6–R9 查"文档体系自己不乱"，R11–R12 查"前端页面的隐式契约"）：
   R1 无标记的表 / 列（含 NOT NULL 约束）/ 端点 → 代码里必须存在
   R2 `🚧 待实现（#N）` → 必须在 `交接单.md` 里找得到 #N
+      （反向漏标只**提示**：`交接单` §二 未办条目在 docs 里找不到 `🚧` 时，报进末尾的"需人扫一眼"）
   R3 `❌ 不做` / `⏸ 暂缓` → 代码里不许存在；端点的路径不许被别的文档引用（取消的功能常被当"先例"引用）
   R4 数字卫生 → 文档正文里不许写死会漂的测试计数
   R5 反向：Java 里有的端点，文档端点清单里必须有（实现跑到规格前面 = 漏回补）
@@ -772,5 +773,35 @@ if soft_hits:
     print("   （这类词在散文里合法，所以**不算失败**；真没交接的，补 `🚧 待实现（#N）`）")
     for h in soft_hits:
         print(f"   · {h}")
+
+# ---------------------------------------------------------------- R2 反向（只提示，不判罚）——`#96`
+# R2 原先只单向：docs 挂了 `🚧 待实现（#N）` → 交接单里必须有 #N。
+# 反过来的漏标（交接单 §二 开了条目、规格 doc 却忘了挂 `🚧`）以前没人管 → 补这一条。
+# ⚠️ **只提示**：§二 里有本来就无需挂标记的条目（纯规格条、实现方自查发现的 bug），
+# 做成 fail 会天天爆红、最后被无视（见文件头「假阳性会杀死闸门」）。
+_doc_marked_ids = set()
+for _f, _l, _kind, _payload, _raw, _src in marked_lines:
+    if _kind == "do":
+        _doc_marked_ids |= set(re.findall(r"#(\d+)", _payload))
+_open_second = []
+if HANDOVER.exists():
+    _in2 = False
+    for _l in HANDOVER.read_text(encoding="utf-8").splitlines():
+        if _l.startswith("## 二"):
+            _in2 = True
+            continue
+        if _in2 and _l.startswith("## "):
+            break
+        _m = re.match(r"\|\s*#(\d+)\s*\|", _l) if _in2 else None
+        if not _m:
+            continue
+        _cells = [c.strip() for c in _l.strip().strip("|").split("|")]
+        if len(_cells) >= 5 and "✅" not in _cells[-1]:
+            _open_second.append(_m.group(1))
+_unmarked = [n for n in _open_second if n not in _doc_marked_ids]
+if _unmarked:
+    print()
+    print(f"ℹ️ §二 有 {len(_unmarked)} 条未办、但 docs 里找不到 `🚧 待实现（#N）` 标记（R2 反向，只提示）：")
+    print("   · " + "、".join(f"#{n}" for n in _unmarked))
 
 sys.exit(1 if fails else 0)
