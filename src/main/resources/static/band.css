@@ -643,13 +643,13 @@ a.av-name:hover { color: var(--deep); text-decoration: underline; }
 }
 .fview-cls { align-self: flex-end; flex: 0 0 auto; }   /* 关闭按钮：卡内右上角 */
 .fview-img { max-width: 100%; height: auto; border-radius: 10px; }
-.fview-frame { width: 100%; flex: 1 1 auto; min-height: 60vh; border: 0; border-radius: 10px;
-               background: var(--silk); }
 .fview-audio { width: 100%; }
-/* iOS Safari 上 blob 的 PDF 常常空白 ⇒ 那个"在新标签打开"的退路（`app.js` 里只有 PDF 会给） */
-.fview-alt { font-size: 13px; color: var(--mid); text-align: center; text-decoration: none; }
-.fview-alt:hover { color: var(--deep); }
-.fview-dl { align-self: center; font-size: 15px; color: var(--deep); }
+/* 手机端**不可内联渲染**的附件（PDF / PPT / Word）：预览层里给**真链接**（后端签名 URL），
+   交给浏览器自己的下载器 / 查看器 —— 安卓系浏览器（夸克 / 小米 / 微信）**没有 PDF 渲染器**，
+   `iframe src=blob:` 白屏、"新标签打开 blob"也点了没反应（`band-media.js` `previewFile`）。
+   ⚠️ 这里**曾是** `.fview-frame`（iframe）与 `.fview-alt`（blob 退路链接）—— 2026-10-07 用户真机实报，已删。 */
+.fview-name { font-size: 14px; color: var(--mid); text-align: center; word-break: break-all; }
+.fview-links { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
 
 /* ---- 上任声部长的留言（`docs/14` §14.6.4「上任声部长的留言」，2026-09-30，`交接单 #111`）----
    美术 = 「**一封压在谱架上的信**」，**全部用项目已有物料**：

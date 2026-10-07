@@ -85,7 +85,7 @@ async function load() {
     open.className = 'go go-ghost go-sm';
     open.type = 'button';
     open.textContent = a.kind === 'SCORE' ? '查看' : '试听';
-    open.addEventListener('click', () => BAND.openFile(a.fileId));
+    open.addEventListener('click', () => BAND.openFile(a.fileId, a.originalName, a.contentType));
     row.append(label, name, open);
     if (canEdit) {
       const del = document.createElement('button');

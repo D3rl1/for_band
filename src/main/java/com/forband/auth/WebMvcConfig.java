@@ -27,7 +27,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/login", "/api/health");
+                // "/api/files/*/view"（单段通配）：带票据的**文件取用**端点，给**手机浏览器**用——
+                // 它做不了"导航/下载也带 Authorization 头"，只能靠 URL 里的票据（FileTicketService.verify
+                // 全权把关，无票/伪造/跨文件/过期一律 401）。**不**匹配 /api/files/{id} 与 /api/files，
+                // 那两条仍需头部鉴权。详见 docs/08 §8.5。
+                .excludePathPatterns("/api/auth/login", "/api/health", "/api/files/*/view");
     }
 
     @Override

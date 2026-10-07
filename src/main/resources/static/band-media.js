@@ -129,6 +129,30 @@ Object.assign(BAND, {
     return URL.createObjectURL(await this.fileBlob(fileId));
   },
 
+  /**
+   * 取文件的**签名 URL**（手机端"打开 / 下载"谱子用）：`{ view, download, expiresAt }`。
+   * ⚠️ **必须带 `Authorization` 头**——这条要鉴权（荣誉团员在这里就 403）；只有拿到的 `view` 那条
+   * 才免头（票据即凭证）。返回的是**相对 URL**（`/api/files/{id}/view?t=…`），同源，直接给 `<a href>` 即可。
+   * ⭐ 票据**按天分桶**（后端 `FileTicketService`）⇒ 同一天内 URL 一字不变 ⇒ 浏览器缓存生效，**反复打开不重复下载**。
+   */
+  async fileTicket(fileId) {
+    const res = await fetch('/api/files/' + fileId + '/ticket', {
+      headers: { Authorization: 'Bearer ' + this.token() },
+    });
+    const envelope = await res.json().catch(() => ({ code: 10003, message: 'HTTP ' + res.status }));
+    if (envelope.code !== 0) {
+      this.toast(envelope.message || ('错误码 ' + envelope.code));
+      throw envelope;
+    }
+    return envelope.data;
+  },
+
+  /** 浏览器**不能内联渲染**的类型（PDF / PPT / Word…）—— 判据是"不是图片、也不是音频"。
+      类型未知（空串）也算：宁可给签名链接，也别再退回会白屏的 `iframe`（见 `previewFile`）。 */
+  nonInline(type) {
+    return !/^(image|audio)\//.test(type || '');
+  },
+
   /** 打开附件（谱子 / 音频；`piece-detail.html` 的「查看 / 试听」）。
       ⚠️ **手机与桌面走两条路**（`docs/08` §8.5，`#113`）——
       起因：手机上报"点了毫无反应"。根因 = 原来那句 `window.open(await fileBlobUrl(id))`：
@@ -136,10 +160,11 @@ Object.assign(BAND, {
       手机浏览器 / 弹窗拦截器**直接把它拦掉**（返回 `null`），而代码**不校验返回值** ⇒ **静默失败**。
       ⭐ **手机走页面内预览层**（完全绕开弹窗拦截，与公告 / 生日是同一族形态）；
       桌面仍开新标签，但**先把窗同步开出来**（还在手势里）再填内容，且**校验 `null`**。
-      ⚠️ 这个 bug **在桌面上复现不出来**（桌面拦截宽松）——桌面测通 ≠ 修好，必须真机验。 */
-  async openFile(fileId) {
+      ⚠️ 这个 bug **在桌面上复现不出来**（桌面拦截宽松）——桌面测通 ≠ 修好，必须真机验。
+      `name` / `type` 由调用方（`AttachmentView`）给：手机端要拿 `type` 判"能不能内联渲染"。 */
+  async openFile(fileId, name, type) {
     if (this.isMobile()) {
-      return this.previewFile(fileId);
+      return this.previewFile(fileId, name, type);
     }
     // ⚠️ **同步**开窗：这一行必须在任何 `await` **之前**，否则又脱离了用户手势（就是原来那个 bug）。
     const w = window.open('', '_blank');
@@ -154,18 +179,32 @@ Object.assign(BAND, {
     }
   },
 
-  /** 页面内全屏预览层（手机端走它，`#113`）：图片 `<img>` / PDF `<iframe>` / 音频 `<audio>`，
-      其它类型给一个下载链接兜底。**完全绕开弹窗拦截**。
-      关闭：关闭按钮 / `Esc` / 点遮罩（与「更新公告弹层」同一套）；`prefers-reduced-motion` 不播入场。 */
-  async previewFile(fileId) {
-    let blob;
-    try {
-      blob = await this.fileBlob(fileId);
-    } catch (e) {
-      return;   // toast 已弹
+  /**
+   * 页面内全屏预览层（手机端走它，`#113`）：
+   * · **图片 / 音频** → 仍用 blob（`<img>` / `<audio>`，手机上本来就是好的）；
+   * · **PDF 及其它不可内联渲染的类型** → **不再塞 `iframe`**，改给两个**真链接**（「打开」/「下载」），
+   *   指向后端**签名 URL**（{@link fileTicket}）。
+   * ⚠️ 为什么 PDF 必须换掉 blob（**2026-10-07 用户实报**）：安卓系浏览器（夸克 / 小米 / 微信）
+   *   **没有内置 PDF 渲染器**，`<iframe src=blob:>` 一片空白、"在新标签打开"退路**点了也没反应**。
+   *   签名 URL 是**普通同源 URL**，交给浏览器自己的下载器 / 查看器 —— 夸克、小米都可用。
+   *   `#113` 的 blob 方案**从没在真机验过**，这次才暴露。
+   * **完全绕开弹窗拦截**。关闭：关闭按钮 / `Esc` / 点遮罩；`prefers-reduced-motion` 不播入场。 */
+  async previewFile(fileId, name, type) {
+    let blob = null;
+    if (!type) {                          // 老调用点 / 探针不带类型 ⇒ 先取 blob 探类型（此情形多一次下载）
+      try { blob = await this.fileBlob(fileId); } catch (e) { return; }
+      type = blob.type || '';
     }
-    const url = URL.createObjectURL(blob);
-    const type = blob.type || '';
+    let url = null;
+    let ticket = null;
+    if (this.nonInline(type)) {
+      try { ticket = await this.fileTicket(fileId); } catch (e) { return; }   // toast 已弹
+    } else {
+      if (!blob) {
+        try { blob = await this.fileBlob(fileId); } catch (e) { return; }
+      }
+      url = URL.createObjectURL(blob);
+    }
     const reduced = window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const mask = document.createElement('div');
@@ -180,40 +219,44 @@ Object.assign(BAND, {
     cls.type = 'button';
     cls.textContent = '关闭';
     const parts = [cls];
-    let media;
+    let media = null;
     if (type.startsWith('image/')) {
       media = document.createElement('img');
       media.className = 'fview-img';
       media.alt = '';
       media.src = url;
-    } else if (type === 'application/pdf') {
-      media = document.createElement('iframe');
-      media.className = 'fview-frame';
-      media.title = 'PDF 预览';
-      media.src = url;
-      // ⚠️ **iOS Safari 上 blob 的 PDF 经常是一片空白**（`docs/08` §8.5 提过这条）⇒
-      //    给一个"在新标签打开"当退路。它是**直接点击**打开的（落在手势里），不会被拦。
-      const alt = document.createElement('a');
-      alt.className = 'fview-alt';
-      alt.href = url;
-      alt.target = '_blank';
-      alt.rel = 'noopener';
-      alt.textContent = '上面是空白？点这里在新标签打开';
-      parts.push(media, alt);
+      parts.push(media);
     } else if (type.startsWith('audio/')) {
       media = document.createElement('audio');
       media.className = 'fview-audio';
       media.controls = true;
       media.src = url;
+      parts.push(media);
     } else {
-      // 白名单外的类型（PPT / Word 之类）：给一个下载链接，**别静默**
-      media = document.createElement('a');
-      media.className = 'fview-dl';
-      media.href = url;
-      media.download = '';
-      media.textContent = '下载这个文件';
+      // PDF / PPT / Word / 类型未知：给**真链接** —— 浏览器自己去开 / 去存，不经过 blob。
+      // 「打开」开新标签（真链接、落在用户手势里，不会被拦）；「下载」带 `download` + 服务端 attachment 双保险。
+      if (name) {
+        const title = document.createElement('div');
+        title.className = 'fview-name';
+        title.textContent = name;
+        parts.push(title);
+      }
+      const openA = document.createElement('a');
+      openA.className = 'go go-sm fview-dl';
+      openA.href = ticket.view;
+      openA.target = '_blank';
+      openA.rel = 'noopener';
+      openA.textContent = '打开';
+      const dlA = document.createElement('a');
+      dlA.className = 'go go-sm go-ghost fview-dl';
+      dlA.href = ticket.download;
+      dlA.download = name || '';
+      dlA.textContent = '下载';
+      const links = document.createElement('div');
+      links.className = 'fview-links';
+      links.append(openA, dlA);
+      parts.push(links);
     }
-    if (parts.length === 1) parts.push(media);
     card.append(...parts);
     mask.appendChild(card);
 
@@ -222,10 +265,10 @@ Object.assign(BAND, {
       if (closed) return;
       closed = true;
       document.removeEventListener('keydown', onKey);
-      if (media.tagName === 'AUDIO') {            // 关掉预览层就把声音停掉，别让它在后台响
+      if (media && media.tagName === 'AUDIO') {   // 关掉预览层就把声音停掉，别让它在后台响
         try { media.pause(); } catch (e) { /* 无所谓 */ }
       }
-      URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url);
       mask.remove();
     };
     function onKey(e) { if (e.key === 'Escape') shut(); }

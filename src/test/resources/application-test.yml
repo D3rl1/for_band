@@ -7,3 +7,6 @@ band:
   admin:
     account: test-admin
     password: test-admin-pw
+  # 固定测试密钥：让票据在同一测试里跨"取票→用票"稳定（生产不放明文，见 FileTicketService）
+  file-ticket:
+    secret: test-file-ticket-secret
