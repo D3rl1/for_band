@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>曲目 · 乐团管理系统</title>
+<title>曲谱库 · 乐团管理系统</title>
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
@@ -19,114 +19,277 @@
 <body>
 <div id="navbar"></div>
 
-<!-- 新建 / 编辑共用一块表单：点「编辑」会把内容填进来、按钮变成「保存修改」（docs/06 §6.3 的增删改按角色显示） -->
-<div class="cell mb-4" id="edit-box" hidden>
-  <div class="lab" id="edit-title">新建曲目</div>
-  <div class="row g-2">
-    <div class="col-12 col-md-4"><input id="f-title" class="w-100" maxlength="64" placeholder="曲名*"></div>
-    <div class="col-6 col-md-2"><input id="f-composer" class="w-100" maxlength="64" placeholder="作曲"></div>
-    <div class="col-6 col-md-2"><input id="f-arranger" class="w-100" maxlength="64" placeholder="编曲 / 移植"></div>
-    <div class="col-6 col-md-2"><input id="f-category" class="w-100" maxlength="32" placeholder="体裁"></div>
-    <div class="col-6 col-md-2">
-      <select id="f-status" class="w-100">
-        <option value="CANDIDATE">备选</option>
-        <option value="REHEARSING">在练</option>
-        <option value="READY">已成熟</option>
-        <option value="PAUSED">已停排</option>
-      </select>
-    </div>
-    <div class="col-6 col-md-2"><input id="f-difficulty" type="number" min="1" max="5" class="w-100" placeholder="难度 1~5"></div>
-    <div class="col-12"><input id="f-note" class="w-100" placeholder="备注"></div>
-    <div class="col-12 d-flex gap-2">
-      <button id="save" class="go go-sm" type="button">保存</button>
-      <button id="cancel" class="go go-ghost go-sm" type="button">取消</button>
+<!-- ══ 外观控件行（活动页 + 演出页 + 录音页 + 曲谱两页，docs/14 §14.6.2b）══
+     今天 + 配色（popover）/ 深浅两个图标按钮。键沿用 `band.palette` / `band.theme`（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**：色块底色走 band.css 的 `.seedswatch[data-p="…"]`。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
     </div>
   </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h2 class="mb-0">曲目库</h2>
-  <div class="d-flex gap-2">
-    <select id="q-status" class="w-auto">
-      <option value="">全部状态</option>
-      <option value="CANDIDATE">备选</option>
-      <option value="REHEARSING">在练</option>
-      <option value="READY">已成熟</option>
-      <option value="PAUSED">已停排</option>
-    </select>
-    <input id="q-keyword" placeholder="搜曲名 / 作曲">
-    <button id="new" class="go go-sm" type="button" hidden>新建</button>
+<div class="ev-lhead">
+  <span class="sec"><h2>曲谱库</h2><span class="sub" id="list-count"></span></span>
+  <button id="new" class="go go-sm" type="button" hidden>新建曲谱</button>
+</div>
+
+<!-- 状态药丸（筛选**走后端**，与原 `#q-status` 下拉同一行为）+ 搜索框 -->
+<div class="ev-filters" id="filters" role="group" aria-label="按状态筛选"></div>
+<label class="pc-srch">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+  <input id="q" maxlength="64" placeholder="搜曲名 / 作曲" aria-label="搜曲名或作曲">
+</label>
+
+<!-- 按状态分组的列表（`renderList` 灌）：一组一个 `.ev-group`，行是 `.pc-crow` 套整行 `<a class="pc-row">` -->
+<div id="groups"></div>
+
+<div class="ev-empty" id="empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+  </span>
+  <b>还没有曲谱</b>
+  <span>「想排的备选」也是重要的一半，先建一条吧</span>
+</div>
+
+<!-- 新建 / 编辑曲谱：一层居中弹层（列表页这一份管新建 + 编辑；详情页自带另一份只管编辑）。
+     ⚠️ 增删改只对管理员 / 团长 / 指挥开放（docs/06 §6.3），其他人在曲谱库里只读。 -->
+<div class="pc-mo" id="mo-edit" role="dialog" aria-modal="true" aria-label="新建或编辑曲谱">
+  <div class="pc-mocard">
+    <h3 id="mo-title">新建曲谱</h3>
+    <p class="pc-mohint">增删改只对管理员 / 团长 / 指挥开放；其他人在曲谱库里只读。</p>
+    <div class="pc-mogrid">
+      <div class="f wide"><label for="f-title">曲名 *</label><input id="f-title" maxlength="64" placeholder="例如：《梁祝》协奏曲"></div>
+      <div class="f"><label for="f-composer">作曲</label><input id="f-composer" maxlength="64"></div>
+      <div class="f"><label for="f-arranger">编曲 / 移植</label><input id="f-arranger" maxlength="64"></div>
+      <div class="f"><label for="f-category">体裁</label><input id="f-category" maxlength="32" placeholder="合奏 / 协奏 …"></div>
+      <div class="f"><label for="f-difficulty">难度（1~5）</label><input id="f-difficulty" type="number" min="1" max="5"></div>
+      <div class="f"><label for="f-status">状态</label>
+        <select id="f-status">
+          <option value="CANDIDATE">备选</option>
+          <option value="REHEARSING">在练</option>
+          <option value="READY">已成熟</option>
+          <option value="PAUSED">已停排</option>
+        </select>
+      </div>
+      <div class="f wide"><label for="f-note">备注</label><textarea id="f-note" rows="3"></textarea></div>
+    </div>
+    <div class="pc-mofoot">
+      <button id="mo-cancel" class="go go-ghost go-sm" type="button">取消</button>
+      <button id="mo-save" class="go go-sm" type="button">保存</button>
+    </div>
   </div>
 </div>
-<table class="tb" id="pieces-table">
-  <thead><tr><th>曲名</th><th>作曲</th><th>体裁</th><th>状态</th><th>备注</th><th class="act"></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<p id="empty" class="py-4" hidden>还没有曲目——「想排的备选」也是重要的一半，先建一条吧</p>
 
 <script>
 'use strict';
 
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+/* 分组顺序：在练（最活跃）→ 备选（想排的）→ 已成熟 → 已停排（异常，收尾）；空组不画（样张同一口径） */
+const GROUPS = [
+  ['REHEARSING', '在练'],
+  ['CANDIDATE', '备选'],
+  ['READY', '已成熟'],
+  ['PAUSED', '已停排'],
+];
 let me = null;
+let canEdit = false;
 let editingId = null;
+let filter = 'ALL';
+
+/* 小工具：建元素（值一律走 textContent，不拼 innerHTML） */
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+/* 曲牌印取首字：《梁祝》协奏曲 → 梁（先剥掉书名号 / 引号这类前缀；
+   ⚠️ 剥完若一个可用字都不剩（曲名只有符号），退回「曲」，不留空印） */
+function firstChar(t) {
+  const s = String(t || '').replace(/^[\s《》〈〉「」『』【】\[\]"'“”‘’]+/, '');
+  const m = s.match(/[一-龥A-Za-z0-9]/);
+  return m ? m[0] : '曲';
+}
+
+function diffDots(n) {
+  n = Math.max(0, Math.min(5, Number(n) || 0));
+  if (!n) return null;
+  const wrap = el('span', 'pc-diff');
+  wrap.setAttribute('aria-label', `难度 ${n} / 5`);
+  for (let i = 1; i <= 5; i++) wrap.appendChild(el('i', i <= n ? 'on' : null));
+  return wrap;
+}
 
 async function load() {
   me = await BAND.renderNav('pieces.html');
   if (!me) return;
-  // 只有管理员 / 团长 / 指挥能增删改（docs/02 §2.3）；其他人只读
-  const canEdit = ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
+  canEdit = ['ADMIN', 'LEADER', 'CONDUCTOR'].includes(me.role);
   document.getElementById('new').hidden = !canEdit;
+  renderFilters();          // ⚠️ 每轮都重画（按下态跟着 `filter` 走）——与活动页同一写法
 
-  const status = document.getElementById('q-status').value;
-  const keyword = document.getElementById('q-keyword').value.trim();
+  const status = filter === 'ALL' ? '' : filter;
+  const keyword = document.getElementById('q').value.trim();
   const d = await BAND.must(`/api/pieces?size=50&status=${encodeURIComponent(status)}`
     + `&keyword=${encodeURIComponent(keyword)}`);
-  const tbody = document.getElementById('rows');
-  tbody.innerHTML = '';
-  document.getElementById('empty').hidden = d.list.length > 0;
-  for (const p of d.list) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td class="act"></td>';
-    const link = document.createElement('a');
-    link.href = `/piece-detail.html?id=${p.id}`;
-    link.textContent = p.title;
-    tr.children[0].appendChild(link);
-    tr.children[1].textContent = p.composer || '';
-    tr.children[2].textContent = p.category || '';
-    tr.querySelector('.chip').textContent = p.statusLabel;
-    tr.children[4].textContent = p.note || '';
-    if (canEdit) {
-      const btn = document.createElement('button');
-      btn.className = 'go go-ghost go-sm';
-      btn.type = 'button';
-      btn.textContent = '编辑';
-      btn.addEventListener('click', () => openEditor(p));
-      tr.children[5].appendChild(btn);
-    }
-    tbody.appendChild(tr);
-  }
-  BAND.alive(document.getElementById('pieces-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  renderList(d.list || []);
+  BAND.alive(document.getElementById('groups'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
-function openEditor(piece) {
-  editingId = piece ? piece.id : null;
-  document.getElementById('edit-box').hidden = false;
-  document.getElementById('edit-title').textContent = piece ? `编辑：${piece.title}` : '新建曲目';
-  document.getElementById('f-title').value = piece ? piece.title : '';
-  document.getElementById('f-composer').value = piece ? (piece.composer || '') : '';
-  document.getElementById('f-arranger').value = piece ? (piece.arranger || '') : '';
-  document.getElementById('f-category').value = piece ? (piece.category || '') : '';
-  document.getElementById('f-status').value = piece ? piece.status : 'CANDIDATE';
-  document.getElementById('f-difficulty').value = piece && piece.difficulty ? piece.difficulty : '';
-  document.getElementById('f-note').value = piece ? (piece.note || '') : '';
+/* ---------- 状态药丸（筛选走后端，与原下拉同一行为） ---------- */
+function renderFilters() {
+  const defs = [['ALL', '全部']].concat(GROUPS);
+  const host = document.getElementById('filters');
+  host.innerHTML = '';
+  for (const [k, lab] of defs) {
+    const b = el('button', 'fchip', lab);
+    b.type = 'button';
+    b.dataset.st = k;
+    b.setAttribute('aria-pressed', String(filter === k));
+    b.addEventListener('click', () => {
+      if (filter === k) return;
+      filter = k;
+      load();
+    });
+    host.appendChild(b);
+  }
+}
+
+/* ---------- 按状态分组 ---------- */
+function renderList(list) {
+  const host = document.getElementById('groups');
+  document.getElementById('empty').classList.toggle('show', list.length === 0);
+  const parts = GROUPS.map(([k, lab]) => [lab, list.filter((p) => p.status === k).length]);
+  document.getElementById('list-count').textContent =
+    `共 ${list.length} 首 · ` + parts.filter((x) => x[1]).map((x) => `${x[0]} ${x[1]}`).join(' · ');
+  host.innerHTML = '';
+  for (const [k, lab] of GROUPS) {
+    const items = list.filter((p) => p.status === k);
+    if (!items.length) continue;
+    const sec = el('section', 'ev-group');
+    const gh = el('div', 'g-h');
+    gh.appendChild(el('span', 't', lab));
+    gh.appendChild(el('span', 'ln'));
+    gh.appendChild(el('span', 'c', `${items.length} 首`));
+    sec.appendChild(gh);
+    const rows = el('div', 'ev-rows');
+    for (const p of items) rows.appendChild(pcRow(p));
+    sec.appendChild(rows);
+    host.appendChild(sec);
+  }
+}
+
+/* ---------- 一行：`<div class="pc-crow">` 套整行 `<a class="pc-row">` + 行内「编辑」按钮 ----------
+   ⚠️ 与演出页同一个形态分叉：`<button>` 不能放进 `<a>`（HTML 不允许交互内容套交互内容）⇒
+   整行仍是真 `<a>`（中键新标签 / 无 JS 也能点），按钮做**兄弟节点**绝对定位在卡内。
+   ⚠️ 状态**常态不挂标签**（组头已经写着在练 / 备选…）：只有「已停排」挂一枚朱砂签 + 行转灰。 */
+function pcRow(p) {
+  const paused = p.status === 'PAUSED';
+  const wrap = el('div', 'pc-crow');
+  const a = el('a', 'pc-row' + (paused ? ' is-paused' : ''));
+  a.href = `/piece-detail.html?id=${p.id}`;
+
+  const seal = el('span', 'seal');
+  seal.appendChild(el('span', 'ch', firstChar(p.title)));
+  if (p.category) seal.appendChild(el('span', 'cat', p.category));
+  a.appendChild(seal);
+
+  const body = el('span', 'body');
+  const title = el('span', 'title');
+  title.appendChild(el('b', null, p.title));
+  body.appendChild(title);
+  const m = el('span', 'meta');
+  const bits = [p.composer ? `作曲 ${p.composer}` : null, p.arranger ? `编曲 ${p.arranger}` : null].filter(Boolean);
+  if (bits.length) {
+    bits.forEach((v, i) => {
+      if (i) m.appendChild(el('span', 'sep', '·'));
+      m.appendChild(document.createTextNode(v));
+    });
+  } else {
+    m.appendChild(el('span', null, '作曲信息待补'));
+  }
+  body.appendChild(m);
+  const dots = diffDots(p.difficulty);
+  if (dots) {
+    const sub = el('span', 'sub');
+    sub.appendChild(dots);
+    body.appendChild(sub);
+  }
+  a.appendChild(body);
+
+  const st = el('span', 'st');
+  if (paused) {
+    const tag = el('span', 'ev-tag cancel', '已停排');
+    st.appendChild(tag);
+  }
+  a.appendChild(st);
+
+  const chev = el('span', 'chev');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 5l7 7-7 7"/></svg>';
+  a.appendChild(chev);
+  wrap.appendChild(a);
+
+  if (canEdit) {
+    const btn = el('button', 'pc-row-edit', '编辑');
+    btn.type = 'button';
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openEditor(p); });
+    wrap.appendChild(btn);
+    wrap.classList.add('has-edit');
+  }
+  return wrap;
+}
+
+/* ---------- 新建 / 编辑弹层 ---------- */
+function openEditor(p) {
+  editingId = p ? p.id : null;
+  document.getElementById('mo-title').textContent = p ? `编辑：${p.title}` : '新建曲谱';
+  document.getElementById('f-title').value = p ? p.title : '';
+  document.getElementById('f-composer').value = p ? (p.composer || '') : '';
+  document.getElementById('f-arranger').value = p ? (p.arranger || '') : '';
+  document.getElementById('f-category').value = p ? (p.category || '') : '';
+  document.getElementById('f-difficulty').value = p && p.difficulty ? p.difficulty : '';
+  document.getElementById('f-status').value = p ? p.status : 'CANDIDATE';
+  document.getElementById('f-note').value = p ? (p.note || '') : '';
+  document.getElementById('mo-edit').classList.add('open');
   document.getElementById('f-title').focus();
 }
+function closeEditor() {
+  document.getElementById('mo-edit').classList.remove('open');
+}
 
+/* ---------- 页头「今天」 ---------- */
+function renderToday() {
+  const d = new Date();
+  document.getElementById('today-txt').textContent =
+    `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ---------- 接线 ---------- */
 document.getElementById('new').addEventListener('click', () => openEditor(null));
-document.getElementById('cancel').addEventListener('click', () => {
-  document.getElementById('edit-box').hidden = true;
+document.getElementById('mo-cancel').addEventListener('click', closeEditor);
+document.getElementById('mo-edit').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeEditor();          // 点遮罩关（点卡里不关）
 });
-document.getElementById('save').addEventListener('click', async () => {
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEditor(); });
+document.getElementById('mo-save').addEventListener('click', async () => {
   const body = {
     title: document.getElementById('f-title').value.trim(),
     composer: document.getElementById('f-composer').value.trim() || null,
@@ -146,13 +309,91 @@ document.getElementById('save').addEventListener('click', async () => {
   } else {
     await BAND.must('/api/pieces', { method: 'POST', body });
   }
-  document.getElementById('edit-box').hidden = true;
+  closeEditor();
   BAND.toast('已保存', 'success');
   load();
 });
+document.getElementById('q').addEventListener('input', load);
 
-document.getElementById('q-status').addEventListener('change', load);
-document.getElementById('q-keyword').addEventListener('input', load);
+/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = document.getElementById('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = document.getElementById('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = document.getElementById('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = document.getElementById('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  // 门控类只在这段时间挂上 ⇒ 「墨洇」不会顺手接管**跳页过渡**（见 band.css §1b 的注释）
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
+  }
+}
+function openPop(o) {
+  const pop = document.getElementById('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  document.getElementById('theme-btn').setAttribute('aria-expanded', String(o));
+}
+document.getElementById('theme-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPop(document.getElementById('theme-pop').hidden);
+});
+document.getElementById('night-btn').addEventListener('click', toggleNight);
+document.getElementById('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+renderToday();
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

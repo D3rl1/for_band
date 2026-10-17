@@ -16,135 +16,262 @@
 <script src="/band-shell.js"></script>
 <script src="/band-welcome.js"></script>
 </head>
-<body>
+<body data-rcscreen="list">
 <div id="navbar"></div>
 
-<!-- 上传（荣誉团员看不到这一块：他们只读，服务端也会 403） -->
-<div class="cell mb-4" id="upload-box" hidden>
-  <div class="lab">传一段练习录音</div>
-  <p class="chip" id="rec-hint">手机上可以直接录（3 分钟以内），也可以选机器里已有的录音文件。传上来之后声部长可以点评。</p>
-  <!-- ⭐ **两个入口是分开的、各自带文字的控件**（`docs/08` §8.4）：**这里曾经是一个裸的
-       `<input type="file" accept="audio/*">` 挤在这一行里** —— 无标签、没人注意得到，
-       点下去还会被系统送去**录音机 App**（`audio/*` 是通配，安卓按"谁能产出音频"匹配，录音机正好声明了它；
-       ⚠️ **不是 `capture` 的锅**，本仓从来没写过，**加了才会强制录音**）。
-       ⚠️ `accept` 必须列**显式扩展名 + 具体 MIME**，不得用 `audio/*`、不得加 `capture`。
-       ⚠️ 那个 input 是**视觉隐藏**的（`visually-hidden`，不是 `display:none`），由上面那个带 `for` 的
-       label 触发 —— 这样键盘 / 读屏也点得到，且页面上不再有"没人知道的裸控件"。
-       ⚠️ **挑完就直接上传，没有第二个「上传」按钮**：多一跳的代价是"选了没传、却以为传了"。 -->
-  <div class="row g-2">
-    <div class="col-12 col-md-3"><input id="u-title" class="w-100" maxlength="64" placeholder="标题（如：快板那一段）"></div>
-    <div class="col-12 col-md-3"><select id="u-piece" class="w-100"><option value="">不关联曲目</option></select></div>
-    <div class="col-12 col-md-3"><button id="u-record" class="go go-sm w-100" type="button">页面内录音</button></div>
-    <div class="col-12 col-md-3">
-      <label class="go go-ghost go-sm w-100 text-center" for="u-file">选择本机文件</label>
+<!-- ══ 外观控件行（与活动页 / 演出页同一套，docs/14 §14.6.2b）══════════════════════════════
+     今天 + 配色（popover）/ 深浅两个图标按钮。切一次 ⇒ 配色 token 全站生效（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**（AGENTS.md）：色块底色走 band.css 的 `.seedswatch[data-p="…"]`。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 屏 1：录音墙 ═══════════ -->
+<section class="rc-screen" data-rcscreen="list">
+  <div class="ev-lhead">
+    <div class="sec"><h2>录音墙</h2><span class="sub" id="rc-count"></span></div>
+    <div class="rc-head-tools">
+      <div class="ev-filters" id="rc-scope" role="group" aria-label="范围">
+        <button class="fchip" type="button" data-scope="mine" aria-pressed="true">只看我的</button>
+        <button class="fchip" type="button" data-scope="all"  aria-pressed="false">我能听到的全部</button>
+      </div>
+      <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="go-record">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+        录一段
+      </button>
+    </div>
+  </div>
+
+  <div class="rc-recs" id="list"></div>
+
+  <div class="ev-empty" id="empty">
+    <span class="ic">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+    </span>
+    <b>还没有录音</b>
+    <span>手机对着吹一段传上来，让声部长听听</span>
+  </div>
+</section>
+
+<!-- ═══════════ 屏 2：录音台 ═══════════ -->
+<section class="rc-screen" data-rcscreen="detail">
+  <span class="rc-dback" id="dback" role="button" tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    返回录音墙
+  </span>
+
+  <!-- 卡 1：录一段（荣誉团员看不到这一块：他们只读，服务端也会 403） -->
+  <div class="rc-card" id="upload-box" hidden>
+    <h2>录一段</h2>
+    <p class="rc-hint" id="rec-hint">两条路，自己挑：对着手机现录，或者把本机已经录好的文件传上来。传上来之后声部长可以点评。</p>
+
+    <div class="rc-f2">
+      <div class="rc-f"><label for="u-title">标题</label><input id="u-title" maxlength="64" placeholder="如：快板那一段"></div>
+      <div class="rc-f"><label for="u-piece">关联曲目（可选）</label><select id="u-piece"><option value="">不关联曲目</option></select></div>
+    </div>
+
+    <!-- ⭐ **两个入口是分开的、各自带文字的控件**（docs/08 §8.4）：**这里曾经是一个裸的
+         `<input type="file" accept="audio/*">`** —— 无标签、没人注意得到，点下去还会被系统送去**录音机 App**
+         （`audio/*` 是通配，安卓按"谁能产出音频"匹配，录音机正好声明了它；⚠️ **不是 `capture` 的锅**，本仓从没写过）。
+         ⚠️ `accept` 必须列**显式扩展名 + 具体 MIME**，不得用 `audio/*`、不得加 `capture`。
+         ⚠️ 那个 input 是**视觉隐藏**的（`visually-hidden`，不是 `display:none`），由下面那个**带 `for` 的 `<label>`**
+         触发 —— 键盘 / 读屏也点得到，且页面上不再有"没人知道的裸控件"。
+         ⚠️ **挑完就直接上传，没有第二个「上传」按钮**：多一跳的代价是"选了没传、却以为传了"。 -->
+    <div class="rc-picks">
+      <button class="rc-pick" type="button" id="pick-record">
+        <span class="rc-pick-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <span class="rc-pick-tx">
+          <span class="rc-pick-t">页面内录音</span>
+          <span class="rc-pick-s">点一下就开始，最长 3 分钟</span>
+        </span>
+      </button>
+      <label class="rc-pick" for="u-file">
+        <span class="rc-pick-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7a2 2 0 0 1 2-2h3.5l1.6 2H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>
+        </span>
+        <span class="rc-pick-tx">
+          <span class="rc-pick-t">选择本机文件</span>
+          <span class="rc-pick-s">mp3 / wav / m4a · 单个不超过 20 MB</span>
+        </span>
+      </label>
       <input id="u-file" type="file" class="visually-hidden"
              accept=".m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/x-m4a,audio/wav">
     </div>
+
+    <!-- 页面内录音的演示条 -->
+    <div class="rc-recdemo" id="recdemo">
+      <span class="rc-rd-dot" aria-hidden="true"></span>
+      <b class="rc-rd-time" id="rd-time">0:00</b>
+      <span class="rc-rd-wave" id="rd-wave" aria-hidden="true"></span>
+      <span class="rc-rd-note">正在录…</span>
+      <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="rd-stop">停止</button>
+    </div>
+
+    <!-- 选文件 / 录完的回执条（**没有第二个上传按钮** —— 挑完即传） -->
+    <div class="rc-updone" id="updone">
+      <span class="nm" id="up-nm"></span>
+      <span class="sz" id="up-sz"></span>
+    </div>
   </div>
 
-  <!-- 节拍器（`docs/08` §8.4「页面内录音：节拍器与音质约束」）：⭐ **整块功能存在的唯一理由**——
-       团员原先"手机录音机 + 另一个节拍器 App"，而**录音机一启动就抢走音频焦点、把节拍器静音**；
-       网页里 `MediaRecorder` 抓的是麦克风流，**不会静音页面自己的音频输出**。 -->
-  <div class="metro" id="metro">
-    <div class="lab">节拍器 <span>（对着它录：录音全程它都响）</span></div>
-    <div class="metro-row">
-      <label class="metro-f" for="m-bpm">速度
-        <input id="m-bpm" type="number" min="30" max="240" step="1" inputmode="numeric">
-        <span>BPM</span>
+  <!-- 卡 2：节拍器（`recordings.html` 与独立页 `metronome.html` 同一套弧版面板） -->
+  <div class="rc-card mt-metro">
+    <h2>节拍器</h2>
+    <p class="rc-hint">手机自带的录音 App 会把声音焦点抢走，所以节拍器做在页面里。它跟录音各走各的：录音停了它不停，切走页面才会停。</p>
+
+    <!-- 圆弧拍点：几拍就几个点；当前拍变色，重音拍与普通拍异色；点圆点 = 设/取消那一拍的重音 -->
+    <div class="mt-stage">
+      <svg class="mt-arc" id="m-arc" viewBox="0 0 220 70" role="group" aria-label="拍点：点圆点即设或取消那一拍的重音">
+        <path class="mt-base" id="m-arc-base" d=""></path>
+        <g id="m-dots"></g>
+      </svg>
+      <div class="mt-read">
+        <span class="big" id="m-bpm-big">80</span><span class="unit">BPM</span>
+        <span class="term" id="m-term">中板 · Moderato</span>
+        <span class="sig" id="m-sig">4 / 4 · 每拍 1 击</span>
+      </div>
+    </div>
+
+    <div class="mt-ctl">
+      <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="m-toggle">开始</button>
+      <label class="mt-f" for="m-bpm">速度
+        <input id="m-bpm" type="number" min="30" max="240" step="1" inputmode="numeric" value="80"> BPM
       </label>
-      <label class="metro-f" for="m-beats">拍号
-        <select id="m-beats">
-          <option value="2">2/4</option>
-          <option value="3">3/4</option>
-          <option value="4" selected>4/4</option>
-          <option value="6">6/8</option>
+      <button class="rc-btn rc-btn-line rc-btn-sm mt-tap" type="button" id="m-tap">TAP 打拍</button>
+      <label class="mt-f" for="m-num">拍号
+        <input id="m-num" type="number" min="1" max="16" step="1" inputmode="numeric" value="4"><span class="slash">/</span>
+        <select id="m-den"><option>2</option><option>4</option><option>8</option><option>16</option></select>
+      </label>
+      <label class="mt-f" for="m-sub">细分
+        <select id="m-sub">
+          <option value="1">不细分</option>
+          <option value="2">八分（2）</option>
+          <option value="3">三连（3）</option>
+          <option value="4">十六分（4）</option>
         </select>
       </label>
-      <label class="metro-f metro-ck" for="m-accent">
-        <input id="m-accent" type="checkbox" checked> 首拍重音
-      </label>
-      <button id="m-toggle" class="go go-sm" type="button">开始</button>
     </div>
-    <!-- 一拍一个点，当前拍点亮、**重拍更明显**（⚠️ 别做成一整条进度条） -->
-    <div class="metro-dots" id="m-dots" aria-hidden="true"></div>
-    <p class="chip" id="m-hint">⚠️ 外放会把节拍声一起录进去，<b>戴耳机（建议有线）才两头兼顾</b>；录音中<b>请勿切走应用</b>。</p>
+    <p class="mt-tip" id="m-hint">⚠️ 外放会把节拍声一起录进去，<b>戴耳机（建议有线）才两头兼顾</b>；录音中<b>请勿切走应用</b>。点圆弧上的圆点 → 设 / 取消那一拍的重音；更大的点是重拍，响起来颜色也不一样。</p>
   </div>
-</div>
-
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h2 class="mb-0">录音</h2>
-  <select id="q-scope" class="w-auto">
-    <option value="mine">只看我的</option>
-    <option value="">我能听到的全部</option>
-  </select>
-</div>
-<div id="list"></div>
-<p id="empty" class="py-4" hidden>还没有录音——手机对着吹一段传上来，让声部长听听</p>
+</section>
 
 <script>
 'use strict';
 
-let me = null;
-let recorder = null;
-let chunks = [];
-// ⭐ **同一时刻最多一个在播**（`docs/08` §8.4，`#112`）：用户原话「听录音的时候可以同时按多个录音听，
-//    这个不好，一次应该只能听一个」。
-// ⚠️ **持一个"当前正在播的那个"引用、切换时显式关掉旧的** —— **不要靠 `pause` 事件去推状态**：
-//    快速连点会打断进行中的事件，`pause` 不保证按时到达，状态就卡住了（`docs/14` §14.6.6「过渡必须可取消」同族）。
-let playingAudio = null;
-// ⚠️ `load()` 会被反复调用（切筛选、上传完、删完）⇒ **事件绑定只做一次**。
-//    （原来 `setupRecorder()` 每次 load 都绑一遍，点「开始录音」会**叠着起两个 MediaRecorder**——
-//     本轮顺手修掉。）
-let wired = false;
+const byId = (id) => document.getElementById(id);
+const qsa = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
 const MAX_SECONDS = 180;   // 时长上限 3 分钟（T5 暂定）：**只能在前端拦**，服务端不解析音频
 
+let me = null;
+let scope = 'mine';        // 默认「只看我的」（与旧版一致）
+let recorder = null;
+let chunks = [];
+// ⭐ **同一时刻最多一个在播**（docs/08 §8.4，#112）：用户原话「听录音的时候可以同时按多个录音听，这个不好」。
+// ⚠️ **持一个"当前正在播的那个"引用、切换时显式关掉旧的** —— **不要靠 `pause` 事件去推状态**：
+//    快速连点会打断进行中的事件，`pause` 不保证按时到达，状态就卡住了（docs/14 §14.6.6「过渡必须可取消」同族）。
+let playingAudio = null;
+let wired = false;         // ⚠️ `load()` 会被反复调用 ⇒ 事件绑定只做一次
+
+const ICON_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.52.85l11-6.8a1 1 0 0 0 0-1.7l-11-6.8A1 1 0 0 0 8 5.2Z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="4" height="14" rx="1.2"/><rect x="13" y="5" width="4" height="14" rx="1.2"/></svg>';
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function fmtClock(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+/* ============================================================
+   屏一 · 录音墙
+   ============================================================ */
 async function load() {
   me = await BAND.renderNav('recordings.html');
   if (!me) return;
+
   // 荣誉团员只读：他们不能上传（docs/02 防腐条款），服务端也会 403——这里只是不显示无用的按钮
-  document.getElementById('upload-box').hidden = me.role === 'HONORARY';
-  if (me.role !== 'HONORARY') {
+  const honorary = me.role === 'HONORARY';
+  byId('upload-box').hidden = honorary;
+  byId('go-record').hidden = honorary;
+  if (!honorary) {
     const pieces = await BAND.must('/api/pieces?size=100');
-    BAND.fillSelect(document.getElementById('u-piece'),
+    BAND.fillSelect(byId('u-piece'),
       pieces.list.map((p) => ({ value: p.id, label: p.title })), '不关联曲目');
-    if (!wired) {          // ⚠️ 只绑一次（见 `wired` 的说明）
-      wired = true;
-      setupRecorder();
-      metroInit();
-    }
+    if (!wired) { wired = true; setupRecorder(); }
   }
 
-  const scope = document.getElementById('q-scope').value;
   const query = scope === 'mine' ? `?memberId=${me.id}&size=50` : '?size=50';
   const d = await BAND.must('/api/recordings' + query);
-  const host = document.getElementById('list');
   if (playingAudio) { playingAudio.pause(); playingAudio = null; }   // 旧节点马上要被丢掉，先停声
+  const host = byId('list');
   host.innerHTML = '';
-  document.getElementById('empty').hidden = d.list.length > 0;
+  byId('empty').classList.toggle('show', d.list.length === 0);
   for (const r of d.list) host.appendChild(card(r));
+  byId('rc-count').textContent = (scope === 'mine' ? '我的 ' : '共 ') + (d.total != null ? d.total : d.list.length) + ' 条';
+  playReveal();
 }
 
 function card(r) {
-  const el = document.createElement('div');
-  el.className = 'cell mb-3';
-  const head = document.createElement('div');
-  head.className = 'd-flex justify-content-between align-items-center';
-  const who = document.createElement('b');
-  who.textContent = r.title || '（未命名）';
-  const meta = document.createElement('span');
-  meta.className = 'chip mb-0';
-  meta.textContent = [r.memberName, r.sectionName, r.pieceTitle,
+  const el = document.createElement('article');
+  el.className = 'rc-rec ar';
+  el.dataset.id = String(r.id);
+
+  const bits = [r.memberName, r.sectionName, r.pieceTitle,
     r.durationSec ? Math.round(r.durationSec) + ' 秒' : null,
-    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)]
-    .filter(Boolean).join(' · ');
-  head.append(who, meta);
-  el.appendChild(head);
+    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)].filter(Boolean);
+
+  el.innerHTML =
+    `<div class="rc-rec-top">
+       <button class="rc-play" type="button" aria-pressed="false" aria-label="播放"></button>
+       <div class="rc-body">
+         <div class="rc-title"><b></b></div>
+         <div class="rc-meta"></div>
+         <div class="rc-track"><span class="rc-bar"><i class="rc-fill"></i></span><span class="rc-time">0:00</span></div>
+       </div>
+       <div class="rc-ops">
+         <button class="rc-opt rc-tp" type="button" aria-expanded="false"></button>
+         <button class="rc-opt rc-del" type="button">删除</button>
+       </div>
+     </div>
+     <div class="rc-thread" hidden></div>`;
+  el.querySelector('.rc-title b').textContent = r.title || '（未命名）';
+  el.querySelector('.rc-meta').innerHTML = bits.map(escHtml).join('<span class="sep">·</span>');
+  const tpBtn = el.querySelector('.rc-tp');
+  tpBtn.textContent = `点评（${r.commentCount}）`;
+  const play = el.querySelector('.rc-play');
+  play.innerHTML = ICON_PLAY;
 
   // 播放：**必须走 blob**（裸 <audio src="/api/files/id"> 不带 Authorization 头，永远 401）
   const audio = document.createElement('audio');
-  audio.controls = true;
-  audio.className = 'w-100 mt-2';
-  // ⭐ 互斥（`#112`）：这条一开始播，就把"上一个在播的"**显式**停掉并归零（不靠 `pause` 事件推状态）。
+  audio.className = 'rc-audio';
+  audio.preload = 'metadata';
+  el.appendChild(audio);
+  // ⭐ 互斥（#112）：这条一开始播，就把"上一个在播的"**显式**停掉并归零（不靠 `pause` 事件推状态）。
   audio.addEventListener('play', () => {
     if (playingAudio && playingAudio !== audio) {
       playingAudio.pause();
@@ -152,110 +279,146 @@ function card(r) {
     }
     playingAudio = audio;
   });
-  el.appendChild(audio);
+
+  // 自绘播放条跟随真 `<audio>` 状态（底层仍是浏览器在解码/放声）
+  const fill = el.querySelector('.rc-fill');
+  const time = el.querySelector('.rc-time');
+  const paint = () => {
+    const dur = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (r.durationSec || 0);
+    time.textContent = fmtClock(audio.currentTime) + (dur ? ' / ' + fmtClock(dur) : '');
+    fill.style.width = dur > 0 ? Math.min(100, (audio.currentTime / dur) * 100).toFixed(1) + '%' : '0%';
+  };
+  audio.addEventListener('loadedmetadata', paint);
+  audio.addEventListener('timeupdate', paint);
+  audio.addEventListener('play',  () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-pressed', 'true'); });
+  const toPaused = () => { play.innerHTML = ICON_PLAY; play.setAttribute('aria-pressed', 'false'); };
+  audio.addEventListener('pause', () => { toPaused(); paint(); });
+  audio.addEventListener('ended', () => { toPaused(); audio.currentTime = 0; paint(); });
+  play.addEventListener('click', () => { if (audio.paused) audio.play(); else audio.pause(); });
   BAND.fileBlobUrl(r.fileId).then((url) => { audio.src = url; }).catch(() => {});
 
-  const row = document.createElement('div');
-  row.className = 'd-flex gap-2 mt-2';
-  const toggle = document.createElement('button');
-  toggle.className = 'go go-ghost go-sm';
-  toggle.type = 'button';
-  toggle.textContent = `点评（${r.commentCount}）`;
-  const del = document.createElement('button');
-  del.className = 'go go-ghost go-sm';
-  del.type = 'button';
-  del.textContent = '删除';
-  del.hidden = true;   // 由服务端的删除权限决定（管理员 / 本人 / 本声部长）——先试一次再说
-  row.append(toggle, del);
-  el.appendChild(row);
+  tpBtn.addEventListener('click', () => toggleThread(r, el, tpBtn));
 
-  const box = document.createElement('div');
-  box.hidden = true;
-  el.appendChild(box);
-
-  toggle.addEventListener('click', async () => {
-    box.hidden = !box.hidden;
-    if (!box.hidden) await drawComments(r, box);
-  });
+  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）。
+  // ⚠️ **团长 / 指挥不在名单里**：他们能"听全部"但**不能删任何人的录音**（docs/02 §2.3 矩阵 + docs/08 §8.3，
+  //    2026-09-23 由 ✅ 收窄为 ❌）。`r.memberId === me.id` 那一支要留着——删**自己上传的**那条仍合法。
+  const del = el.querySelector('.rc-del');
+  del.hidden = !(r.memberId === me.id || ['ADMIN', 'SECTION_LEADER'].includes(me.role));
   del.addEventListener('click', async () => {
     if (!await BAND.confirm({ title: '删掉这段录音？', body: r.title || '' })) return;
     await BAND.must(`/api/recordings/${r.id}`, { method: 'DELETE' });
     BAND.toast('已删除', 'success');
     load();
   });
-  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）。
-  // ⚠️ **团长 / 指挥不在名单里**：他们能"听全部"但**不能删任何人的录音**（docs/02 §2.3 矩阵 +
-  //    docs/08 §8.3，2026-09-23 由 ✅ 收窄为 ❌）。`r.memberId === me.id` 那一支要留着——
-  //    团长 / 指挥删**自己上传的**那条仍然合法。
-  del.hidden = !(r.memberId === me.id || ['ADMIN', 'SECTION_LEADER'].includes(me.role));
   return el;
 }
 
+/* ---- 点评线（就地展开，平铺按时间，不做父子嵌套 —— docs/08 §8.4） ---- */
 async function drawComments(r, box) {
   const d = await BAND.must(`/api/recordings/${r.id}`);
   box.innerHTML = '';
-  for (const c of d.comments) {
-    const p = document.createElement('p');
-    p.className = 'mb-1';
-    const who = document.createElement('b');
-    who.textContent = c.authorName + '：';
-    const text = document.createElement('span');
-    text.textContent = c.content;
-    p.append(who, text);
-    box.appendChild(p);
+  if (d.comments.length) {
+    for (const c of d.comments) {
+      const div = document.createElement('div');
+      div.className = 'rc-th-item';
+      const who = document.createElement('span'); who.className = 'rc-th-who'; who.textContent = c.authorName;
+      const tx = document.createElement('span'); tx.className = 'rc-th-tx'; tx.textContent = c.content;
+      div.append(who, tx);
+      box.appendChild(div);
+    }
+  } else {
+    const none = document.createElement('div');
+    none.className = 'rc-th-none'; none.textContent = '还没有点评';
+    box.appendChild(none);
   }
-  if (!d.comments.length) {
-    const p = document.createElement('p');
-    p.className = 'chip mb-1';
-    p.textContent = '还没有点评';
-    box.appendChild(p);
-  }
+  const ip = document.createElement('div');
+  ip.className = 'rc-th-in';
   const input = document.createElement('input');
-  input.className = 'w-100 mt-1';
+  input.maxLength = 200;
   input.placeholder = '说点什么（能听到这段录音的人都能说）';
+  input.setAttribute('aria-label', '点评');
   const send = document.createElement('button');
-  send.className = 'go go-sm mt-1';
+  send.className = 'rc-btn rc-btn-primary rc-btn-sm';
   send.type = 'button';
   send.textContent = '发送';
   send.addEventListener('click', async () => {
-    if (!input.value.trim()) return;
-    await BAND.must(`/api/recordings/${r.id}/comments`, {
-      method: 'POST',
-      body: { content: input.value.trim() },
-    });
+    const v = input.value.trim();
+    if (!v) return;
+    await BAND.must(`/api/recordings/${r.id}/comments`, { method: 'POST', body: { content: v } });
     input.value = '';
-    drawComments(r, box);
+    await drawComments(r, box);
+    const cardEl = box.closest('.rc-rec');
+    if (cardEl) cardEl.querySelector('.rc-tp').textContent = `点评（${box.querySelectorAll('.rc-th-item').length}）`;
   });
-  box.append(input, send);
+  ip.append(input, send);
+  box.appendChild(ip);
+}
+
+function toggleThread(r, el, btn) {
+  const box = el.querySelector('.rc-thread');
+  const open = !box.hidden;                       // 同一时刻只展开一条
+  qsa('.rc-thread').forEach((b) => { b.hidden = true; });
+  qsa('.rc-tp').forEach((b) => { b.setAttribute('aria-expanded', 'false'); b.classList.remove('on'); });
+  if (!open) {
+    box.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    btn.classList.add('on');
+    drawComments(r, box);
+  }
+}
+
+/* ============================================================
+   屏二 · 录音台
+   ============================================================ */
+function showUpdone(name, size) {
+  byId('up-nm').textContent = name || '';
+  byId('up-sz').textContent = size || '';
+  byId('updone').classList.toggle('on', !!(name || size));
+}
+
+let rdTimer = null, rdSec = 0;
+function recDemoStart() {
+  rdSec = 0;
+  byId('updone').classList.remove('on');
+  byId('recdemo').classList.add('on');
+  byId('rd-time').textContent = '0:00';
+  const wave = byId('rd-wave');
+  wave.innerHTML = '';
+  for (let i = 0; i < 24; i++) {
+    const b = document.createElement('i');
+    b.style.height = (22 + Math.random() * 70) + '%';
+    b.style.animationDelay = (i * 0.05).toFixed(2) + 's';
+    wave.appendChild(b);
+  }
+  clearInterval(rdTimer);
+  rdTimer = setInterval(() => { rdSec++; byId('rd-time').textContent = fmtClock(rdSec); }, 1000);
+}
+function recDemoStop() {
+  clearInterval(rdTimer); rdTimer = null;
+  byId('recdemo').classList.remove('on');
 }
 
 /**
- * 录音：**先试 audio/mp4**——规格的音频白名单是 m4a/mp3/wav，而 Chrome 的 MediaRecorder
- * 默认产出 webm（不在白名单）。不支持就直接退回"选本地文件"，并**明说一句**，不许静默失败。
+ * 录音：**先试 audio/mp4**——规格的音频白名单是 m4a/mp3/wav，而 Chrome 的 MediaRecorder 默认产出 webm（不在白名单）。
+ * 不支持就直接退回"选本地文件"，并**明说一句**，不许静默失败。
  */
 function setupRecorder() {
-  const btn = document.getElementById('u-record');
-  const hint = document.getElementById('rec-hint');
-  const supported = window.MediaRecorder
-    && MediaRecorder.isTypeSupported('audio/mp4');
+  const btn = byId('pick-record');
+  const supported = window.MediaRecorder && MediaRecorder.isTypeSupported('audio/mp4');
   if (!supported) {
     btn.disabled = true;
-    btn.textContent = '本浏览器不支持';
-    hint.textContent = '这个浏览器不能直接录音（它录出来的格式系统不收）——请用手机录音机录好，再选本地文件上传。';
+    btn.querySelector('.rc-pick-s').textContent =
+      '这个浏览器不能直接录音（它录出来的格式系统不收）——请用手机录音机录好，再选本地文件上传。';
     return;
   }
   btn.addEventListener('click', async () => {
-    if (recorder && recorder.state === 'recording') {
-      recorder.stop();
-      return;
-    }
-    // ⚠️ **"录音停"不等于"节拍器停"**（`docs/08` §8.4）：两者各管各的——节拍器由用户自己按才停，
-    //    这样停一次录音还能接着录下一条。**不许做成"录音结束自动关节拍器"。**
+    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    // ⚠️ **"录音停"不等于"节拍器停"**（docs/08 §8.4）：两者各管各的——节拍器由用户自己按才停。
     try {
-      // ⚠️ **必须显式关掉浏览器的语音处理**（`docs/08` §8.4）：裸写 `{audio:true}` 会把
-      //    回声消除 / 降噪 / 自动增益**全打开** —— 那三样是**为语音通话调的**：自动增益来回压电平、
-      //    降噪把**乐器的弱音尾巴当噪声掐掉**、回声消除连带压平乐器。给乐器录音，这是缺陷不是保守。
-      //    代价（有意的取舍）：关掉回声消除 ⇒ **外放时节拍声必然进录音** ⇒ 所以要戴耳机。
+      // ⚠️ **必须显式关掉浏览器的语音处理**（docs/08 §8.4）：裸写 `{audio:true}` 会把回声消除 / 降噪 /
+      //    自动增益**全打开** —— 那三样是**为语音通话调的**：自动增益来回压电平、降噪把**乐器的弱音尾巴当噪声掐掉**、
+      //    回声消除连带压平乐器。给乐器录音，这是缺陷不是保守。代价（有意的取舍）：关掉回声消除 ⇒
+      //    **外放时节拍声必然进录音** ⇒ 所以要戴耳机。
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
@@ -265,17 +428,18 @@ function setupRecorder() {
       recorder.ondataavailable = (e) => chunks.push(e.data);
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        btn.textContent = '页面内录音';
+        recDemoStop();
         const seconds = Math.round((Date.now() - startedAt) / 1000);
         if (seconds > MAX_SECONDS) {
           BAND.toast(`录了 ${seconds} 秒，超过 3 分钟上限——重录一段吧`);
           return;
         }
         const blob = new Blob(chunks, { type: 'audio/mp4' });
+        showUpdone((byId('u-title').value.trim() || '未命名') + '.m4a', BAND.sizeText(blob.size));
         await sendRecording(new File([blob], `take-${Date.now()}.m4a`, { type: 'audio/mp4' }), seconds);
       };
       recorder.start();
-      btn.textContent = '停止';
+      recDemoStart();
       setTimeout(() => {   // 到 3 分钟自动停，别录出超长的东西
         if (recorder && recorder.state === 'recording') recorder.stop();
       }, MAX_SECONDS * 1000);
@@ -283,170 +447,408 @@ function setupRecorder() {
       BAND.toast('拿不到麦克风权限');
     }
   });
+  byId('rd-stop').addEventListener('click', () => {
+    if (recorder && recorder.state === 'recording') recorder.stop();
+  });
 }
 
-/* ⭐ 「选择本机文件」**挑完就直接上传**（`docs/08` §8.4）：不再要求点第二次按钮 ——
-   多那一跳的代价是"选了没传、却以为传了"（旧版漏点那下只弹一句"先选一个音频文件"，人以为自己没选对）。
-   ⚠️ 这条路**不受 3 分钟限制**（`T5`：只受 20MB 体积限制；服务端本来就解析不了音频时长）。 */
-document.getElementById('u-file').addEventListener('change', async (e) => {
+/* ⭐ 「选择本机文件」**挑完就直接上传**（docs/08 §8.4）：不再要求点第二次按钮 —— 多那一跳的代价是"选了没传、却以为传了"。
+   ⚠️ 这条路**不受 3 分钟限制**（T5：只受 20MB 体积限制；服务端本来就解析不了音频时长）。 */
+byId('u-file').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  showUpdone(file.name, BAND.sizeText(file.size));
   await sendRecording(file, null);   // ⚠️ 第二参传 null = 不报时长 ⇒ 不触发 3 分钟那条
   e.target.value = '';               // 清掉，方便再挑同一个文件
 });
 
 async function sendRecording(file, seconds) {
   const uploaded = await BAND.uploadFile(file);
-  const pieceValue = document.getElementById('u-piece').value;
+  const pieceValue = byId('u-piece').value;
   await BAND.must('/api/recordings', {
     method: 'POST',
     body: {
       fileId: uploaded.id,
       pieceId: pieceValue ? Number(pieceValue) : null,
-      title: document.getElementById('u-title').value.trim() || null,
+      title: byId('u-title').value.trim() || null,
       durationSec: seconds,
     },
   });
-  document.getElementById('u-title').value = '';
+  byId('u-title').value = '';
   BAND.toast('已上传', 'success');
-  load();
+  await load();
 }
 
-/* ---------- 节拍器（docs/08 §8.4「页面内录音：节拍器与音质约束」） ----------
-   ⭐ **整块功能存在的唯一理由**：团员原先"手机录音机 + 另一个节拍器 App"，而**录音机一启动就抢走音频焦点、
-   把节拍器 App 静音** —— "跟节拍器录"在手机上根本做不成。网页里能成立是因为 `MediaRecorder` 抓的是
-   麦克风流、**不会静音页面自己的音频输出** ⇒ 所以它必须在**录音进行中一直响**（这才是它的价值）。
-   ⚠️ 规则三条写死：**不受 `band_sound` 约束**（显式例外）、**"录音停"不等于"节拍器停"**（各管各的）、
-   **预备拍（起拍）本轮不做**。 */
-const METRO_BPM_KEY = 'band_metronome_bpm';
-const BPM_MIN = 30;
-const BPM_MAX = 240;
-const LOOKAHEAD_S = 0.1;      // 提前排 100ms 的音
-const TICK_MS = 25;           // 每 25ms 看一眼
+/* ============================================================
+   节拍器（圆弧拍点版；`recordings.html` 与 `metronome.html` **共用同一份**）
+   ⭐ 整块功能存在的唯一理由（docs/08 §8.4）：团员原先"手机录音机 + 另一个节拍器 App"，而录音机一启动就抢走
+      音频焦点、把节拍器静音。网页里 `MediaRecorder` 抓的是麦克风流、**不会静音页面自己的音频输出**
+      ⇒ 所以它必须在**录音进行中一直响**（这才是它的价值）。
+   ⚠️ 规则写死：**不受 `band_sound` 约束**（显式例外）、**"录音停"不等于"节拍器停"**（各管各的）、
+      **切到后台必须明说**（不许静默哑掉）。
+   ⚠️ 走 `BAND.tick` / `BAND._ac`（**全页唯一 AudioContext**）；**绝不自建第二个 `AudioContext`**。
+   ⚠️ 键名 `band_metronome_*`：bpm 字符串、beats=`num/den`、sub、accents=`0100`（两页**统一**这套编码）。
+   ⚠️ reduced-motion 下只降级视觉、**绝不静音**（docs/14 §14.6.6）。
+   ============================================================ */
+const BPM_MIN = 30, BPM_MAX = 240, LOOKAHEAD_S = 0.1, TICK_MS = 25;
+const MK = { bpm: 'band_metronome_bpm', beats: 'band_metronome_beats', sub: 'band_metronome_sub', acc: 'band_metronome_accents' };
+const ARC = { cx: 110, cy: 76, R: 62 };
+const DEN = [2, 4, 8, 16];
+const SUB_LABEL = { 1: '每拍 1 击', 2: '每拍 2 击（八分）', 3: '每拍 3 击（三连）', 4: '每拍 4 击（十六分）' };
 
-const metro = {
-  on: false, bpm: 80, beats: 4, accent: true,
-  beat: 0, next: 0, timer: null,
-};
-// 面板上那句常驻提示的原文（切后台停播时会被换成警告，重新开始要还原回来）
-const METRO_HINT = document.getElementById('m-hint').textContent;
+const metro = { on: false, bpm: 80, num: 4, den: 4, sub: 1, step: 0, beat: 0, next: 0,
+                accents: [true, false, false, false], timer: null, epoch: 0 };
 // ⚠️ 可读钩子：探针读**实际排出去的拍**（别让探针逐帧采样 —— Windows 上 rAF 会被饿死，见 debug_log）
 window.__metro = { on: false, ticks: [] };
+let tapTimes = [];
+let MT_BASE_HINT = '';
 
-function metroClampBpm(v) {
-  const n = Math.round(Number(v));
-  // ⚠️ `Number(null)` 是 **0**（不是 NaN）⇒ 不显式挡掉"没存过 / 空串"，本机没记录时会被当成
-  //    "0 BPM"再夹到下限 30 —— 实测默认值就是这样悄悄变成 30 的（2026-09-28 探针逮住）。
-  if (!Number.isFinite(n) || n <= 0) return 80;
-  return Math.min(BPM_MAX, Math.max(BPM_MIN, n));
+const mEl = (id) => document.getElementById(id);
+const mClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const mStore = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式 */ } },
+};
+
+function tempoTerm(b) {
+  if (b < 40)  return '庄板 · Grave';
+  if (b < 60)  return '广板 · Largo';
+  if (b < 66)  return '慢板 · Adagio';
+  if (b < 76)  return '行板 · Andante';
+  if (b < 108) return '中板 · Moderato';
+  if (b < 120) return '小快板 · Allegretto';
+  if (b < 168) return '快板 · Allegro';
+  if (b < 200) return '急板 · Presto';
+  return '最急板 · Prestissimo';
+}
+function arcPoint(deg) {
+  const t = deg * Math.PI / 180;
+  return [ARC.cx + ARC.R * Math.cos(t), ARC.cy - ARC.R * Math.sin(t)];
 }
 
-function metroDots() {
-  const host = document.getElementById('m-dots');
-  host.innerHTML = '';
-  for (let i = 0; i < metro.beats; i++) host.appendChild(document.createElement('i'));
+/* —— 画圆弧与拍点（几拍就几个点；点圆点＝设/取消那一拍的重音） —— */
+function renderArc() {
+  const n = metro.num;
+  const sw = n <= 1 ? 0 : Math.min(150, (n - 1) * 30);
+  const tL = 90 + sw / 2, tR = 90 - sw / 2;
+  const [xL, yL] = arcPoint(tL), [xR, yR] = arcPoint(tR);
+  mEl('m-arc-base').setAttribute('d',
+    'M ' + xL.toFixed(1) + ' ' + yL.toFixed(1) + ' A ' + ARC.R + ' ' + ARC.R + ' 0 0 1 ' + xR.toFixed(1) + ' ' + yR.toFixed(1));
+  const g = mEl('m-dots');
+  g.innerHTML = '';
+  const big = n <= 9, NS = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < n; i++) {
+    const deg = n <= 1 ? 90 : tL - sw * i / (n - 1);
+    const [x, y] = arcPoint(deg);
+    const acc = !!metro.accents[i];
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('class', 'mt-dot');
+    c.setAttribute('cx', x.toFixed(1));
+    c.setAttribute('cy', y.toFixed(1));
+    c.setAttribute('r', String(acc ? (big ? 8.5 : 7) : (big ? 7 : 5.5)));
+    c.dataset.i = String(i);
+    c.dataset.acc = acc ? '1' : '0';
+    g.appendChild(c);
+  }
+  paintBeat();
+}
+function paintBeatDot(beat) {
+  const dots = mEl('m-dots').children;
+  for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === beat);
+}
+function paintBeat() { paintBeatDot(metro.on ? metro.beat : -1); }
+function paintSig() { mEl('m-sig').textContent = metro.num + ' / ' + metro.den + ' · ' + SUB_LABEL[metro.sub]; }
+function setHint(text, warn) {
+  const h = mEl('m-hint');
+  if (!h) return;
+  h.textContent = text;
+  h.classList.toggle('warn', !!warn);
 }
 
-/** 点亮第 `i` 个点（`-1` = 全灭）。⚠️ 只切 class，位移/大小交给 CSS（`transform` / `opacity` 白名单）。 */
-function metroPaint(i) {
-  const dots = document.querySelectorAll('#m-dots i');
-  dots.forEach((d, k) => d.classList.toggle('on', k === i));
-}
-
-/** 视觉跟着**已排定的拍**走：`setTimeout` 的量按音频时钟算（音频时钟准，JS 定时器会漂）。 */
-function metroQueueVisual(beat, when) {
+/* 视觉跟着**已排定的拍**走：延时按音频时钟算（音频时钟准，JS 定时器会漂）。`epoch` 防"停→重开"时点亮错的点。 */
+function queueVisual(beat, when, epoch) {
   const ac = BAND._ac;
   const delay = Math.max(0, (when - (ac ? ac.currentTime : 0)) * 1000);
-  setTimeout(() => { if (metro.on) metroPaint(beat); }, delay);
+  setTimeout(() => { if (metro.on && metro.epoch === epoch) paintBeatDot(beat); }, delay);
 }
 
-/** lookahead 调度：**不用裸 `setInterval(60000/bpm)`**（那种写法会漂、还怕标签页被节流）。 */
-function metroSchedule() {
+/* lookahead 调度：**不用裸 `setInterval(60000/bpm)`**（会漂、怕标签页被节流）。细分拍 = 每拍拆 `sub` 步。 */
+function schedule() {
   const ac = BAND._ac;
   if (!ac || !metro.on) return;
-  const spb = 60 / metro.bpm;
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  let guard = 0;
   while (metro.next < ac.currentTime + LOOKAHEAD_S) {
-    const accent = metro.accent && metro.beat === 0;
-    BAND.tick(accent, metro.next);                      // 按音频时钟排，不"到点才响"
-    window.__metro.ticks.push({ t: metro.next, accent: accent });
-    metroQueueVisual(metro.beat, metro.next);
-    metro.beat = (metro.beat + 1) % metro.beats;
-    metro.next += spb;
+    const accent = metro.step === 0 && !!metro.accents[metro.beat];
+    const t = BAND.tick(accent, metro.next);            // 按音频时钟排，不"到点才响"
+    if (t === null) { stopMetro(); setHint('这台设备出不了声（拿不到音频）。', true); return; }
+    window.__metro.ticks.push({ t: metro.next, accent: accent, beat: metro.beat, step: metro.step });
+    if (metro.step === 0) queueVisual(metro.beat, metro.next, metro.epoch);   // 只在小节拍**头一步**点灯
+    metro.step = (metro.step + 1) % metro.sub;
+    if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.num;
+    metro.next += stepSec;
+    if (++guard > 1000) break;                          // 兜底：万一 `next` 被改小，别死循环
   }
 }
 
-function metroStart() {
+function startMetro() {
   if (metro.on) return;
   metro.beat = 0;
-  const t0 = BAND.tick(metro.accent, 0);                // 第一拍立刻响（顺便把唯一的 _ac 建出来）
-  if (t0 === null) { BAND.toast('这台设备出不了声（拿不到音频）'); return; }
+  metro.step = 0;
+  const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响（顺便把唯一的 `_ac` 建出来）
+  if (t0 === null) { setHint('这台设备出不了声（拿不到音频）。', true); BAND.toast('这台设备出不了声（拿不到音频）'); return; }
   metro.on = true;
   window.__metro.on = true;
-  window.__metro.ticks.push({ t: t0, accent: !!metro.accent });
-  metroPaint(0);
-  metro.beat = 1 % metro.beats;
-  metro.next = t0 + 60 / metro.bpm;
-  metro.timer = setInterval(metroSchedule, TICK_MS);
-  document.getElementById('m-toggle').textContent = '停止';
-  document.getElementById('m-toggle').classList.remove('go-ghost');
-  const hint = document.getElementById('m-hint');   // 上一次"切后台就停了"的警告，重新开始时还原
-  hint.classList.remove('warn');
-  hint.textContent = METRO_HINT;
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintBeatDot(0);
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;                           // ⚠️ 不是"beat = 1 % num"（那只在 `sub===1` 时对）
+  if (metro.step === 0) metro.beat = 1 % metro.num;
+  metro.next = t0 + stepSec;
+  metro.timer = setInterval(schedule, TICK_MS);
+  const btn = mEl('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('rc-btn-primary');
+  btn.classList.add('rc-btn-line');
+  const hint = mEl('m-hint');                           // 上一次"切后台就停了"的警告，重新开始时还原
+  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_BASE_HINT; }
 }
 
-function metroStop() {
+function stopMetro() {
   if (metro.timer) clearInterval(metro.timer);
   metro.timer = null;
   metro.on = false;
   window.__metro.on = false;
-  metroPaint(-1);
-  const btn = document.getElementById('m-toggle');
+  metro.epoch++;
+  paintBeatDot(-1);
+  const btn = mEl('m-toggle');
   btn.textContent = '开始';
-  btn.classList.add('go-ghost');
+  btn.classList.remove('rc-btn-line');
+  btn.classList.add('rc-btn-primary');
 }
 
 /** ⚠️ 规格写死：切到后台时**必须明确提示"节拍器已停"，不许静默**——无声无息地哑掉比报错更坏。 */
-function metroNotice(text) {
-  const hint = document.getElementById('m-hint');
-  hint.classList.add('warn');
-  hint.textContent = text;
-  BAND.toast(text);
+function metroNotice(text) { setHint(text, true); BAND.toast(text); }
+
+/** 改设置：正在响时无缝重启（清旧排程、重起）。 */
+function metroRestart() { if (metro.on) { stopMetro(); startMetro(); } }
+
+function setBpm(v) {
+  metro.bpm = mClamp(Math.round(Number(v)) || 80, BPM_MIN, BPM_MAX);
+  const inp = mEl('m-bpm'); if (inp) inp.value = String(metro.bpm);
+  mEl('m-bpm-big').textContent = String(metro.bpm);
+  mEl('m-term').textContent = tempoTerm(metro.bpm);
+  mStore.set(MK.bpm, String(metro.bpm));
+  metroRestart();
+}
+function setNum(v) {
+  metro.num = mClamp(Math.round(Number(v)) || 4, 1, 16);
+  const inp = mEl('m-num'); if (inp) inp.value = String(metro.num);
+  const a = metro.accents;
+  metro.accents = Array.from({ length: metro.num }, (_, i) => !!a[i]);
+  if (metro.accents.length && !metro.accents.some(Boolean)) metro.accents[0] = true;
+  paintSig();
+  persistAccents();
+  mStore.set(MK.beats, metro.num + '/' + metro.den);
+  metro.step = 0; metro.beat = 0;
+  renderArc();
+  metroRestart();
+}
+function setDen(v) {
+  metro.den = DEN.includes(Number(v)) ? Number(v) : 4;
+  const sel = mEl('m-den'); if (sel) sel.value = String(metro.den);
+  paintSig();
+  mStore.set(MK.beats, metro.num + '/' + metro.den);
+}
+function setSub(v) {
+  metro.sub = mClamp(Number(v) || 1, 1, 4);
+  const sel = mEl('m-sub'); if (sel) sel.value = String(metro.sub);
+  paintSig();
+  mStore.set(MK.sub, String(metro.sub));
+  metroRestart();
+}
+function persistAccents() { mStore.set(MK.acc, metro.accents.map((b) => b ? '1' : '0').join('')); }
+function toggleAccent(i) {
+  metro.accents[i] = !metro.accents[i];
+  persistAccents();
+  renderArc();
 }
 
-function metroInit() {
-  const bpmInput = document.getElementById('m-bpm');
-  metro.bpm = metroClampBpm(localStorage.getItem(METRO_BPM_KEY));
-  bpmInput.value = String(metro.bpm);
-  metro.beats = Number(document.getElementById('m-beats').value) || 4;
-  metroDots();
+/* TAP 打拍：连点取平均，间隔 >2 秒作废重来。 */
+function tapHit() {
+  const now = performance.now();
+  if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+  tapTimes.push(now);
+  if (tapTimes.length > 6) tapTimes.shift();
+  if (tapTimes.length >= 2) {
+    const gaps = [];
+    for (let i = 1; i < tapTimes.length; i++) gaps.push(tapTimes[i] - tapTimes[i - 1]);
+    setBpm(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length));
+  }
+}
 
-  bpmInput.addEventListener('change', () => {
-    metro.bpm = metroClampBpm(bpmInput.value);
-    bpmInput.value = String(metro.bpm);                 // 夹过的值要写回去，别让人以为 999 生效了
-    try { localStorage.setItem(METRO_BPM_KEY, String(metro.bpm)); } catch (e) { /* 隐私模式 */ }
-  });
-  document.getElementById('m-beats').addEventListener('change', (e) => {
-    metro.beats = Number(e.target.value) || 4;
-    metro.beat = Math.min(metro.beat, metro.beats - 1);
-    metroDots();
-  });
-  document.getElementById('m-accent').addEventListener('change', (e) => {
-    metro.accent = e.target.checked;
-  });
-  document.getElementById('m-toggle').addEventListener('click', () => {
-    if (metro.on) metroStop(); else metroStart();
+function initMetro() {
+  const hintEl = mEl('m-hint');
+  MT_BASE_HINT = hintEl ? hintEl.textContent : '';
+
+  const beats = String(mStore.get(MK.beats, '4/4')).split('/');
+  const accStr = mStore.get(MK.acc, null);
+  metro.bpm = mClamp(Number(mStore.get(MK.bpm, '80')) || 80, BPM_MIN, BPM_MAX);
+  metro.num = mClamp(Number(beats[0]) || 4, 1, 16);
+  metro.den = DEN.includes(Number(beats[1])) ? Number(beats[1]) : 4;
+  metro.sub = mClamp(Number(mStore.get(MK.sub, '1')) || 1, 1, 4);
+  metro.accents = (accStr && /^[01]+$/.test(accStr))
+    ? Array.from({ length: metro.num }, (_, i) => accStr[i] === '1')
+    : Array.from({ length: metro.num }, (_, i) => i === 0);
+  if (metro.accents.length && !metro.accents.some(Boolean)) metro.accents[0] = true;
+
+  mEl('m-bpm').value = String(metro.bpm);
+  mEl('m-bpm-big').textContent = String(metro.bpm);
+  mEl('m-term').textContent = tempoTerm(metro.bpm);
+  mEl('m-num').value = String(metro.num);
+  mEl('m-den').value = String(metro.den);
+  mEl('m-sub').value = String(metro.sub);
+  paintSig();
+  renderArc();
+
+  mEl('m-toggle').addEventListener('click', () => { if (metro.on) stopMetro(); else startMetro(); });
+  mEl('m-tap').addEventListener('click', tapHit);
+  const bpmIn = mEl('m-bpm');
+  const bpmHandler = () => { if (bpmIn.value !== '') setBpm(bpmIn.value); };
+  bpmIn.addEventListener('input', bpmHandler);     // ⚠️ change 不够：探针/真机常只派 input
+  bpmIn.addEventListener('change', bpmHandler);
+  const numIn = mEl('m-num');
+  const numHandler = () => { if (numIn.value !== '') setNum(numIn.value); };
+  numIn.addEventListener('input', numHandler);
+  numIn.addEventListener('change', numHandler);
+  mEl('m-den').addEventListener('change', () => setDen(mEl('m-den').value));
+  mEl('m-sub').addEventListener('change', () => setSub(mEl('m-sub').value));
+  mEl('m-dots').addEventListener('click', (e) => {
+    const c = e.target.closest('circle');
+    if (c && c.dataset.i != null) toggleAccent(Number(c.dataset.i));
   });
 
   // ⚠️ 浏览器在页面切到后台 / 锁屏时会**挂起音频**，节拍器当场哑掉 —— 这是"要听得见"最可能被破坏的地方。
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && metro.on) {
-      metroStop();
+    if (document.hidden && metro.on) {
+      stopMetro();
       metroNotice('节拍器已停：切到后台时浏览器会挂起音频。回到这一页后请重新按「开始」。');
     }
   });
 }
 
-document.getElementById('q-scope').addEventListener('change', load);
+/* ============================================================
+   两屏切换 / 外观控件（配色 + 深浅）/ 入场
+   ============================================================ */
+function setScreen(s) {
+  document.body.dataset.rcscreen = s;
+  if (s !== 'detail' && metro.on) stopMetro();   // 离屏就别再响
+  window.scrollTo(0, 0);
+}
+function playReveal() {
+  const nodes = qsa('.ar');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { nodes.forEach((n) => n.classList.add('in')); return; }
+  nodes.forEach((n, i) => setTimeout(() => n.classList.add('in'), 30 + i * 35));
+}
+
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN  = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  qsa('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = byId('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = byId('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = byId('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = byId('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
+  }
+}
+function openPop(o) {
+  const pop = byId('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  byId('theme-btn').setAttribute('aria-expanded', String(o));
+}
+function renderToday() {
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  const d = new Date();
+  byId('today-txt').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ============================================================
+   接线（顶层一次；节点被 shell 挪进 .mbody 时监听器随之保留）
+   ============================================================ */
+byId('go-record').addEventListener('click', () => setScreen('detail'));
+byId('dback').addEventListener('click', () => setScreen('list'));
+byId('rc-scope').addEventListener('click', (e) => {
+  const b = e.target.closest('.fchip');
+  if (!b || scope === b.dataset.scope) return;
+  scope = b.dataset.scope;
+  qsa('#rc-scope .fchip').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.scope === scope)));
+  load();
+});
+byId('theme-btn').addEventListener('click', (e) => { e.stopPropagation(); openPop(byId('theme-pop').hidden); });
+byId('night-btn').addEventListener('click', toggleNight);
+byId('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+/* ============================================================
+   启动
+   ============================================================ */
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
+renderToday();
+initMetro();
 load();
 </script>
 </body>

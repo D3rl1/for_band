@@ -48,4 +48,18 @@
       sessionStorage.removeItem('band_nav_keep');   // 消费掉：旧页不清，只有新页清
     }
   } catch (e) { /* 隐私模式：跳过 */ }
+
+  // 配色 / 夜间（docs/14 §14.6.2b，2026-10-11）：**必须在首绘前**把 data-palette / data-theme
+  // 打到 <html>——本文件在 <head> 里同步跑，正好赶在第一次绘制之前 ⇒ 全站换色跨页不闪。
+  // 值存 localStorage（活动页的外观控件写入 `band.palette` / `band.theme`）。
+  // 只认白名单里的值；缺失/非法一律退回默认（墨·青 / 浅色）——属性不设即走 :root 的默认。
+  try {
+    const pal = localStorage.getItem('band.palette');
+    if (pal && ['jade', 'teal', 'violet', 'olive', 'clay', 'ink'].indexOf(pal) >= 0) {
+      document.documentElement.dataset.palette = pal;
+    }
+    if (localStorage.getItem('band.theme') === 'dark') {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  } catch (e) { /* 隐私模式：跳过，退回默认配色 */ }
 })();

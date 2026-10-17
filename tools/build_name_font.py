@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """给本项目做**寄语楷体子集**（`docs/14` §14.6.5「寄语字体」）。
 
+> ⚠️⚠️ **本脚本已停用（2026-10-11）。** 专页寄语（`.sc-motto`）已**并入 `BandFang`（朱雀仿宋）**，
+> 走 **cn-font 全量 `unicode-range` 分片**（`static/vendor/zhuque/`）；`band.css` 里 `BandMotto`
+> 的 `@font-face` **已删除**。⇒ **不要再跑这个脚本**，它只是**留档**（说明"当年那版单句子集是怎么做的"）。
+> 规格见 `docs/14` §14.6.5「寄语字体」；被停用的产物在 `static/vendor/wenkai/`（`SOURCE.md` 已标停用）。
+
 产出 `static/vendor/wenkai/wenkai-motto-subset.woff2`，家族名 **`BandMotto`**，
 字符集 = **专页底部那句话的全部字符（含标点）**。
 

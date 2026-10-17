@@ -19,18 +19,46 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="d-flex justify-content-between align-items-start">
-    <div>
-      <h2 id="c-name" class="mb-1"></h2>
-      <p id="c-meta" class="chip mb-2"></p>
-      <p id="c-note" class="mb-0"></p>
+<!-- ══ 外观控件行（活动页 + 演出页，docs/14 §14.6.2b）══
+     今天 + 配色（popover）/ 深浅两个图标按钮。键沿用 `band.palette` / `band.theme`（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**：色块底色走 band.css 的 `.seedswatch[data-p="…"]`。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
     </div>
-    <div class="d-flex gap-2">
+  </div>
+</div>
+
+<!-- ══ 标题卡：演出名大字 + 一行 meta + 打印 / 编辑 ══ -->
+<div class="cell cn-dhead mb-4">
+  <div class="d-top">
+    <div style="min-width:0">
+      <h2 id="c-name"></h2>
+      <p class="dmeta" id="c-meta"></p>
+    </div>
+    <div class="dact">
       <button id="print" class="go go-ghost go-sm" type="button">打印节目单</button>
       <button id="edit" class="go go-ghost go-sm" type="button" hidden>编辑档案</button>
     </div>
   </div>
+  <p class="dnote" id="c-note"></p>
 </div>
 
 <!-- 编辑档案（曲目单 / 参演名单各自有弹层） -->
@@ -58,31 +86,30 @@
   </div>
 </div>
 
+<!-- ══ 曲目单：**有序列表**（像一张真节目单），docs/14 §14.6.4「演出页」 ══ -->
 <div class="cell mb-4">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <span class="lab mb-0">曲目单</span>
     <button id="edit-program" class="go go-ghost go-sm" type="button" hidden>设置曲目单</button>
   </div>
-  <table class="tb" id="program-table">
-    <thead><tr><th>#</th><th>曲目</th><th>作曲</th><th>指挥</th></tr></thead>
-    <tbody id="program"></tbody>
-  </table>
+  <ol class="cn-prog" id="program"></ol>
   <p id="program-empty" class="chip mb-0" hidden>还没排曲目单</p>
 </div>
 
+<!-- ══ 参演名单：**名册药丸**（姓名 + 声部；指挥/独奏高亮；**不加头像**，DECISIONS D30） ══ -->
 <div class="cell mb-4">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <span class="lab mb-0">参演名单</span>
     <button id="edit-cast" class="go go-ghost go-sm" type="button" hidden>设置名单</button>
   </div>
-  <p id="cast" class="mb-0"></p>
+  <ul class="cn-cast" id="cast"></ul>
   <p id="cast-empty" class="chip mb-0" hidden>还没定参演名单</p>
 </div>
 
 <div class="cell mb-4">
   <div class="lab">照片</div>
   <p class="chip">演出当天拍的照片都能传上来（传之前会自动压到长边 1920）。删除只有上传者本人或管理员能做。</p>
-  <div id="photos" class="d-flex flex-wrap gap-2"></div>
+  <div id="photos" class="ph-wall"></div>
   <p id="photos-empty" class="chip mb-0" hidden>还没有照片</p>
   <div class="row g-2 mt-2">
     <div class="col-12 col-md-6"><input id="p-file" type="file" accept="image/*" multiple class="w-100"></div>
@@ -97,9 +124,9 @@
     <div class="modal-content">
       <div class="modal-body">
         <p class="big my-2">设置曲目单</p>
-        <p class="chip">勾选顺序就是演出顺序；「指挥」写在这一首上（协奏曲请外聘指挥也能表达）。曲目从曲目库选。</p>
+        <p class="chip">勾选顺序就是演出顺序；「指挥」写在这一首上（协奏曲请外聘指挥也能表达）。曲目从曲谱库选。</p>
         <div id="pm-list" class="pm-list"></div>
-        <p id="pm-empty" class="chip mb-0" hidden>曲目库还是空的，先去「曲目」页建一条</p>
+        <p id="pm-empty" class="chip mb-0" hidden>曲谱库还是空的，先去「曲谱」页建一条</p>
       </div>
       <div class="modal-footer py-1">
         <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
@@ -131,10 +158,26 @@
 'use strict';
 
 const id = new URLSearchParams(location.search).get('id');
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
 let me = null;
 let canEdit = false;
 let detail = null;
 let members = [];
+
+/* 小工具：建元素（一律 textContent 灌值 ⇒ 不拼 innerHTML，杜绝 XSS） */
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+/* 一行 meta：值之间插一个 `.sep` 中点（值本身只走 textContent） */
+function meta(parent, parts) {
+  parts.filter(Boolean).forEach((v, i) => {
+    if (i) parent.appendChild(el('span', 'sep', '·'));
+    parent.appendChild(el('span', null, v));
+  });
+}
 
 async function load() {
   me = await BAND.renderNav('concerts.html');
@@ -146,20 +189,25 @@ async function load() {
 
   detail = await BAND.must(`/api/concerts/${id}`);
   const c = detail.concert;
-  document.querySelector('.head h1').textContent = c.name;
+  // ⚠️ 页头 `h1` **不再改成演出名**（DECISIONS 未另记，属本轮随样张定的口径）：
+  //    它保持 shell 给的「演出」，演出名在下面标题卡里放大。改回那句前先看 `docs/14` §14.6.4「演出页」。
   document.getElementById('c-name').textContent = c.name;
-  document.getElementById('c-meta').textContent = [
-    c.date, c.startTime ? c.startTime.slice(0, 5) : null, c.venue,
-    c.host ? '主办：' + c.host : null, c.statusLabel,
-  ].filter(Boolean).join(' · ');
+  const cm = document.getElementById('c-meta');
+  cm.innerHTML = '';
+  meta(cm, [c.date, c.startTime ? c.startTime.slice(0, 5) : null, c.venue, c.host ? '主办：' + c.host : null]);
+  // 状态：常态（计划中）灰字、已完成灰字、已取消朱砂（跟列表一致；朱砂只给异常）
+  if (c.status === 'CANCELED') cm.appendChild(el('span', 'ev-tag cancel', '已取消'));
+  else cm.appendChild(el('span', 'st done', c.statusLabel));
   document.getElementById('c-note').textContent = c.note || '';
   if (detail.videoUrl) {
     const p = document.getElementById('c-note');
+    p.appendChild(document.createTextNode(' '));
     const a = document.createElement('a');
+    a.className = 'vlink';
     a.href = detail.videoUrl;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.textContent = '　录像链接 ↗';
+    a.textContent = '录像链接 ↗';
     p.appendChild(a);
   }
   document.getElementById('f-name').value = c.name;
@@ -171,28 +219,36 @@ async function load() {
   document.getElementById('f-status').value = c.status;
   document.getElementById('f-summary').value = detail.summary || '';
 
-  // 曲目单（序号 · 曲名 · 作曲 · 指挥）
-  const ptbody = document.getElementById('program');
-  ptbody.innerHTML = '';
+  // 曲目单（第 N 首 · 曲名 · 作曲 · 指挥）—— `<ol>` 有序列表
+  const prog = document.getElementById('program');
+  prog.innerHTML = '';
   document.getElementById('program-empty').hidden = detail.program.length > 0;
   for (const p of detail.program) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td>';
-    tr.children[0].textContent = p.orderNo;
+    const li = el('li');
+    li.appendChild(el('span', 'no', `第 ${p.orderNo} 首`));
     const a = document.createElement('a');
+    a.className = 'pt';
     a.href = `/piece-detail.html?id=${p.pieceId}`;
     a.textContent = p.title || '（曲目已删除）';
-    tr.children[1].appendChild(a);
-    tr.children[2].textContent = p.composer || '';
-    tr.children[3].textContent = p.conductor || '';
-    ptbody.appendChild(tr);
+    li.appendChild(a);
+    li.appendChild(el('span', 'pm',
+      [p.composer, p.conductor ? '指挥 ' + p.conductor : null].filter(Boolean).join(' · ')));
+    prog.appendChild(li);
   }
-  BAND.alive(document.getElementById('program-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  BAND.alive(document.getElementById('program'));   // 曲目行逐行入场（band-alive.js 认 `.cn-prog li`）
 
-  // 参演名单
+  // 参演名单（名册药丸：姓名 + 声部；指挥/独奏高亮；**不加头像**）
   document.getElementById('cast-empty').hidden = detail.cast.length > 0;
-  document.getElementById('cast').textContent = detail.cast
-    .map((m) => `${m.name}（${m.roleLabel}）${m.note ? ' · ' + m.note : ''}`).join('、');
+  const castHost = document.getElementById('cast');
+  castHost.innerHTML = '';
+  for (const m of detail.cast) {
+    const lead = /指挥|独奏/.test((m.roleLabel || '') + (m.note || ''));
+    const li = el('li', lead ? 'lead' : null);
+    li.appendChild(document.createTextNode(m.name));
+    li.appendChild(el('i', null, m.roleLabel || ''));
+    if (m.note) li.appendChild(el('i', null, m.note));
+    castHost.appendChild(li);
+  }
 
   // 照片
   const host = document.getElementById('photos');
@@ -375,6 +431,94 @@ document.getElementById('p-send').addEventListener('click', async () => {
   load();
 });
 
+/* ---------- 页头「今天」 ---------- */
+function renderToday() {
+  const d = new Date();
+  document.getElementById('today-txt').textContent =
+    `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = document.getElementById('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = document.getElementById('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = document.getElementById('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = document.getElementById('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  // 门控类只在这段时间挂上 ⇒ 「墨洇」不会顺手接管**跳页过渡**（见 band.css §1b 的注释）
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
+  }
+}
+function openPop(o) {
+  const pop = document.getElementById('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  document.getElementById('theme-btn').setAttribute('aria-expanded', String(o));
+}
+
+/* ---------- 接线（顶层一次；节点被 shell 挪进 .mbody 时监听器随之保留） ---------- */
+document.getElementById('theme-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPop(document.getElementById('theme-pop').hidden);
+});
+document.getElementById('night-btn').addEventListener('click', toggleNight);
+document.getElementById('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+renderToday();
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

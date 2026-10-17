@@ -28,7 +28,7 @@ Object.assign(BAND, {
       <div class="p-flow">
         <div class="p-flow-head">
           <span class="lab">最近</span>
-          <a href="/my-leave.html">看全部</a>
+          <a href="/my-attendance.html">看全部</a>
         </div>
         <div class="p-flow-list"></div>
       </div>

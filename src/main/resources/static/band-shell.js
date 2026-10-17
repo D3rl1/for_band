@@ -19,7 +19,7 @@ Object.assign(BAND, {
    * 侧栏顶部的**视图开关**、页面标题**全部由它派生**；**没有第二份并列清单**。
    * ⚠️ 增删菜单 / 调分组 = 只改这张表（视图顺序在 `menuViews`，组顺序在 `menuGroups`）。
    * ⚠️ **图标 key 不许两个「不同的页面」共用**（`AGENTS.md` 前端节第 6 条）：活动/活动管理、
-   *    名册/团员管理、我的请假/请假审批 都是高危对。⚠️ 「更新公告」用 `megaphone` **不能用 `bell`**
+   *    名册/团员管理 都是高危对。⚠️ 「更新公告」用 `megaphone` **不能用 `bell`**
    *    （铃铛归右上角合并入口）。⚠️ **同一个页面在两个视图里各挂一次**（演出↔演出管理、名册）不算冲突。
    * ⚠️ **换图标仍要同步三处**：`vendor/icons/` 的文件 + 那目录的 `manifest.json` + 本表的 key；
    *    对应的 `<svg>` 内层写在下面 `ICON_SVG`（由 `design-samples/_gen_icons_js.py` 生成，别手抄）。
@@ -29,10 +29,11 @@ Object.assign(BAND, {
     { view: '日常', group: '活动与演出', href: 'events.html',        title: '活动',    icon: 'calendar-days',     roles: NAV_ROLES.all },
     { view: '日常', group: '活动与演出', href: 'concerts.html',      title: '演出',    icon: 'ticket',            roles: NAV_ROLES.all },
     { view: '日常', group: '活动与演出', href: 'showcase.html',      title: '专场',    icon: 'star',              roles: NAV_ROLES.all },
-    { view: '日常', group: '曲目与录音', href: 'pieces.html',        title: '曲目',    icon: 'music',             roles: NAV_ROLES.all },
+    { view: '日常', group: '曲目与录音', href: 'pieces.html',        title: '曲谱',    icon: 'music',             roles: NAV_ROLES.all },
     { view: '日常', group: '曲目与录音', href: 'recordings.html',    title: '录音',    icon: 'mic',               roles: NAV_ROLES.all },
-    { view: '日常', group: '考勤与请假', href: 'my-leave.html',      title: '我的请假', icon: 'calendar-minus',    roles: NAV_ROLES.member },
-    { view: '日常', group: '考勤与请假', href: 'my-attendance.html', title: '我的考勤', icon: 'calendar-check',    roles: NAV_ROLES.all },
+    // 2026-10-17：原「我的请假」并入「我的出勤」（一页三段，`docs/14` §14.6.4）——菜单项随之删除，
+    // 请假记录仍在同一页。`calendar-minus` 图标暂未使用（manifest 保留，R11 只查"用到的图标"）。
+    { view: '日常', group: '考勤与请假', href: 'my-attendance.html', title: '我的出勤', icon: 'calendar-check',    roles: NAV_ROLES.all },
     { view: '日常', group: '名册',      href: 'members.html',       title: '团员列表', icon: 'users',             roles: NAV_ROLES.all },
     // 「我的」三项 2026-10-06 从**个人栏浮层**搬进菜单（用户拍板"进菜单、删浮层"）：
     // 个人资料仅非荣誉可见（荣誉团员在浮层里本就没有"编辑资料"，免得点进去撞 403）。
@@ -126,7 +127,7 @@ Object.assign(BAND, {
   /** 不在主导航里的页面取不到菜单项，标题单独给——别把它们塞进 `menu`（那会多出一个菜单项）。
       ⚠️ 2026-10-06：`profile/sessions/updates/showcase` **已进菜单**，从本表移除（见 `menu`）。 */
   offMenuTitles: {
-    'piece-detail.html': '曲目详情',
+    'piece-detail.html': '曲谱详情',
     'concert-detail.html': '演出详情',
     'member-detail.html': '团员主页',
   },
@@ -692,7 +693,7 @@ Object.assign(BAND, {
   async renderNav(active) {
     this.loadCachedAvatars();                          // ⓪ 同步：本会话缓存过的头像清单先就位，首帧才画得对
     // ⚠️⚠️ **本函数会被同一个页面第二次调用**：页面上改筛选器走的就是 `change → load() → renderNav()`
-    //    （名册的状态 / 声部、曲目库的状态、活动的类型、录音的范围 —— **四处全是这个写法**）。
+    //    （名册的状态 / 声部、曲谱库的状态、活动的类型、录音的范围 —— **四处全是这个写法**）。
     //    第二次**必须复用已搭好的骨架**：`mountSkeleton` 里 `#navbar` 已经被 `replaceWith(layout)` 换掉，
     //    再搭一次就是 `document.getElementById('navbar')` 返回 null → `.nextSibling` 抛错，
     //    表现是"**筛选器完全没反应**"（列表一动不动，只在控制台留一条异常）。

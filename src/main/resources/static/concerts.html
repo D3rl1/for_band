@@ -19,6 +19,72 @@
 <body>
 <div id="navbar"></div>
 
+<!-- ══ 外观控件行（活动页 + 演出页，docs/14 §14.6.2b）══
+     今天 + 配色（popover）/ 深浅两个图标按钮。键沿用 `band.palette` / `band.theme`（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**：色块底色走 band.css 的 `.seedswatch[data-p="…"]`。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ⭐ 「我们的专场」的入口（`docs/17` §17.5 + `docs/14` §14.6.4，2026-09-30 `#116`）：
+     **占满宽的入口卡**（用户原话「放演出里也可以啊，但是要**显眼**啊，不能摆个小字放那吧」）——
+     主视觉用**历届专场自己的东西**（这里是**年份墙**：纯文字的年份 chips，不新画插画）、
+     一句导语、一个**明确的进入动作**（不再是光秃秃一个箭头）。
+     ⚠️ 卡片本身**不做任何动效**（§14.6.6：不做 hover 浮起、不做循环）；**进门那道编排照旧**。
+     ⚠️ 位置仍在页面顶部、**仍不占侧栏菜单项**（页面清单里挂 `offMenuTitles`）。
+     ⚠️ `href` 留着（`refresh.sh` 的 `[4/5]` 入口体检认它），点击只拦默认行为 → 先过确认，再演 A 段。
+     ⚠️ **红线**：这一条形态**一个字不改**（只让配色跟着墨·青，由别名桥接自动生效）。 -->
+<a class="sc-card sc-entry" href="/showcase.html">
+  <span class="sc-card-l">
+    <span class="sc-card-t">我们的专场</span>
+    <span class="sc-card-d">历届专场的时间线 —— 一年一年看下来</span>
+    <span class="sc-card-act">进去看看 →</span>
+  </span>
+  <!-- 年份墙：由 `/api/showcase/timeline` 灌（`<b>` 只放年份数字）。
+       ⚠️ `aria-hidden`：它是**装饰性的重复信息**（年份在专页上还要再看一遍），
+       留着会让整卡的链接名变成一串年份。 -->
+  <span class="sc-years" id="sc-years" aria-hidden="true"></span>
+</a>
+
+<!-- 「下一场演出」：一条安静的卡（有未来的、未取消的场次时才出现）。整卡是一个 `<a>`。 -->
+<a class="cn-next" id="next" href="#" hidden></a>
+
+<div class="ev-lhead">
+  <span class="sec"><h2>演出安排</h2><span class="sub" id="list-count"></span></span>
+  <button id="new" class="go go-sm" type="button" hidden>新建演出</button>
+</div>
+
+<!-- 按年分组的列表（`renderList` 灌）：一年一个 `.ev-group`，行是 `.cn-crow` 套 `.evrow` -->
+<div id="groups"></div>
+
+<div class="ev-empty" id="empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-6Z"/><path d="M13 4v16" stroke-dasharray="2 2.5"/></svg>
+  </span>
+  <b>还没有演出记录</b>
+  <span>演完一场就把它记下来，以后回看有据可依</span>
+</div>
+
 <!-- 新建 / 编辑共用一块表单：新人用「新建」，行内「编辑」把内容填进来 -->
 <div class="cell mb-4" id="edit-box" hidden>
   <div class="lab" id="edit-title">新建演出</div>
@@ -45,28 +111,10 @@
   </div>
 </div>
 
-<!-- ⭐ 「我们的专场」的入口（`docs/17` §17.5 + `docs/14` §14.6.4，2026-09-30 `#116`）：
-     **占满宽的入口卡**（用户原话「放演出里也可以啊，但是要**显眼**啊，不能摆个小字放那吧」）——
-     主视觉用**历届专场自己的东西**（这里是**年份墙**：纯文字的年份 chips，不新画插画）、
-     一句导语、一个**明确的进入动作**（不再是光秃秃一个箭头）。
-     ⚠️ 卡片本身**不做任何动效**（§14.6.6：不做 hover 浮起、不做循环）；**进门那道编排照旧**。
-     ⚠️ 位置仍在页面顶部、**仍不占侧栏菜单项**（页面清单里挂 `offMenuTitles`）。
-     ⚠️ `href` 留着（`refresh.sh` 的 `[4/5]` 入口体检认它），点击只拦默认行为 → 先过确认，再演 A 段。 -->
-<a class="sc-card sc-entry" href="/showcase.html">
-  <span class="sc-card-l">
-    <span class="sc-card-t">我们的专场</span>
-    <span class="sc-card-d">历届专场的时间线 —— 一年一年看下来</span>
-    <span class="sc-card-act">进去看看 →</span>
-  </span>
-  <!-- 年份墙：由 `/api/showcase/timeline` 灌（`<b>` 只放年份数字）。
-       ⚠️ `aria-hidden`：它是**装饰性的重复信息**（年份在专页上还要再看一遍），
-       留着会让整卡的链接名变成一串年份。 -->
-  <span class="sc-years" id="sc-years" aria-hidden="true"></span>
-</a>
-
 <!-- 入场编排 **A 段**（docs/14 §14.6.4）：黑幕从四面合拢 + 搜索框从下升起（**两件同时**），
      **黑透之后才换纸**到 `showcase.html`，B 段在那儿接着演 ⇒ "换纸"那一下被藏在黑里。
-     ⚠️ 层与里面的框/遮罩和 B 段**共用同一套类**，两页接缝才对得上（尺寸、颜色、位置一模一样）。 -->
+     ⚠️ 层与里面的框/遮罩和 B 段**共用同一套类**，两页接缝才对得上（尺寸、颜色、位置一模一样）。
+     ⚠️ **红线**：这一块逐字不动。 -->
 <div class="sc-intro sc-intro-a blink" id="sc-intro" data-phase="pre">
   <div class="sc-mask m-t"></div>
   <div class="sc-mask m-b"></div>
@@ -81,22 +129,21 @@
   </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h2 class="mb-0">演出</h2>
-  <button id="new" class="go go-sm" type="button" hidden>新建演出</button>
-</div>
-<table class="tb" id="concerts-table">
-  <thead><tr><th>日期</th><th>演出名</th><th>地点</th><th>状态</th><th>曲目 · 参演 · 照片</th><th class="act"></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<p id="empty" class="py-4" hidden>还没有演出记录——演完一场就把它记下来，以后回看有据可依</p>
-
 <script>
 'use strict';
 
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
 let me = null;
 let canEdit = false;
 let editingId = null;
+
+/* 小工具：建元素（值一律走 textContent，不拼 innerHTML） */
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
 
 async function load() {
   me = await BAND.renderNav('concerts.html');
@@ -105,31 +152,109 @@ async function load() {
   document.getElementById('new').hidden = !canEdit;
 
   const d = await BAND.must('/api/concerts?size=100');
-  const tbody = document.getElementById('rows');
-  tbody.innerHTML = '';
-  document.getElementById('empty').hidden = d.list.length > 0;
-  for (const c of d.list) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td><span class="chip"></span></td><td></td><td class="act"></td>';
-    tr.children[0].textContent = c.date;
-    const link = document.createElement('a');
-    link.href = `/concert-detail.html?id=${c.id}`;
-    link.textContent = c.name;
-    tr.children[1].appendChild(link);
-    tr.children[2].textContent = c.venue || '';
-    tr.querySelector('.chip').textContent = c.statusLabel;
-    tr.children[4].textContent = `${c.pieceCount} 首 · ${c.castCount} 人 · ${c.photoCount} 张`;
-    if (canEdit) {
-      const btn = document.createElement('button');
-      btn.className = 'go go-ghost go-sm';
-      btn.type = 'button';
-      btn.textContent = '编辑';
-      btn.addEventListener('click', () => openEditor(c));
-      tr.children[5].appendChild(btn);
-    }
-    tbody.appendChild(tr);
+  const list = (d.list || []).slice().sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
+  document.getElementById('list-count').textContent = `${list.length} 场`;
+  renderNext(list);
+  renderGroups(list);
+  document.getElementById('empty').classList.toggle('show', list.length === 0);
+  BAND.alive(document.getElementById('groups'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+}
+
+/* ---------- 下一场演出（未取消、未开始的最近一场） ---------- */
+function renderNext(list) {
+  const host = document.getElementById('next');
+  const now = Date.now();
+  const up = list.filter((c) => c.status !== 'CANCELED'
+      && new Date(`${c.date}T${c.startTime || '00:00'}`).getTime() > now)
+    .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')));
+  if (!up.length) { host.hidden = true; return; }
+  const n = up[0];
+  host.hidden = false;
+  host.href = `/concert-detail.html?id=${n.id}`;
+  host.innerHTML = '';
+  const db = el('span', 'datebox');
+  db.appendChild(el('span', 'd', String(Number(n.date.slice(8, 10)))));
+  db.appendChild(el('span', 'w', `${Number(n.date.slice(5, 7))} 月`));
+  host.appendChild(db);
+  const body = el('span', 'n-body');
+  body.appendChild(el('span', 'n-lab', '下一场演出'));
+  body.appendChild(el('span', 'n-title', n.name));
+  body.appendChild(el('span', 'n-meta',
+    [`${n.startTime ? n.startTime.slice(0, 5) : '待定'}`, n.venue, n.host ? `主办：${n.host}` : null].filter(Boolean).join(' · ')));
+  host.appendChild(body);
+  const t = new Date(); const today = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  const days = Math.round((new Date(`${n.date}T12:00`) - new Date(`${today}T12:00`)) / 86400000);
+  host.appendChild(el('span', 'n-count', days > 0 ? `还有 ${days} 天` : '就在今天'));
+}
+
+/* ---------- 按年分组 ---------- */
+function renderGroups(list) {
+  const host = document.getElementById('groups');
+  host.innerHTML = '';
+  const byYear = {};
+  for (const c of list) (byYear[c.date.slice(0, 4)] = byYear[c.date.slice(0, 4)] || []).push(c);
+  for (const y of Object.keys(byYear).sort((a, b) => b.localeCompare(a))) {
+    const sec = el('section', 'ev-group');
+    const gh = el('div', 'g-h');
+    gh.appendChild(el('span', 't', `${y} 年`));
+    gh.appendChild(el('span', 'ln'));
+    gh.appendChild(el('span', 'c', `${byYear[y].length} 场`));
+    sec.appendChild(gh);
+    const rows = el('div', 'ev-rows');
+    for (const c of byYear[y]) rows.appendChild(cnRow(c));
+    sec.appendChild(rows);
+    host.appendChild(sec);
   }
-  BAND.alive(document.getElementById('concerts-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+}
+
+/* ---------- 一行：`<div class="cn-crow">` 套整行 `<a class="evrow">` + 行内「编辑」按钮 ----------
+   ⚠️ **与活动页唯一的形态分叉**：活动页的行是裸 `<a>`（行内没有按钮）；演出行**要能编辑**。
+   `<button>` 不能放进 `<a>`（HTML 不允许交互内容套交互内容）⇒ 让 `<a>` 仍当整卡、按钮做**兄弟节点**
+   绝对定位在卡内（`.cn-crow.has-edit .evrow` 让出右边距）。中键新标签 / 无 JS 照样能点。
+   ⚠️ 状态**常态不挂标签**（跟活动页对齐、守铁律 2）：已取消＝朱砂 `.ev-tag.cancel` + 行删除线；已完成＝灰字；
+   「计划中」什么都不挂。 */
+function cnRow(c) {
+  const wrap = el('div', 'cn-crow');
+  const a = el('a', 'evrow' + (c.status === 'CANCELED' ? ' is-cancel' : ''));
+  a.href = `/concert-detail.html?id=${c.id}`;
+
+  const db = el('span', 'datebox');
+  db.appendChild(el('span', 'd', String(Number(c.date.slice(8, 10)))));
+  db.appendChild(el('span', 'w', `${Number(c.date.slice(5, 7))} 月`));
+  a.appendChild(db);
+
+  const body = el('span', 'body');
+  const title = el('span', 'title');
+  title.appendChild(el('b', null, c.name));
+  body.appendChild(title);
+  const m = el('span', 'meta');
+  [c.startTime ? c.startTime.slice(0, 5) : null, c.venue, c.host ? `主办：${c.host}` : null]
+    .filter(Boolean).forEach((v, i) => {
+      if (i) m.appendChild(el('span', 'sep', '·'));
+      m.appendChild(document.createTextNode(v));
+    });
+  body.appendChild(m);
+  body.appendChild(el('span', 'sub', `${c.pieceCount} 首 · ${c.castCount} 人 · ${c.photoCount} 张`));
+  a.appendChild(body);
+
+  const st = el('span', 'st');
+  if (c.status === 'CANCELED') st.appendChild(el('span', 'ev-tag cancel', '已取消'));
+  else if (c.status === 'DONE') st.appendChild(el('span', 'st done', '已完成'));
+  a.appendChild(st);
+
+  const chev = el('span', 'chev');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 5l7 7-7 7"/></svg>';
+  a.appendChild(chev);
+  wrap.appendChild(a);
+
+  if (canEdit) {
+    const btn = el('button', 'cn-crow-edit', '编辑');
+    btn.type = 'button';
+    btn.addEventListener('click', (e) => { e.preventDefault(); openEditor(c); });
+    wrap.appendChild(btn);
+    wrap.classList.add('has-edit');
+  }
+  return wrap;
 }
 
 async function openEditor(concert) {
@@ -184,7 +309,8 @@ document.getElementById('save').addEventListener('click', async () => {
    （形态见 docs/14 §14.6.4；A/B 两段怎么拆、为什么拆，见 `17` §17.6）
    ⚠️ 闸门**复用 `BAND.confirm`**（Bootstrap Modal：居中、Esc、点背景都能关），**别另造一套**；
    它在 reduced-motion 下不播入场（Bootstrap 自己把 `.fade` 关掉了），正好满足规格那一条。
-   ⚠️ 绑定**在解析期做一次**：`load()` 每次筛选/保存都会被再调用一遍，绑在里面会攒监听。 */
+   ⚠️ 绑定**在解析期做一次**：`load()` 每次筛选/保存都会被再调用一遍，绑在里面会攒监听。
+   ⚠️ **红线**：这一段逻辑逐字不动。 */
 (function bindShowcaseEntry() {
   // 年份墙（`#116`）：**纯文字**，取自历届专场自己（`docs/14` §14.6.4「不用新画的插画」）。
   // ⚠️ 它**可能为空**——时间线只收录"有策展图的场次"（`docs/17` §17.4）⇒ 空时就是空的、**不留空块**；
@@ -227,6 +353,94 @@ document.getElementById('save').addEventListener('click', async () => {
   });
 })();
 
+/* ---------- 页头「今天」 ---------- */
+function renderToday() {
+  const d = new Date();
+  document.getElementById('today-txt').textContent =
+    `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = document.getElementById('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = document.getElementById('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = document.getElementById('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = document.getElementById('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  // 门控类只在这段时间挂上 ⇒ 「墨洇」不会顺手接管**跳页过渡**（见 band.css §1b 的注释）
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
+  }
+}
+function openPop(o) {
+  const pop = document.getElementById('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  document.getElementById('theme-btn').setAttribute('aria-expanded', String(o));
+}
+
+/* ---------- 接线（顶层一次；节点被 shell 挪进 .mbody 时监听器随之保留） ---------- */
+document.getElementById('theme-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPop(document.getElementById('theme-pop').hidden);
+});
+document.getElementById('night-btn').addEventListener('click', toggleNight);
+document.getElementById('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+renderToday();
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

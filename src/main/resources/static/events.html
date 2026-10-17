@@ -29,141 +29,185 @@
 
 <div id="navbar"></div>
 
-<section class="grid mb-4" id="bento">
-  <div class="cell hero">
-    <div class="lab">下一场</div>
-    <h2 id="hero-title">—</h2>
-    <p class="when" id="hero-when"></p>
-    <div class="act"><a class="go" id="hero-go" href="#">签 到</a></div>
-  </div>
-  <div class="cell wide">
-    <div class="lab">这周的谱</div>
-    <div class="score" id="score"></div>
-  </div>
-  <!-- ⭐ s1 从"只有出勤率一个数"改成**数字三连**（`docs/14` §14.6.4 九·b / `交接单 #117`）：
-       我的录音数 / 我的出勤场次 / 在团天数。⚠️ **三个数各自在自己的元素里**——
-       数字滚动（「界面的活性」①）要求如此，挤在一个元素里会串。
-       出勤率没有消失，它还在考勤统计页（这一格换成"成就感"的三个数）。 -->
-  <div class="cell s1">
-    <div class="lab">我的</div>
-    <div class="mine-nums">
-      <div class="mn"><p class="big" id="n-rec" data-count>—</p><em>录音</em></div>
-      <div class="mn"><p class="big" id="n-att" data-count>—</p><em>出勤场次</em></div>
-      <div class="mn"><p class="big" id="n-days" data-count>—</p><em>在团天数</em></div>
+<!-- ══ 外观控件行（<b>只在活动页</b>，docs/14 §14.6.2b）══════════════════════════════
+     今天 + 配色（popover）/ 深浅两个图标按钮。切一次 ⇒ 配色 token 全站生效（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**（AGENTS.md）：色块底色走 band.css 的 `.seedswatch[data-p="…"]`。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
     </div>
   </div>
-  <div class="cell s2">
-    <div class="lab">待办</div>
-    <p class="big" id="todo-big" data-count>0</p>
-    <p class="mb-0 text-nowrap" id="todo-note" hidden></p>
+</div>
+
+<!-- ══ Hero：下一场（未取消、未开始的最近一场；`renderHero`）══ -->
+<section class="ev-hero" aria-label="下一场">
+  <span class="lab"><span class="tick"></span>下一场 · <span id="hero-kind">排练</span></span>
+  <h2 id="hero-title">——</h2>
+  <p class="when" id="hero-when"></p>
+  <div class="act">
+    <a class="ev-btn ev-btn-primary" href="#" id="hero-go">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7 10.5 16.5 6 12"/></svg>
+      签 到
+    </a>
+    <span class="count" id="hero-count"></span>
   </div>
 </section>
 
-<h2 class="mb-3">活动安排</h2>
-<div class="d-flex gap-2 mb-3 filters">
-  <select id="kind" class="w-auto">
-    <option value="">全部类型</option>
-    <option value="REHEARSAL">排练</option>
-    <option value="SECTION_CLASS">声部课</option>
-    <option value="DRESS_REHEARSAL">彩排</option>
-  </select>
+<!-- ══ 指标条（三数 → 待办 → 工具）══
+     ⚠️ 每个数在**自己的元素**里（`data-count`）——「界面的活性」①要求如此。 -->
+<section class="ev-stats" aria-label="我的数据">
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 7v8M16 7v8M4 11v4M20 11v4"/></svg>录音</div>
+    <p class="v" id="n-rec" data-count>—</p>
+  </div>
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7 10.5 16.5 6 12"/></svg>出勤场次</div>
+    <p class="v" id="n-att" data-count>—</p>
+  </div>
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>在团天数</div>
+    <p class="v" id="n-days" data-count>—</p>
+  </div>
+  <div class="ev-stat warn">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h11l3 3v13H5Z"/><path d="M8 4v5h7"/></svg>待办</div>
+    <p class="v"><span id="todo-big" data-count>0</span><small id="todo-note" hidden></small></p>
+  </div>
+  <div class="ev-stat ev-tools">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-5.6 5.6 1.4 1.4 5.6-5.6a4 4 0 0 0 5.4-5.4l-2.3 2.3-1.8-1.8Z"/></svg>工具</div>
+    <div class="toolrow">
+      <a class="tbtn" href="/tuner.html" title="调音器">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h3l2-6 4 14 3-9 2 3h4"/></svg>调音器
+      </a>
+      <a class="tbtn" href="/metronome.html" title="节拍器">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 6 19M12 3l6 16"/><path d="M8 15h8M5 19h14M12 3v3"/><path d="m12 9 3.5-3"/></svg>节拍器
+      </a>
+      <a class="tbtn" href="/recordings.html" title="录音">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>录音
+      </a>
+      <a class="tbtn" href="/pieces.html" title="曲谱">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="11" cy="14" r="2"/><path d="M13 14V7"/></svg>曲谱
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 列表头 + 筛选 ══ -->
+<div class="ev-lhead">
+  <h2>活动安排</h2>
+  <div class="ev-filters" id="filters" role="group" aria-label="按类型筛选"></div>
 </div>
-<table class="tb" id="events-table">
-  <thead><tr><th>日期</th><th>类型</th><th>标题</th><th>时间</th><th>声部</th><th>状态</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<p id="empty" class="py-4" hidden>暂无活动</p>
+
+<div id="groups"></div>
+
+<div class="ev-empty" id="empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3M9 15h6"/></svg>
+  </span>
+  <b>这一类暂时没有活动</b>
+  <span>换个类型筛选看看，或等新安排</span>
+</div>
 
 <script>
-const KIND_LV = { REHEARSAL: 1, SECTION_CLASS: 2, DRESS_REHEARSAL: 3 };
-const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
+'use strict';
 
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const KIND_LV = { REHEARSAL: 1, SECTION_CLASS: 2, DRESS_REHEARSAL: 3 };
+
+/* 当前筛选（'ALL' 或某个 kind）。筛选走后端 ⇒ 点击 chip 重新 load()。 */
+let filter = 'ALL';
+
+function wdOf(dateStr) { return WD[new Date(dateStr + 'T12:00').getDay()]; }
+function md(dateStr) { return `${+dateStr.slice(5, 7)} 月 ${+dateStr.slice(8, 10)} 日`; }
+
+/* 今天 = 本地日期串（与后端 date 字段同格式） */
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function isToday(dateStr) { return dateStr === todayStr(); }
+
+/* 本周 / 下周 / 稍后 / 更早 —— 以今天所在一周（周一起）为「本周」 */
+function groupOf(dateStr) {
+  const t = new Date(todayStr() + 'T12:00');
+  const d = new Date(dateStr + 'T12:00');
+  const mon = new Date(t); mon.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+  const diff = Math.round((d - mon) / 86400000);
+  if (diff < 0) return { key: 'past', label: '更早', order: 0 };
+  if (diff < 7) return { key: 'this', label: '本周', order: 1 };
+  if (diff < 14) return { key: 'next', label: '下周', order: 2 };
+  return { key: 'later', label: '稍后', order: 3 };
+}
+function sortKey(e) { return e.date + e.startTime; }
 function whenText(e) {
-  return `${e.date.slice(5).replace('-', ' 月 ')} 日 ${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}` +
+  return `${md(e.date)} 周${wdOf(e.date)} ${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}` +
     (e.location ? ` · ${e.location}` : '');
 }
 
+/* ---------- 加载 ---------- */
 async function load() {
   const me = await BAND.renderNav('events.html');
   if (!me) return;
 
-  const kind = document.getElementById('kind').value;
-  const d = await BAND.must(`/api/events?size=100${kind ? '&kind=' + kind : ''}`);
+  const d = await BAND.must(`/api/events?size=100${filter !== 'ALL' ? '&kind=' + filter : ''}`);
   // ⚠️ 等两个汇总都写进 DOM 之后才播「活性」——它们没写完就播，快照到的是 `—` / 空点阵，
   // 而"播过"的标志一置位就**再也不播**了（docs/14 §14.6.4 ③"只在首次出现数一次"的前提）
-  await renderBento(me, d.list);
+  renderHero(d.list);
+  renderFilters();
   renderList(d.list);
-  BAND.alive(document.getElementById('bento'), document.getElementById('events-table'));
+  await renderMineAndTodo(me);
+  BAND.alive(document.querySelector('.ev-stats'), document.getElementById('groups'));
 }
 
-async function renderBento(me, list) {
-  // 主角格：下一场（未取消、未开始的最近一场）
+/* ---------- hero（下一场） ---------- */
+function renderHero(list) {
+  // 主角：未取消、未开始的最近一场（**不认样张那个手工 hero 布尔**）
   const now = Date.now();
   const upcoming = list
     .filter((e) => e.status !== 'CANCELED' && new Date(`${e.date}T${e.startTime}`) > now)
-    .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+    .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const heroTitle = document.getElementById('hero-title');
   const heroGo = document.getElementById('hero-go');
   if (upcoming.length > 0) {
-    const next = upcoming[0];
-    heroTitle.textContent = next.title;
-    document.getElementById('hero-when').textContent = whenText(next);
-    heroGo.href = `/event-detail.html?id=${next.id}`;
+    const nx = upcoming[0];
+    heroTitle.textContent = nx.title;
+    document.getElementById('hero-kind').textContent = BAND.kindLabel(nx.kind);
+    document.getElementById('hero-when').textContent = whenText(nx);
+    heroGo.href = `/event-detail.html?id=${nx.id}`;
     heroGo.hidden = false;
+    const days = Math.round((new Date(nx.date + 'T12:00') - new Date(todayStr() + 'T12:00')) / 86400000);
+    document.getElementById('hero-count').innerHTML = isToday(nx.date)
+      ? '就在<b>今天</b>'
+      : `还有 <b>${days}</b> 天`;
   } else {
     heroTitle.textContent = '暂无安排';
     document.getElementById('hero-when').textContent = '';
+    document.getElementById('hero-count').textContent = '';
     heroGo.hidden = true;
   }
-
-  // 这周的谱：本周一~周日，块高低 = 活动类型；空白日写休止符 0
-  const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  const byDay = {};
-  list.filter((e) => e.status !== 'CANCELED').forEach((e) => {
-    const diff = Math.round((new Date(`${e.date}T12:00`) - new Date(monday)) / 86400000);
-    if (diff >= 0 && diff < 7) {
-      byDay[diff] = byDay[diff] || [];
-      byDay[diff].push(e);
-    }
-  });
-  const score = document.getElementById('score');
-  score.innerHTML = '';
-  for (let i = 0; i < 7; i++) {
-    const dayEvents = byDay[i];
-    const blk = document.createElement('div');
-    if (!dayEvents || dayEvents.length === 0) {
-      blk.className = 'blk rest';
-      blk.style.setProperty('--d', i + 1);
-      blk.style.setProperty('--lv', 2);
-      blk.textContent = '0';
-    } else {
-      const top = dayEvents.reduce((m, e) => Math.max(m, KIND_LV[e.kind] || 1), 1);
-      blk.className = 'blk';
-      blk.style.setProperty('--d', i + 1);
-      blk.style.setProperty('--lv', top);
-      blk.textContent = BAND.kindLabel(dayEvents[0].kind).slice(0, 1);
-    }
-    score.appendChild(blk);
-  }
-  const days = document.createElement('div');
-  days.className = 'days';
-  days.innerHTML = DAY_NAMES.map((n) => `<i>${n}</i>`).join('');
-  score.appendChild(days);
-
-  // 「我的」三个数（录音数 / 出勤场次 / 在团天数）
-  // ⚠️ 这两条要 await：调用方（load）要在它们写完 DOM 之后才播「活性」
-  await fetchMine(me);
-  await renderTodo(me);
 }
 
-/** 「我的」那三个数（`docs/14` §14.6.4 九·b，`交接单 #117`）。
- *  ⚠️ 值**直接写终态**：数字滚动会自己从 0 滚上去（`ALIVE.play` 读元素原文当终值）；
- *  拿不到的写 `—`（`specOf` 认不出数字 ⇒ 不数，也不会被滚成 0）。 */
-async function fetchMine(me) {
-  // ① 我的录音数 ② 我的出勤场次（**与个人栏同一口径**：排练 + 声部课的 present 之和，
-  //   用户 2026-09-30 拍板；**不是**"数 attendance 行数"）③ 在团天数（本地算）
+/* ---------- 「我的」三个数 + 待办 ---------- */
+/** 「我的」那三个数（docs/14 §14.6.4 九·b，交接单 #117）。
+ *  ⚠️ 值**直接写终态**：数字滚动会自己从 0 滚上去（ALIVE.play 读元素原文当终值）；
+ *  拿不到的写 `—`（specOf 认不出数字 ⇒ 不数，也不会被滚成 0）。 */
+async function renderMineAndTodo(me) {
   try {
     const [rec, sum] = await Promise.all([
       BAND.must(`/api/recordings?memberId=${me.id}&size=1`),
@@ -178,16 +222,14 @@ async function fetchMine(me) {
   }
   document.getElementById('n-days').textContent =
     me.joinedAt ? String(BAND.daysSince(me.joinedAt)) : '—';
-}
 
-async function renderTodo(me) {
   const big = document.getElementById('todo-big');
   const note = document.getElementById('todo-note');
   const approver = ['ADMIN', 'LEADER', 'SECTION_LEADER'].includes(me.role);
   const scope = approver ? 'needsMe' : 'mine';
   try {
     const d = await BAND.must(`/api/leave-requests?scope=${scope}&status=PENDING&size=50`);
-    big.textContent = d.total;
+    big.textContent = String(d.total);
     note.hidden = false;
     note.textContent = approver ? '请假待我审批' : '我的请假待审批';
   } catch (e) {
@@ -195,71 +237,162 @@ async function renderTodo(me) {
   }
 }
 
-/** 手机端活动行（样张 `v-events` 的 `.ev` 日期块行）：日期块 + 主文 + `›`。
-    桌面仍走下面那套 6 列表格，一个字没动（`docs/14` §14.6.4 §三 表第 1 行）。 */
-function evRow(e) {
-  const tr = document.createElement('tr');
-  tr.className = 'link';
-  const date = document.createElement('td');
-  date.className = 'ev-date';
-  const day = document.createElement('b');
-  day.textContent = e.date.slice(8, 10);
-  const wd = document.createElement('em');
-  wd.textContent = '周' + DAY_NAMES[(new Date(`${e.date}T12:00`).getDay() + 6) % 7];
-  date.append(day, wd);
-  const main = document.createElement('td');
-  main.className = 'ev-main';
-  const title = document.createElement('b');
-  if (e.status === 'CANCELED') {
-    const s = document.createElement('s');
-    s.textContent = e.title;
-    title.appendChild(s);
-  } else {
-    title.textContent = e.title;
+/* ---------- 筛选 chip（不走计数——计数要额外拉一次列表，先不做） ---------- */
+function renderFilters() {
+  const defs = [['ALL', '全部']].concat(Object.keys(KIND_LV).map((k) => [k, BAND.kindLabel(k)]));
+  const host = document.getElementById('filters');
+  host.innerHTML = defs.map(([k, lab]) => {
+    const on = filter === k;
+    const dot = k === 'ALL' ? '' : `<span class="dot"></span>`;
+    return `<button class="fchip" type="button" data-k="${k}" aria-pressed="${on}">${dot}${lab}</button>`;
+  }).join('');
+  host.querySelectorAll('.fchip').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (filter === b.dataset.k) return;
+      filter = b.dataset.k;
+      load();                       // 筛选走后端（与原 select 行为一致）
+    });
+  });
+}
+
+/* ---------- 列表（按周分组） ---------- */
+function renderList(list) {
+  const host = document.getElementById('groups');
+  const empty = document.getElementById('empty');
+  const sorted = [...list].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  empty.classList.toggle('show', sorted.length === 0);
+  host.innerHTML = '';
+
+  const groups = {};
+  for (const e of sorted) {
+    const g = groupOf(e.date);
+    (groups[g.key] = groups[g.key] || { meta: g, items: [] }).items.push(e);
   }
-  const meta = document.createElement('span');
-  meta.textContent = [
+  const ordered = Object.values(groups).sort((a, b) => a.meta.order - b.meta.order);
+
+  for (const g of ordered) {
+    const sec = document.createElement('section');
+    sec.className = 'ev-group';
+    sec.innerHTML = `<div class="g-h"><span class="t">${g.meta.label}</span><i class="ln"></i><span class="c">${g.items.length} 场</span></div>`;
+    const rows = document.createElement('div');
+    rows.className = 'ev-rows';
+    for (const e of g.items) rows.appendChild(evRow(e));
+    sec.appendChild(rows);
+    host.appendChild(sec);
+  }
+}
+
+/** 一行活动：日期块 + 主文 + 状态 + `›`；点行跳详情页（真站既有行为）。 */
+function evRow(e) {
+  const btn = document.createElement('a');
+  btn.className = 'evrow' + (e.status === 'CANCELED' ? ' is-cancel' : '') + (isToday(e.date) ? ' is-today' : '');
+  btn.href = `/event-detail.html?id=${e.id}`;
+  const st = e.status === 'CANCELED'
+    ? '<span class="ev-tag cancel">已取消</span>'
+    : (isToday(e.date) ? '<span class="ev-tag today">今天</span>' : '');
+  btn.innerHTML =
+    `<span class="datebox"><span class="d">${+e.date.slice(8, 10)}</span><span class="w">周${wdOf(e.date)}</span></span>
+     <span class="body">
+       <span class="title"><i class="type" data-k="${e.kind}"></i><b></b></span>
+       <span class="meta"></span>
+     </span>
+     <span class="st">${st}</span>
+     <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 5l7 7-7 7"/></svg></span>`;
+  btn.querySelector('.title b').textContent = e.title;
+  btn.querySelector('.meta').textContent = [
     `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}`, e.location, e.sectionName,
   ].filter(Boolean).join(' · ');
-  main.append(title, meta);
-  const go = document.createElement('td');
-  go.className = 'ev-go';
-  go.textContent = '›';
-  tr.append(date, main, go);
-  tr.addEventListener('click', () => { location.href = `/event-detail.html?id=${e.id}`; });
-  return tr;
+  return btn;
 }
 
-function renderList(list) {
-  const mobile = BAND.isMobile();
-  document.getElementById('events-table').classList.toggle('ev-list', mobile);
-  const tbody = document.getElementById('rows');
-  tbody.innerHTML = '';
-  document.getElementById('empty').hidden = list.length > 0;
-  for (const e of list) {
-    if (mobile) { tbody.appendChild(evRow(e)); continue; }
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><span class="chip"></span></td>';
-    tr.children[0].textContent = e.date;
-    tr.children[1].textContent = BAND.kindLabel(e.kind);
-    const title = tr.children[2];
-    if (e.status === 'CANCELED') {
-      const s = document.createElement('s');
-      s.textContent = e.title;
-      title.appendChild(s);
-    } else {
-      title.textContent = e.title;
-    }
-    tr.children[3].textContent = `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)} ${e.location || ''}`;
-    tr.children[4].textContent = e.sectionName || '';
-    tr.querySelector('.chip').textContent = e.status === 'CANCELED' ? '已取消' : '';
-    tr.classList.add('link');
-    tr.addEventListener('click', () => { location.href = `/event-detail.html?id=${e.id}`; });
-    tbody.appendChild(tr);
+/* ---------- 页头「今天」 ---------- */
+function renderToday() {
+  const d = new Date();
+  document.getElementById('today-txt').textContent =
+    `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = document.getElementById('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = document.getElementById('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = document.getElementById('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = document.getElementById('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  // 门控类只在这段时间挂上 ⇒ 「墨洇」不会顺手接管**跳页过渡**（见 band.css §1b 的注释）
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
   }
 }
+function openPop(o) {
+  const pop = document.getElementById('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  document.getElementById('theme-btn').setAttribute('aria-expanded', String(o));
+}
 
-document.getElementById('kind').addEventListener('change', load);
+/* ---------- 接线（顶层一次；节点被 shell 挪进 .mbody 时监听器随之保留） ---------- */
+document.getElementById('theme-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPop(document.getElementById('theme-pop').hidden);
+});
+document.getElementById('night-btn').addEventListener('click', toggleNight);
+document.getElementById('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+renderToday();
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

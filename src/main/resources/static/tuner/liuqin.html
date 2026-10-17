@@ -903,13 +903,15 @@ async function start() {
     if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
     const n = e && e.name;
     if (n === 'NotAllowedError')
-      setMsg('麦克风被拒绝了。点地址栏左边的图标，把「麦克风」改成允许，再点一次开始。', true);
+      setMsg('麦克风被拒绝了。点地址栏左边的图标把「麦克风」改成允许；若手机同时弹了系统权限框，选「允许」，再点一次开始。', true);
     else if (n === 'NotFoundError')
       setMsg('没找到麦克风设备。', true);
     else if (n === 'NoMediaDevices' || !navigator.mediaDevices)
       setMsg('这个地址拿不到麦克风。需要用 https 链接打开（本机用 http://localhost 也行），普通 http 网址不行。', true);
     else
-      setMsg('起不来：' + (e && e.message ? e.message : e), true);
+      // NotReadableError（"Could not start audio source"）也落到这里：安卓系统层没给这个浏览器麦克风权限
+      // 时最常报它（系统还会自动收回久未使用 App 的权限）⇒ 给能照做的中文，别把英文原样抛给团员
+      setMsg('麦克风起不来。请到手机「设置 → 应用管理」给这个浏览器开麦克风权限（选「仅在使用时允许」），再点一次；还不行就换手机自带浏览器或 Chrome 打开。', true);
   } finally {
     el.toggle.disabled = false;
   }

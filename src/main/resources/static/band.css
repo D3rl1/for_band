@@ -9,21 +9,53 @@
    规则与理由见 docs/14-前端资源与样式规范.md §14.6。
    ============================================================ */
 
+/* 自托管中文字体（朱雀仿宋 / 猫啃珠圆体）的 @font-face —— **生成物，别手改**。
+   为什么单开一个文件：两个字体各约一百个 unicode-range 分片、共 200+ 条 @font-face，
+   塞进本文件会把"手写的唯一样式入口"淹掉。分片按 unicode-range **懒加载**，单页只下命中的片。
+   ⚠️ `@import` 必须排在所有规则之前。来源 / SHA256 见各 `vendor/<名>/SOURCE.md`，规格见 docs/14 §14.6.5。 */
+@import url("band-fonts.css");
+
 /* ============ §1 设计令牌（改风格就改这一段） ============ */
 :root {
-  /* —— 木与丝：民乐器的材料色。刻意不碰蓝（管乐团是靛蓝） —— */
-  --silk:    #F7F3EC;   /* 页面底：蚕丝米白 */
-  --cell:    #F1EBE0;   /* 卡片 / 次级底 */
-  --pale:    #D2C3AE;   /* 细线（装饰性） */
-  --edge:    #9C856B;   /* 组件边界：输入框 / chip / 分页 */
-  --wood:    #7A5136;   /* 主色：主按钮、选中、重点 */
-  --deep:    #33241A;   /* 正文与标题 */
-  --mid:     #6F5F51;   /* 次级文字 */
-  --shell:   #2A1D14;   /* 深木：侧栏 / 主按钮深色态 / 主角格 */
-  --shellmid:#B3A392;   /* 深色上的次级字 */
-  --shellhi: #C08A5E;   /* 深色上的亮木 */
-  --cinna:   #B23A2E;   /* 朱砂：**只给异常状态与印章** */
-  --onwood:  #FBF8F2;   /* 木色上的字 */
+  /* —— 墨·青（2026-10-11 由「木与丝」改版）：冷调、去土 ——
+     语义层是**新代码唯一该读**的名字；旧名（`--silk/--wood/…`）保留为**别名**，老页面一字不改继续可用。
+     改配色只改这一层 + 紧跟其后的 §1b `html[data-palette]` / `html[data-theme]` 块。
+     规格见 docs/14 §14.6.2 / §14.6.2b。 */
+  --bg:          #F2F3F1;   /* 页面底：冷调近白 */
+  --surface:     #FFFFFF;   /* 卡片底 */
+  --surface-2:   #F7F8F6;   /* 次级底：卡片内的槽 / 日期块 */
+  --line:        #E3E6E2;   /* 发丝线 */
+  --line-strong: #D2D6D1;   /* 稍重的分隔 / 悬停边 */
+  --ink:         #15181A;   /* 正文与标题 */
+  --ink-2:       #5A6268;   /* 次级文字 */
+  --ink-3:       #8C9298;   /* 三级文字 */
+  --accent:      #1F6F5C;   /* 主色：主按钮、选中、重点（青绿） */
+  --accent-ink:  #155446;   /* 主色深：hover / 主色文字 */
+  --accent-weak: #E7F0EC;   /* 主色浅底：选中背景 */
+  --accent-line: #BCD6CC;   /* 主色边线 */
+  --accent-dk:   #5FB79E;   /* 主色亮档：**只在夜间**用 */
+  --danger:      #B23A2E;   /* 朱砂：**只给异常状态与印章** */
+  --danger-weak: #F7EAE7;   /* 朱砂浅底（取消态底） */
+  --hero-1:      #13211D;   /* 通栏 hero 卡的深墨绿渐变两端 */
+  --hero-2:      #1B3029;
+  --sh-1: 0 1px 2px rgba(18,26,22,.05);
+  --sh-2: 0 10px 30px -18px rgba(18,26,22,.28);
+  --sh-3: 0 24px 60px -30px rgba(18,26,22,.34);
+
+  /* —— 兼容层：旧色名 = 语义名的**别名**（custom property 引用，用时才解析）——
+     于是配色块只换 `--accent`，`--wood` 等自动跟；⚠️ 别给旧名再赋一次直接值（会与别名打架）。 */
+  --silk:    var(--bg);          /* 页面底 */
+  --cell:    var(--surface-2);   /* 次级底：卡片内的槽 / 行的悬停 / chip / 骨架屏（比页面底淡一档） */
+  --pale:    var(--line);        /* 装饰细线 */
+  --edge:    #7E8681;            /* 组件边界：输入框 / chip / 分页（对 --bg 实测 ≈3.4:1，见 §14.6.2 铁律 5） */
+  --wood:    var(--accent);      /* 主色 */
+  --deep:    var(--ink);         /* 正文与标题 */
+  --mid:     var(--ink-2);       /* 次级文字 */
+  --shell:   var(--hero-1);      /* 深底：侧栏 / 主角格 */
+  --shellmid:color-mix(in srgb, var(--accent-dk) 45%, #EAF3EF);   /* 深底上的次级字 */
+  --shellhi: var(--accent-dk);   /* 深底上的亮色 */
+  --cinna:   var(--danger);      /* 朱砂 */
+  --onwood:  var(--bg);          /* 主色底上的字（夜间自动翻成深色） */
 
   /* —— 版式 —— */
   --gap: 20px;          /* 格间距，全站统一 */
@@ -56,9 +88,14 @@
   --fs-meta:  12.5px;   /* 次级信息（声部 · 乐器 · 角色这种）。**手机同值** ⇒ §10 不覆盖 */
   --fs-field: 14px;     /* 表单控件（手机端必须 ≥16px，否则 iOS 聚焦会放大整页） */
 
-  /* —— 字体：西文/数字在前，各系统中文字体在中，sans-serif 兜底不可省 —— */
+  /* —— 字体：西文/数字（IBM Plex）在前，**自托管中文正文（`BandSans` = 猫啃珠圆体）**其后，
+     再各系统中文兜底，sans-serif 不可省。
+     ⚠️ `BandSans` 只声明了 **CJK 的 unicode-range** ⇒ 拉丁与数字仍由前面的 IBM Plex 拿下，不会串。
+     ⚠️ 该系统字体栈**保留在 webfont 之后**：webfont 没命中的字（含极生僻字）继续由系统黑体兜底，绝不出方框。
+     2026-10-11 起中文正文走 webfont，理由与代价见 docs/14 §14.6.5。 —— */
   --font-ui:
     "IBM Plex Sans",
+    "BandSans",
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     "HarmonyOS Sans SC", "HarmonyOS Sans", "MiSans", "OPPO Sans",
     "PingFang SC", "Hiragino Sans GB",
@@ -102,7 +139,78 @@
   --ease-nav: 340ms cubic-bezier(.4, 0, .2, 1);
 }
 
-/* ============ §2 自托管西文字体（只有拉丁与数字，不含中文） ============ */
+/* ============ §1b 配色预置与夜间（docs/14 §14.6.2b，2026-10-11 新增）============
+   同一套版式、只换「墨 + 一个色」；`html[data-palette]` / `html[data-theme]` 由 band-nav.js
+   在首绘前打到 <html>（值取自 localStorage）⇒ **全站生效、跨页不闪**。
+   ⚠️ `html[data-theme="dark"]` **必须排在配色块之后** —— 同权重(0,1,1)靠源码顺序让 `--accent` 被覆盖。
+   朱砂 `--danger` 在**所有**配色、**两种深浅**里固定只表示"异常/已取消"。 */
+
+html[data-palette="jade"]{   /* 墨·青（默认，值与 :root 相同） */
+  --accent:#1F6F5C; --accent-ink:#155446; --accent-weak:#E7F0EC; --accent-line:#BCD6CC; --accent-dk:#5FB79E;
+  --hero-1:#13211D; --hero-2:#1B3029; --bg:#F2F3F1; --surface-2:#F7F8F6; --line:#E3E6E2;
+}
+html[data-palette="teal"]{   /* 墨·松（青绿） */
+  --accent:#1C6E77; --accent-ink:#145158; --accent-weak:#E2F0F1; --accent-line:#B4D5D8; --accent-dk:#64B9C2;
+  --hero-1:#0F1E20; --hero-2:#16302F; --bg:#F1F3F3; --surface-2:#F6F8F8; --line:#E1E6E6;
+}
+html[data-palette="violet"]{ /* 墨·紫（藕紫） */
+  --accent:#6A4A9C; --accent-ink:#523A7A; --accent-weak:#EDE8F5; --accent-line:#D1C6E4; --accent-dk:#B79BE0;
+  --hero-1:#181232; --hero-2:#221A46; --bg:#F3F1F5; --surface-2:#F8F7FA; --line:#E6E2EC;
+}
+html[data-palette="olive"]{  /* 墨·缃（橄榄） */
+  --accent:#5F6A2C; --accent-ink:#485120; --accent-weak:#EEEFE2; --accent-line:#CFD4B6; --accent-dk:#B9C071;
+  --hero-1:#161B10; --hero-2:#222A17; --bg:#F3F3EE; --surface-2:#F8F8F4; --line:#E6E6DE;
+}
+html[data-palette="clay"]{   /* 墨·赭（陶土） */
+  --accent:#A45A34; --accent-ink:#7C4325; --accent-weak:#F5EAE1; --accent-line:#E1C9B8; --accent-dk:#E0A479;
+  --hero-1:#241609; --hero-2:#35220F; --bg:#F4F1ED; --surface-2:#F9F6F2; --line:#E9E2DA;
+}
+html[data-palette="ink"]{    /* 纯墨（无彩） */
+  --accent:#1C1F21; --accent-ink:#14171A; --accent-weak:#EEEEED; --accent-line:#D4D5D3; --accent-dk:#C9CCCB;
+  --hero-1:#131517; --hero-2:#1D2023; --bg:#F2F2F1; --surface-2:#F7F7F6; --line:#E2E2E0;
+}
+
+html[data-theme="dark"]{
+  /* 「墨汁印染」：中性底不是纯黑，而是把当前配色的 --accent-dk 掺一点进去 ⇒
+     墨·赭的夜是暖墨、墨·青的夜是冷墨，各是一汪**有色的墨**，不是罩一层黑。 */
+  --bg:          color-mix(in srgb, var(--accent-dk) 6%,  #0B0D0C);
+  --surface:     color-mix(in srgb, var(--accent-dk) 6%,  #171B19);
+  --surface-2:   color-mix(in srgb, var(--accent-dk) 10%, #212624);
+  --line:        color-mix(in srgb, var(--accent-dk) 16%, #2B312E);
+  --line-strong: color-mix(in srgb, var(--accent-dk) 26%, #39413E);
+  --ink:#EAEDEB; --ink-2:#B4BCB8; --ink-3:#9BA39D;
+  --danger:#E67C6A; --danger-weak:#3A211D;   /* 朱砂在深底仍只给「已取消」，且够亮 */
+  --edge:#9AA39D;                            /* 深底上的组件边界 */
+  --accent: var(--accent-dk);
+  --accent-ink:  color-mix(in srgb, var(--accent-dk) 42%, #fff);
+  --accent-weak: color-mix(in srgb, var(--accent-dk) 22%, var(--surface));
+  --accent-line: color-mix(in srgb, var(--accent-dk) 46%, var(--surface));
+  --hero-1: color-mix(in srgb, var(--accent-dk) 14%, #0A0D0C);
+  --hero-2: color-mix(in srgb, var(--accent-dk) 24%, #0A0D0C);
+  --shellmid:color-mix(in srgb, var(--accent-dk) 45%, #EAF3EF);
+}
+
+/* 夜墨揭幕：切夜间时新配色从「月亮按钮」圆心像墨滴一样洇开（View Transition）。
+   扫过处是同一份内容当场换色，不是盖一层黑；不支持 VT 的浏览器退回普通交叉淡化。
+   ⚠️ **必须用 `html.theme-xvt` 门控**：本文件 §5 的**跳页过渡**已经把 `::view-transition-new(root)`
+   当成整页交叉淡化的载体（`@view-transition{navigation:auto}`）——不加门控的话，
+   *每一次点菜单跳页*都会变成"从屏幕中心洇开"，而且 `::view-transition-old(root){animation:none}`
+   会把既有跳页过渡的旧页淡出**整条砍掉**。门控类由 `events.html` 的 `toggleNight()` 在
+   `startViewTransition` 前加、`transition.finished` 后摘。 */
+@keyframes inkSpread{
+  from{clip-path:circle(0px at var(--cx,50%) var(--cy,50%))}
+  to  {clip-path:circle(var(--cr,150vmax) at var(--cx,50%) var(--cy,50%))}
+}
+html.theme-xvt::view-transition-old(root){animation:none}
+html.theme-xvt::view-transition-new(root){animation:inkSpread .52s cubic-bezier(.22,.61,.36,1) both}
+html.theme-xvt .rail .menu a.on{view-transition-name:none}   /* 门控期间别让侧栏小帽单独淡入 */
+@media (prefers-reduced-motion:reduce){
+  html.theme-xvt::view-transition-old(root),html.theme-xvt::view-transition-new(root){animation:none}
+}
+
+/* ============ §2 自托管西文字体（只有拉丁与数字，不含中文）
+   —— 中文 webfont 的 @font-face（`BandSans` 正文 / `BandFang` 姓名·留言·寄语）在上方 @import 的
+      `band-fonts.css` 里（生成物）。 ============ */
 @font-face {
   font-family: "IBM Plex Sans";
   font-style: normal; font-weight: 400; font-display: swap;
@@ -120,24 +228,21 @@
                  U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ---- 欢迎行姓名字体：**2026-09-28 起改用系统楷体，不再自制子集** ----
-   这里原来有一个 `BandName` 的 `@font-face`：霞鹜文楷子集，字符集 = "名册姓名用字 ∪ 常用姓氏前 100"
-   （当时 114 字 / 27.7 KB，文件 `vendor/wenkai/wenkai-name-subset.woff2`，由 `tools/build_name_font.py --names` 裁）。
-   用户真机试用后的定论与代价见下面 `.wname` 那条留痕 ⇒ **家族、字体文件、脚本的 `--names` 模式三者一并删除**。
-   ⚠️ `BandMotto`（寄语子集）不受影响，照旧。 */
+/* ---- 姓名字体留痕（2026-09-28 → **2026-10-11 再推翻**）----
+   2026-09-28：曾把姓名从 `BandName`（霞鹜文楷子集，按名册姓名裁 114 字）**改回系统楷体**，
+     理由=子集只覆盖名册用字 ⇒ 名册外的字静默掉回黑体、混排"花脸"；代价=安卓多数机型无楷体、掉回黑体。
+   2026-10-11：**姓名/留言/寄语一并改回自托管 webfont**，但办法变了 —— 家族名 `BandFang`
+     （**朱雀仿宋**），文件 `vendor/zhuque/*.woff2`，**不再按名册裁字**，改用 **cn-font 全量
+     unicode-range 分片**（92 片）：浏览器按页面真正出现的字**懒加载命中的片**，单页通常只下几十 KB ⇒
+     **名册/留言里的任何字都有片覆盖**（旧"花脸"的根因就此消除），掉字时回退**同族的系统仿宋**。
+     回退链与理由见下面 `.wname`；来源 / SHA256 见 `vendor/zhuque/SOURCE.md`；规格见 docs/14 §14.6.5。
+     ⚠️ 家族名是 `BandFang`（**不是** `BandName`，那个连同文件、脚本 `--names` 模式早已删除）。 */
 
-/* 寄语字体（`docs/14` §14.6.5「寄语字体」，专页底部那一句）：
-   **另一档子集、另一个家族名**（`BandMotto`）—— 字符集 = **那句话的全部字符（含标点）**，本次 15 字、**4.7 KB**。
-   ⚠️ **它的字符集只有这一句话（含标点）** ⇒ 别再想着"顺手复用到别处"：换一句话就得重裁，
-   否则字符集外的字会**静默**掉回黑体，变成"少数几个字楷体、其余全黑体"的**花脸**。
-   ⚠️ 那句话一改就得重跑 `tools/build_name_font.py --motto "…"`（漏了只是回退黑体、**不报错**）。
-   字重同样**刻意声明 600**（源是 Medium(500)，声明 500 会触发中文伪合成）；同样**不写 `unicode-range`**。
-   来源 / SHA256 / 字符集清单见 `vendor/wenkai/SOURCE.md`。 */
-@font-face {
-  font-family: "BandMotto";
-  font-style: normal; font-weight: 600; font-display: swap;
-  src: url("vendor/wenkai/wenkai-motto-subset.woff2") format("woff2");
-}
+/* 寄语字体留痕（2026-09-28 → **2026-10-11 删除**）：
+   原 `BandMotto` @font-face（= 霞鹜文楷子集，字符集只有专页底部那一句 15 字，文件
+   `vendor/wenkai/wenkai-motto-subset.woff2`，由 `tools/build_name_font.py --motto "…"` 裁）
+   **已于 2026-10-11 删除**，寄语改用与姓名/留言**同一家族 `BandFang`**（见 `.sc-motto`）。
+   ⇒ `vendor/wenkai/` 目录**停用**（文件与 SOURCE.md 保留供追溯），`build_name_font.py --motto` 同步停用。 */
 
 /* ============ §3 基础排版 ============ */
 * { box-sizing: border-box; }
@@ -681,20 +786,20 @@ a.av-name:hover { color: var(--deep); text-decoration: underline; }
 .letter-item { display: flex; flex-direction: column; gap: var(--sp2); }
 .letter-body {
   margin: 0;
-  font-family: "KaiTi", "STKaiti", "Kaiti SC", "Kaiti TC", "楷体", var(--font-ui);
+  font-family: "BandFang", "FangSong", "STFangsong", "仿宋", var(--font-ui);   /* 2026-10-11：朱雀仿宋 → 系统仿宋 → 黑体（见文件头 §2 留痕） */
   font-size: 17px; line-height: 1.9; color: var(--deep);
   text-indent: 2em;                  /* 段首空两格的短笺感 */
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .letter-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp3); }
 .letter-sign {
-  font-family: "KaiTi", "STKaiti", "Kaiti SC", "Kaiti TC", "楷体", var(--font-ui);
+  font-family: "BandFang", "FangSong", "STFangsong", "仿宋", var(--font-ui);   /* 2026-10-11：朱雀仿宋 → 系统仿宋 → 黑体（见文件头 §2 留痕） */
   font-size: 13px; color: var(--mid); text-align: right;
 }
 .letter-seal {
   flex: 0 0 auto; padding: var(--sp1) 7px;
   color: var(--cinna); border: 2px solid var(--cinna); border-radius: 3px;
-  font-family: "KaiTi", "STKaiti", "Kaiti SC", "Kaiti TC", "楷体", var(--font-ui);
+  font-family: "BandFang", "FangSong", "STFangsong", "仿宋", var(--font-ui);   /* 2026-10-11：朱雀仿宋 → 系统仿宋 → 黑体（见文件头 §2 留痕） */
   font-size: 12px; letter-spacing: .12em; text-indent: .12em;
   transform: rotate(-2.5deg);
 }
@@ -721,11 +826,13 @@ a.av-name:hover { color: var(--deep); text-decoration: underline; }
    `--sc` / `--sc-o` = 下面那道装饰笔划的颜色与透明度（§14.6.3 例外二、§14.6.4）。 */
 .welcome { margin: 0 0 var(--sp1); font-size: var(--fs-hero); font-weight: 600; letter-spacing: .01em; color: var(--deep); }
 .wname {
-  /* 系统楷体（各平台的名字都列上：Windows 的 KaiTi / macOS 的 STKaiti、Kaiti SC / 部分 ROM 的"楷体"）。
-     绝大多数手机**没有**楷体字 ⇒ 末端紧跟 var(--font-ui)（中文黑体栈）兜底：
-     **绝不出方框**，也**绝不"只有几个字是楷体"**（这是弃用子集的直接原因）。
-     ⚠️ 这里是**系统字体**、不是 webfont —— 别再造子集/`@font-face` 塞回来（理由见上面的留痕）。 */
-  font-family: "KaiTi", "STKaiti", "Kaiti SC", "Kaiti TC", "楷体", var(--font-ui);
+  /* ⚠️ **2026-10-11 改回 webfont**：`BandFang`（朱雀仿宋，cn-font 全量 unicode-range 分片）。
+     回退链 = `BandFang`（只声明 CJK 的 unicode-range）→ 系统**仿宋**（Windows `FangSong` /
+     macOS `STFangsong` / 部分 ROM `仿宋`，与朱雀**同族** ⇒ 掉字也不"花脸"）→ var(--font-ui) 黑体兜底。
+     为什么现在能回 webfont、而 2026-09-28 那次不行：那时是**按名册裁的窄子集**（名册外的字掉黑体 = 花脸）；
+     这次是**全量分片**，名册里任何字都有片覆盖，"花脸"的根因没了（详见 §2 的留痕）。
+     ⚠️ `font-weight` 那行别删（理由见下）。 */
+  font-family: "BandFang", "FangSong", "STFangsong", "仿宋", var(--font-ui);   /* 2026-10-11：朱雀仿宋 → 系统仿宋 → 黑体（见文件头 §2 留痕） */
   /* ⚠️ **必须单给 400**：`.welcome` 的 600 是给中文黑体定的，而楷体基本只有 Regular
      ⇒ 继承 600 会被浏览器**伪合成加粗**、中文笔画描边发虚（用户那半句"字体问题"的直接成因）。
      **别删这一行**；也别顺手把 `.welcome` 的 600 改掉（页头那串大字是黑体，600 是对的）。 */
@@ -897,8 +1004,8 @@ html.wel-armed .wel { display: flex; }
 .lab { font-size: 11px; letter-spacing: .18em; color: var(--mid); margin-bottom: var(--sp3); }
 .hero .lab { color: var(--shellmid); margin-bottom: var(--sp4); }
 .hero h2 { margin: 0 0 10px; font-size: var(--fs-hero); line-height: 1.15; color: var(--silk); }
-.hero .when { font-size: 14px; margin: 0; color: #D8CBBB; }
-.hero .last { margin: 10px 0 0; font-size: 12px; color: #9A8B7C; }
+.hero .when { font-size: 14px; margin: 0; color: var(--shellmid); }
+.hero .last { margin: 10px 0 0; font-size: 12px; color: var(--shellmid); }
 .hero .act { margin-top: auto; }
 .cell .big { font-size: var(--fs-title); font-weight: 600; line-height: 1.1; margin: 0; }
 /* 「出勤率」降级成辅助（`docs/05` §5.4 / `DECISIONS` D25，2026-09-30 `#110`）：主视图换成"最近一次"之后，
@@ -927,7 +1034,7 @@ html.wel-armed .wel { display: flex; }
   border: 0; border-radius: 9px; cursor: pointer;
   transition: background-color var(--t-fast) ease-out;
 }
-.go:hover { background: #8C5F41; }
+.go:hover { background: var(--accent-ink); }
 .go-ghost { background: transparent; color: var(--wood); border: 1.5px solid var(--wood); }
 .go-ghost:hover { background: var(--wood); color: var(--onwood); }
 
@@ -963,7 +1070,7 @@ html.wel-armed .wel { display: flex; }
 /* ============ §7.5 表单控件与行内小件（实现期追加，令牌内取值） ============ */
 input, select, textarea {
   font-family: inherit; font-size: var(--fs-field); color: var(--deep);
-  background: #FFFDF9;
+  background: var(--surface);
   border: 1.5px solid var(--edge); border-radius: 9px;
   padding: 8px 12px;
   transition: border-color var(--t-fast) ease-out;
@@ -1027,20 +1134,8 @@ input:focus, select:focus, textarea:focus {
 }
 .attbar b.done { transform: scaleX(var(--r, 0)); }
 
-/* 这周的谱：横轴是星期，块的高低 = 活动类型；空白的日子是简谱的休止符「0」 */
-.score {
-  display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(3, 17px);
-  gap: 4px 5px;
-}
-.score .blk {
-  grid-column: var(--d); grid-row: calc(4 - var(--lv));
-  display: flex; align-items: center; justify-content: center;
-  background: var(--wood); color: var(--onwood);
-  border-radius: 3px; font-size: 9.5px;
-}
-.score .blk.rest { background: transparent; color: var(--mid); font-size: 12px; }
-.score .days { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.score .days i { font-size: 10px; font-style: normal; text-align: center; color: var(--mid); }
+/* 「这周的谱」（7 列星期格子 `.score`/`.blk`/`.days`）**已于 2026-10-11 删除**（活动页那一格，用户："没什么大用"）。
+   留痕见 `DECISIONS D29` / `交接单 #192` / `docs/14` §14.6.4「活动页」。 */
 
 /* 印章：签到的"签名动作"。印是**朱砂**的——印本来就该是朱砂 */
 .stamp-wrap { position: relative; }
@@ -1211,7 +1306,7 @@ body.page-showcase .main { padding: 36px 24px 44px; }
 /* 底部寄语：居中、**安静**（不是主角格那种体量）。字体见 §14.6.5「寄语字体」 */
 .sc-motto {
   margin: 46px 0 60px; text-align: center; opacity: .92;
-  font-family: "BandMotto", var(--font-ui); font-weight: 600;
+  font-family: "BandFang", var(--font-ui); font-weight: 400;   /* 2026-10-11：寄语并入 BandFang（朱雀仿宋）；单档字体**必须 400**，写 600 会被浏览器伪合成发虚 */
   font-size: 19px; line-height: 1.8; letter-spacing: .06em; color: var(--silk);
 }
 
@@ -1393,28 +1488,6 @@ body.cat-off #oneko { display: none; }
   font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
   background: transparent; color: var(--silk); border: 1px solid rgba(247, 243, 236, .5);
 }
-
-/* ---- 节拍器（练习录音页，`docs/08` §8.4）：面板 + 拍点指示 ----
-   ⚠️ **拍点指示不是 idle 动画**（`docs/14` §14.6.6 第四条留痕）：它由用户主动开始/停止、
-   每闪一下对应**一拍**、只动 `transform`/`opacity`。**它不能当"可以加 idle 动画"的先例。**
-   ⚠️ reduced-motion 下**只降级视觉、绝不静音**（降级管的是动画，不是音频）——见 §11。 */
-.metro { margin-top: 18px; padding-top: var(--sp4); border-top: 1px solid var(--pale); }
-.metro .lab .chip { font-weight: 400; }
-.metro-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp3) 18px; margin: 10px 0 var(--sp3); }
-.metro-f { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mid); margin: 0; }
-.metro-f input[type="number"] { width: 74px; }
-.metro-ck input { margin-right: var(--sp1); }
-/* 一拍一个点：常态是细描边的空点，当前拍实心、**重拍（第一个点）更大更深** */
-.metro-dots { display: flex; gap: 10px; align-items: center; height: 22px; }
-.metro-dots i {
-  display: block; width: 11px; height: 11px; border-radius: 50%;
-  border: 1.5px solid var(--pale); background: transparent;
-  transform: scale(1); transition: transform var(--t-fast) ease-out, background-color var(--t-fast) ease-out;
-}
-.metro-dots i:first-child { width: 14px; height: 14px; border-color: var(--edge); }
-.metro-dots i.on { background: var(--wood); border-color: var(--wood); transform: scale(1.25); }
-.metro-dots i:first-child.on { background: var(--cinna); border-color: var(--cinna); }
-#m-hint { margin-top: 10px; }
 
 /* ============ §9.7 工具 · 调音器入口页的竖排目录（`docs/18` §18.5）============
    八件乐器各一行（**乐器名 + 副标题 + 箭头**），整行可点进对应成品页 `static/tuner/<slug>.html`。
@@ -1816,13 +1889,6 @@ body.cat-off #oneko { display: none; }
   .sc-focus .sc-big, .sc-focus .sc-note { margin-block: auto; }
   .sc-focus .sc-cls { position: fixed; }
 
-  /* ---- 节拍器（`docs/14` §14.6.4「练习录音页」）：手机上**单列铺开、按钮整行** ---- */
-  .metro-row { flex-direction: column; align-items: stretch; gap: 10px; }
-  .metro-f { justify-content: space-between; }
-  .metro-f input[type="number"] { width: 96px; }
-  .metro-ck { justify-content: flex-start; }
-  #m-toggle { width: 100%; }
-
   /* ===== 手机端保真：照搬 design-samples/mv5-mock.html（2026-10-02，`#142` 第 1 批）=====
      ⚠️ 只许动本块点名的这几条；`--open-w` / `--row-h` / §4 的 `.on::before/::after` 一个字都不许动。
      ⚠️ 别整份粘样张的 CSS —— 它的 `.card/.ev/.hero/.stat` 在本站 DOM 里一个都不存在，必须映射到本站选择器。 */
@@ -1989,12 +2055,8 @@ body.cat-off #oneko { display: none; }
   .rows > p { margin: 0; padding: var(--sp3) 0; align-self: center; }
   .rows > :nth-child(n+3) { border-top: 1px solid rgba(210, 195, 174, .6); }
 
-  /* ---- 6. `my-leave.html` ⇄ 样张 `v-my-leave` ---- */
-  .hint-card {
-    background: rgba(122, 81, 54, .06); border-radius: 12px;
-    padding: var(--sp3) var(--sp4); font-size: var(--fs-meta); color: var(--mid);
-    margin-bottom: var(--sp4);
-  }
+  /* ---- 6. `#list` 页（`admin-feedback` / `admin-notes` / `updates`）的移动端行距 ----
+     ⚠️ 2026-10-17：原 `my-leave.html` 已并入 `my-attendance.html`，只为它服务的 `.hint-card` 规则已删。 */
   #list .cell { margin-bottom: var(--sp2); }
   #list h2 { font-size: var(--fs-lead); font-weight: 600; }
 }
@@ -2048,10 +2110,6 @@ body.cat-off #oneko { display: none; }
      而"减少"原则保护的是功能 ⇒ 一帧黑幕都不出（`17` §17.6 / §14.6.6 第六条留痕）。
      ⚠️ JS 侧也会早退，这条是兜底（防"日后有人动了那个早退条件"）。 */
   .sc-intro { display: none !important; }
-  /* 节拍器的**拍点指示**改成**瞬时变色**（不做缩放/闪烁）——
-     ⚠️ **但声音不许静音**：降级管的是动画，不是音频（`docs/14` §14.6.6 降级清单 ⑥）。 */
-  .metro-dots i { transition: none; }
-  .metro-dots i.on { transform: none; }
   /* 轮播 / 专注单图：**仍然能开、仍然能拖**（功能一样不缺），只是不做那几段过渡
      —— 降级是"减少"不是"删掉"（`17` §17.6 结尾）。FLIP 的淡入也变直接到位。 */
   .sc-stage, .sc-focus, .sc-bandwrap, .sc-focus .sc-big { transition: none; }
@@ -2067,4 +2125,764 @@ body.cat-off #oneko { display: none; }
      ⚠️ 这一条是**兜底**：正常情况下 JS 侧已经保证了——`playWelcome()` 的早退分支含 `reduced`，
      所以 `.draw-on` 压根不会被加上（`docs/14` §14.6.6 降级清单 ⑤）。这里防的是"日后有人动了那个早退条件"。 */
   .welcome.draw-on .wname::after { animation: none; }
+}
+
+/* ============ §12 活动页精装修（events.html，2026-10-11 新增）============
+   规格见 docs/14 §14.6.4「活动页」。类名一律加 `ev` 前缀，**避开 Bootstrap 保留名**
+   （`.btn`/`.popover`/`.row`/`.nav`/`.mark`）与项目既有类（`.chip`/`.scrim`/`.go`）。
+   外观控件行（`.ev-appbar` + `.ticon` + `.ev-pop`）只在活动页出现；但配色 token 全站生效。
+   ⚠️ 凡把整块做成 `<a>`（`.evrow` / `.tbtn` / `.ev-btn`），**必须自己写 `color` + `text-decoration`** ——
+   Bootstrap 有全局链接色 `#0d6efd` + 下划线，不表态就漏蓝（2026-10-11 踩过，见 `.evrow` 那段注释）。 */
+
+/* —— 页头下方的右上角控件行（今天 chip + 配色 / 深浅） —— */
+.ev-appbar{position:relative;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin:0 0 var(--sp3)}
+.ev-today{
+  display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+  color:var(--ink-2);font-size:var(--fs-meta);letter-spacing:.04em;box-shadow:var(--sh-1);
+}
+.ev-today b{color:var(--ink);font-weight:600}
+.ticon{
+  width:38px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--surface);
+  color:var(--ink-2);display:grid;place-items:center;cursor:pointer;padding:0;
+  transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast);
+}
+.ticon svg{width:19px;height:19px}
+.ticon:hover{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);border-color:var(--line-strong)}
+.ticon[aria-expanded="true"],.ticon[aria-pressed="true"]{background:var(--accent-weak);color:var(--accent-ink);border-color:var(--accent-line)}
+.ev-pop{
+  position:absolute;top:calc(100% + 8px);right:0;z-index:60;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--sh-3);padding:14px 16px;
+}
+.ev-pop[hidden]{display:none}
+.ev-pop .pop-h{display:flex;justify-content:space-between;gap:18px;margin-bottom:12px;font-size:var(--fs-meta);letter-spacing:.06em;color:var(--ink-2)}
+.ev-pop .pop-cur{color:var(--ink);font-weight:600}
+.ev-pop .seedrow{display:flex;gap:12px}
+.seedswatch{
+  width:44px;height:44px;border-radius:999px;border:3px solid transparent;cursor:pointer;padding:0;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.14);transition:transform var(--t-fast),border-color var(--t-fast);
+}
+.seedswatch:hover{transform:scale(1.08)}
+.seedswatch.on{border-color:var(--ink)}
+/* swatch 的底色**走类选择器**（AGENTS.md：页面里不许内联 style 定色） */
+.seedswatch[data-p="jade"]{background:#1F6F5C}
+.seedswatch[data-p="teal"]{background:#1C6E77}
+.seedswatch[data-p="violet"]{background:#6A4A9C}
+.seedswatch[data-p="olive"]{background:#5F6A2C}
+.seedswatch[data-p="clay"]{background:#A45A34}
+.seedswatch[data-p="ink"]{background:#1C1F21}
+
+/* —— hero：下一场（通栏深墨绿卡） —— */
+.ev-hero{
+  position:relative;overflow:hidden;border-radius:var(--radius);padding:28px 30px;
+  background:linear-gradient(135deg,var(--hero-1),var(--hero-2));
+  color:#EAF3EF;box-shadow:var(--sh-2);margin-bottom:var(--gap);
+}
+.ev-hero::after{
+  content:"";position:absolute;right:-80px;top:-120px;width:360px;height:360px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--accent) 50%,transparent),transparent 62%);pointer-events:none;
+}
+.ev-hero .lab{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.2em;color:#8FB6A8;text-transform:uppercase}
+.ev-hero .lab .tick{width:6px;height:6px;border-radius:50%;background:var(--accent-dk)}
+.ev-hero h2{margin:14px 0 8px;font-family:var(--font-ui);font-weight:600;font-size:var(--fs-hero);line-height:1.08;letter-spacing:.01em;color:#F4FBF8}
+.ev-hero .when{display:flex;flex-wrap:wrap;gap:6px 18px;color:#B9CCC5;font-size:var(--fs-body);margin:0}
+.ev-hero .when span{display:inline-flex;align-items:center;gap:7px}
+.ev-hero .when svg{width:15px;height:15px;opacity:.8}
+.ev-hero .act{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap}
+.ev-hero .count{display:inline-flex;align-items:center;gap:8px;margin-left:auto;font-size:var(--fs-meta);color:#9FBDB2;letter-spacing:.03em}
+.ev-hero .count b{color:#DCEBE4;font-weight:600}
+
+/* 按钮（不叫 .btn —— Bootstrap 保留名） */
+.ev-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;
+  padding:12px 22px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+  font-size:14px;letter-spacing:.04em;transition:transform var(--t-fast),background var(--t-fast),border-color var(--t-fast);
+}
+.ev-btn:active{transform:translateY(1px)}
+.ev-btn svg{width:16px;height:16px}
+.ev-btn-primary{background:var(--accent);color:var(--bg);font-weight:600;box-shadow:0 6px 18px -10px color-mix(in srgb,var(--accent) 90%,transparent)}
+.ev-btn-primary:hover{background:var(--accent-ink)}
+.ev-btn-ghost{background:transparent;color:#CFE0D9;border-color:rgba(207,224,217,.32)}
+.ev-btn-ghost:hover{border-color:rgba(207,224,217,.6);background:rgba(255,255,255,.05)}
+
+/* —— 指标条（谱格 / 三数 / 待办 / 工具） —— */
+.ev-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:var(--gap);margin-bottom:26px}
+.ev-stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--sh-1)}
+.ev-stat .k{font-size:var(--fs-meta);color:var(--ink-2);display:flex;align-items:center;gap:7px}
+.ev-stat .k svg{width:14px;height:14px;opacity:.65}
+.ev-stat .v{margin:8px 0 0;font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.ev-stat .v small{font-size:13px;font-weight:500;color:var(--ink-3);margin-left:5px;letter-spacing:0}
+.ev-stat.warn{border-color:var(--accent-line);background:linear-gradient(180deg,var(--accent-weak),var(--surface) 60%)}
+.ev-stat.warn .v{color:var(--accent-ink)}
+.ev-tools{grid-column:span 2}
+.toolrow{display:flex;gap:8px;margin-top:10px}
+.tbtn{
+  flex:1 1 0;min-width:0;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  padding:7px 4px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);
+  color:var(--ink-2);font-size:11px;letter-spacing:.02em;cursor:pointer;text-align:center;
+  transition:background var(--t-fast),border-color var(--t-fast),color var(--t-fast);
+}
+.tbtn svg{width:19px;height:19px;flex:0 0 auto}
+.tbtn:hover{border-color:var(--accent-line);background:var(--accent-weak);color:var(--accent-ink)}
+
+/* —— 列表头 + 筛选药丸 —— */
+.ev-lhead{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 16px;flex-wrap:wrap}
+.ev-lhead h2{margin:0;font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em}
+.ev-filters{display:flex;gap:8px;flex-wrap:wrap}
+.fchip{
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;min-height:40px;
+  padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:var(--surface);
+  color:var(--ink-2);font-size:var(--fs-meta);letter-spacing:.03em;cursor:pointer;
+  transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast);
+}
+.fchip .dot{width:7px;height:7px;border-radius:50%;background:var(--line-strong)}
+.fchip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.fchip[aria-pressed="true"] .dot{background:var(--bg)}
+.fchip:hover{border-color:var(--line-strong)}
+
+/* —— 分组 + 行 —— */
+.ev-group{margin:22px 0 0}
+.ev-group:first-of-type{margin-top:0}
+.ev-group .g-h{display:flex;align-items:center;gap:12px;margin:0 0 10px;font-size:var(--fs-meta);letter-spacing:.14em;color:var(--ink-3);text-transform:uppercase}
+.ev-group .g-h .t{color:var(--ink-2)}
+.ev-group .g-h .ln{flex:1 1 auto;height:1px;background:var(--line)}
+.ev-group .g-h .c{letter-spacing:.04em}
+.ev-rows{display:flex;flex-direction:column;gap:8px}
+/* ⚠️ `.evrow` 是一个**整行 `<a href>`**（样张里那行是 `<button>`，落地时改成真链接：可中键新标签、无 JS 也能点）。
+   Bootstrap 有**全局** `a{color:var(--bs-link-color)=#0d6efd; text-decoration:underline}`（`band.css` 不重置 `a`，
+   一向逐处写）⇒ 这里**必须自己表态**，否则日号 `.d`、标题 `.title b` 全变链接蓝 + 下划线（**踩铁律 1「不碰蓝」**）。
+   同款先例：`.sc-card` 那行"整卡是一个 `<a>`，别带下划线"。 */
+.evrow{
+  display:grid;grid-template-columns:56px 1fr auto 20px;align-items:center;gap:16px;width:100%;
+  padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+  color:var(--ink);text-decoration:none;
+  cursor:pointer;text-align:left;box-shadow:var(--sh-1);
+  transition:background var(--t-fast),border-color var(--t-fast),transform var(--t-fast),box-shadow var(--t-fast);
+}
+.evrow:hover{border-color:var(--line-strong);box-shadow:var(--sh-2);transform:translateY(-1px)}
+.evrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.evrow .datebox{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:var(--surface-2);border-radius:10px;padding:8px 0}
+.evrow .datebox .d{font-size:22px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.evrow .datebox .w{font-size:11px;letter-spacing:.1em;color:var(--ink-3)}
+.evrow .body{min-width:0}
+.evrow .title{display:flex;align-items:center;gap:9px;min-width:0}
+.evrow .title b{font-size:var(--fs-lead);font-weight:600;letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.evrow .type{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
+/* 类型色标**走属性选择器**（AGENTS.md：页面里不许内联 style 定色）；色值取自配色令牌 */
+.evrow .type[data-k="REHEARSAL"]{background:var(--accent)}
+.evrow .type[data-k="SECTION_CLASS"]{background:var(--ink-3)}
+.evrow .type[data-k="DRESS_REHEARSAL"]{background:var(--accent-dk)}
+.evrow .meta{margin-top:3px;color:var(--ink-2);font-size:var(--fs-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.evrow .meta .sep{color:var(--line-strong);margin:0 8px}
+.evrow .st{justify-self:end}
+.evrow .chev{color:var(--ink-3);display:grid;place-items:center;transition:transform var(--t-fast),color var(--t-fast)}
+.evrow:hover .chev{transform:translateX(3px);color:var(--accent-ink)}
+.evrow .chev svg{width:18px;height:18px}
+.evrow.is-cancel .title b{text-decoration:line-through;text-decoration-thickness:1.5px;color:var(--ink-3)}
+.evrow.is-today{border-color:var(--accent-line)}
+.ev-tag{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:11.5px;letter-spacing:.03em;white-space:nowrap}
+.ev-tag.today{background:var(--accent-weak);color:var(--accent-ink);font-weight:600}
+.ev-tag.cancel{background:var(--danger-weak);color:var(--danger);font-weight:600}
+.evrow.ar{opacity:0;transform:translateY(10px)}
+.evrow.ar.in{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+
+/* —— 空态 —— */
+.ev-empty{display:none;flex-direction:column;align-items:center;gap:10px;padding:52px 20px;border:1px dashed var(--line-strong);border-radius:var(--radius);color:var(--ink-2);text-align:center;background:var(--surface-2)}
+.ev-empty.show{display:flex}
+.ev-empty .ic{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--ink-3)}
+.ev-empty b{color:var(--ink);font-weight:600}
+.ev-empty span{font-size:var(--fs-meta)}
+
+/* —— 详情：**不做抽屉**。点行进 `event-detail.html`（真站已有详情页，再做抽屉＝重复入口）—— */
+
+
+
+@media (max-width: 720px), (pointer: coarse) {
+  .ev-appbar{padding:0 16px;margin-bottom:var(--sp2)}
+  .ev-today{display:none}
+  .ev-hero{padding:22px;margin-bottom:var(--sp4)}
+  .ev-hero h2{font-size:27px}
+  .ev-hero .count{margin-left:0}
+  .ev-stats{grid-template-columns:1fr 1fr;gap:12px;padding:0 16px;margin-bottom:20px}
+  .ev-tools{grid-column:span 2}
+  .toolrow{display:grid;grid-template-columns:repeat(2,1fr)}
+  .ev-lhead{padding:0 16px;margin-bottom:12px;flex-direction:column;align-items:stretch;gap:12px}
+  .ev-filters{overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .ev-group .g-h,.ev-rows{padding:0 16px}
+  .evrow{grid-template-columns:52px 1fr 18px;gap:12px;padding:10px 12px}
+  .evrow .st{display:none}
+  .evrow .title b{white-space:normal}
+  .ev-pop{position:fixed;left:16px;right:16px;top:auto;bottom:16px}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evrow{transition:none}
+  .evrow.ar,.evrow.ar.in{opacity:1;transform:none}
+}
+
+/* ============ §13 演出页精装修（concerts.html / concert-detail.html，2026-10-11 新增）============
+   规格见 docs/14 §14.6.4「演出页」。用户先看了 `样张-精装-演出.html` 才拍板落真站（同活动页那轮的节奏）。
+   **通用件一律复用 §12**：`.ev-appbar/.ev-today/.ticon/.ev-pop/.seedswatch`（外观控件）、`.ev-btn*`、
+   `.ev-lhead`、`.ev-group/.g-h/.ev-rows`、**`.evrow`**（列表行）、`.ev-tag`、`.ev-empty`；
+   以及 `.sc-card*`（我们的专场入口卡，红线）、`.ph-*`（照片墙）、`.pm-list`（曲目单弹层）。
+   这里只放演出页**自己的**新类，一律 `cn-` 前缀（避免 Bootstrap 保留名与既有类）。
+   ⚠️ 改这一节**不许动 §12**——活动页靠它；改完要回头测活动页没被带坏。 */
+
+/* —— 列表行：`<div class="cn-crow">` 套一个**整行 `<a class="evrow">`** + 一枚行内「编辑」按钮 ——
+   ⚠️ 与活动页分叉的**唯一**一处：活动页的行是裸 `<a>`（行内没有按钮），演出行**要能编辑**。
+   HTML 不允许交互内容套交互内容（`<button>` 不能放进 `<a>`）⇒ 让 `<a>` 仍当整卡、按钮做**兄弟节点**绝对定位在卡内。
+   这样中键新标签 / 无 JS 也照样能点，标签也合法。 */
+.cn-crow{position:relative}
+.cn-crow.has-edit .evrow{padding-right:84px}
+.cn-crow-edit{
+  position:absolute;right:44px;top:50%;transform:translateY(-50%);z-index:2;
+  padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+  color:var(--ink-2);font-size:var(--fs-meta);letter-spacing:.02em;cursor:pointer;white-space:nowrap;
+  transition:border-color var(--t-fast),color var(--t-fast),background var(--t-fast);
+}
+.cn-crow-edit:hover{border-color:var(--line-strong);color:var(--ink);background:var(--surface-2)}
+
+/* —— 「下一场演出」：一条**安静的**卡（不是活动页那种深色大 hero） ——
+   ⚠️ 整卡是一个 `<a>` ⇒ 必须自写 `color` + `text-decoration`（否则吃 Bootstrap 全局链接蓝，铁律 1）。 */
+.cn-next{
+  display:flex;align-items:center;gap:16px;
+  margin:0 0 var(--gap);padding:14px 18px;
+  border:1px solid var(--accent-line);border-radius:var(--radius);
+  background:linear-gradient(180deg,var(--accent-weak),var(--surface) 72%);
+  color:var(--ink);text-decoration:none;box-shadow:var(--sh-1);
+  transition:border-color var(--t-fast),box-shadow var(--t-fast),transform var(--t-fast);
+}
+.cn-next[hidden]{display:none}
+.cn-next:hover{border-color:var(--accent);box-shadow:var(--sh-2);transform:translateY(-1px)}
+.cn-next .datebox{
+  align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:8px 13px;
+}
+.cn-next .datebox .d{font-size:22px;font-weight:600;line-height:1;color:var(--accent-ink);font-variant-numeric:tabular-nums}
+.cn-next .datebox .w{font-size:11px;letter-spacing:.1em;color:var(--ink-3)}
+.cn-next .n-body{min-width:0;flex:1 1 auto}
+.cn-next .n-lab{font-size:11px;letter-spacing:.2em;color:var(--accent-ink);text-transform:uppercase}
+.cn-next .n-title{font-size:var(--fs-lead);font-weight:600;margin-top:3px}
+.cn-next .n-meta{margin-top:4px;color:var(--ink-2);font-size:var(--fs-meta)}
+.cn-next .n-count{font-size:var(--fs-meta);color:var(--accent-ink);font-weight:600;white-space:nowrap}
+
+/* —— 列表头：标题 + 场次数（`.ev-lhead` 本体在 §12） —— */
+.ev-lhead .sec{display:flex;align-items:baseline;gap:12px;min-width:0}
+.ev-lhead .sub{font-size:var(--fs-meta);color:var(--ink-3);letter-spacing:.04em;white-space:nowrap}
+
+/* —— 详情：标题卡 —— */
+.cn-dhead .d-top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+.cn-dhead h2{margin:0;font-size:var(--fs-title);font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.dmeta{margin:10px 0 0;color:var(--ink-2);font-size:var(--fs-body);display:flex;flex-wrap:wrap;gap:5px 14px;align-items:center}
+.dmeta .sep{color:var(--line-strong)}
+.dnote{margin:16px 0 0;color:var(--ink-2);font-size:var(--fs-body);line-height:1.65}
+.dact{display:flex;gap:10px;flex-wrap:wrap}
+/* 录像链接：**明确的小动作**。自己定色（`--accent-ink`，不是链接蓝） */
+.vlink{color:var(--accent-ink);font-weight:600;white-space:nowrap;text-decoration:none;border-bottom:1px solid var(--accent-line)}
+.vlink:hover{color:var(--accent)}
+
+/* —— 详情：曲目单（**有序列表**，像一张真节目单） —— */
+.cn-prog{list-style:none;margin:0;padding:0}
+.cn-prog li{display:grid;grid-template-columns:70px minmax(0,1fr) auto;align-items:baseline;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.cn-prog li:first-child{border-top:0;padding-top:2px}
+.cn-prog .no{color:var(--ink-3);font-size:var(--fs-meta);letter-spacing:.04em;font-variant-numeric:tabular-nums}
+/* ⚠️ `.pt` 是 `<a>` ⇒ 必须自写 color + text-decoration（铁律 1；`.evrow` 同款坑） */
+.cn-prog .pt{font-size:var(--fs-lead);font-weight:600;letter-spacing:-.005em;color:var(--ink);text-decoration:none}
+.cn-prog .pt:hover{color:var(--accent-ink)}
+.cn-prog .pm{color:var(--ink-2);font-size:var(--fs-meta);text-align:right}
+.cn-prog li.ar{opacity:0;transform:translateY(8px)}
+.cn-prog li.ar.in{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+
+/* —— 详情：参演名单（**能一眼扫的名册药丸**，姓名 + 声部；指挥/独奏高亮；**不加头像**，见 D30） —— */
+.cn-cast{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.cn-cast li{display:inline-flex;align-items:baseline;gap:7px;padding:6px 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:var(--fs-body)}
+.cn-cast li i{font-style:normal;font-size:var(--fs-meta);color:var(--ink-3)}
+.cn-cast li.lead{border-color:var(--accent-line);background:var(--accent-weak)}
+.cn-cast li.lead i{color:var(--accent-ink)}
+
+/* —— 列表行状态：**常态不挂标签**（跟活动页对齐，顺带守铁律 2） ——
+   「已取消」走 `.ev-tag.cancel`（§12，朱砂）+ 行 `.is-cancel` 删除线；「计划中」什么都不挂。 */
+.evrow .st.done{color:var(--ink-3)}
+
+/* —— 照片墙：两列（详情页）。`.ph-cell` 原尺寸 150×150 是给旧版用的 —— */
+.ph-wall{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ph-wall .ph-cell{width:100%;height:auto}
+.ph-wall .ph-cell img{height:auto;aspect-ratio:4/3}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .cn-crow.has-edit .evrow{padding-right:16px}
+  .cn-crow-edit{display:none}
+  .cn-next{margin:0 16px var(--sp4)}
+  .cn-prog li{grid-template-columns:56px minmax(0,1fr);gap:8px}
+  .cn-prog .pm{grid-column:2;text-align:left}
+  .cn-cast{gap:8px}
+  .cn-dhead .d-top{gap:12px}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cn-next{transition:none}
+  .cn-prog li.ar,.cn-prog li.ar.in{opacity:1;transform:none;transition:none}
+}
+
+/* ============ §14 录音页精装修（recordings.html；节拍器两页共用，2026-10-15 新增）============
+   规格见 docs/14 §14.6.4「练习录音页」。用户先看了 `样张-精装-录音.html` 才拍板落真站（同活动页那轮的节奏）。
+   **通用件一律复用 §12**：`.ev-appbar/.ev-today/.ticon/.ev-pop/.seedswatch/.pop-h/.pop-cur/.seedrow`（外观控件行）、
+   `.ev-lhead`（列表头）、`.ev-filters` + `.fchip`（范围药丸）、`.ev-empty`（空态）。
+   这里只放录音页**自己的**新类，一律 `rc-` 前缀（避开 Bootstrap 保留名 `.btn`/`.card`/`.row`/`.nav`）。
+   **节拍器弧版**用中性前缀 `.mt-`（`recordings.html` 与独立页 `metronome.html` **同一套类名 / 同一份 JS**，
+   统一到样张那套 `band_metronome_*` 键编码：bpm 字符串、beats=`num/den`、sub、accents=`0100`）。
+   ⚠️ 改这一节**不许动 §12 / §13**——活动页 / 演出页靠它们；改完要回头测两页没被带坏。 */
+
+/* —— 页内按钮（浅底；§12 只有深色 hero 版 `.ev-btn-ghost`，浅底会看不见字） —— */
+.rc-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:42px;
+  padding:11px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+  font-size:14px;letter-spacing:.04em;
+  transition:transform var(--t-fast),background var(--t-fast),border-color var(--t-fast),color var(--t-fast);
+}
+.rc-btn:active{transform:translateY(1px)}
+.rc-btn svg{width:16px;height:16px}
+.rc-btn-primary{background:var(--accent);color:var(--bg);font-weight:600;box-shadow:0 6px 18px -10px color-mix(in srgb,var(--accent) 90%,transparent)}
+.rc-btn-primary:hover{background:var(--accent-ink)}
+.rc-btn-line{background:var(--surface);color:var(--ink-2);border-color:var(--line);font-weight:500}
+.rc-btn-line:hover{border-color:var(--line-strong);color:var(--ink);background:var(--surface-2)}
+.rc-btn-sm{padding:8px 14px;min-height:36px;font-size:13px}
+
+/* —— 两屏切换：一页装两屏（录音墙 / 录音台） —— */
+.rc-screen{display:block}
+body[data-rcscreen="list"] .rc-screen[data-rcscreen="detail"],
+body[data-rcscreen="detail"] .rc-screen[data-rcscreen="list"]{display:none}
+.ev-lhead .sec{display:flex;align-items:baseline;gap:12px;min-width:0}
+.rc-head-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* —— 返回 / 卡片 / 表单 —— */
+.rc-dback{display:inline-flex;align-items:center;gap:7px;color:var(--ink-2);font-size:var(--fs-meta);margin:0 0 14px;cursor:pointer}
+.rc-dback svg{width:15px;height:15px}
+.rc-dback:hover{color:var(--ink)}
+.rc-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--sh-1);margin-bottom:var(--gap)}
+.rc-card h2{margin:0;font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em}
+.rc-hint{margin:8px 0 16px;color:var(--ink-3);font-size:var(--fs-meta);line-height:1.65}
+.rc-f{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.rc-f label{font-size:var(--fs-meta);color:var(--ink-3)}
+.rc-f input,.rc-f select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:var(--fs-body);color:var(--ink)}
+.rc-f input:focus,.rc-f select:focus{outline:none;border-color:var(--accent-line)}
+.rc-f2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* —— 录音条：自绘播放器（底层仍是真 `<audio>`） —— */
+.rc-recs{display:flex;flex-direction:column;gap:10px}
+.rc-rec{padding:14px 16px;border:1px solid var(--line);border-radius:11px;background:var(--surface);box-shadow:var(--sh-1);
+  transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+.rc-rec:hover{border-color:var(--line-strong);box-shadow:var(--sh-2)}
+.rc-rec-top{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center}
+.rc-play{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;padding:0;cursor:pointer;
+  background:var(--accent-weak);color:var(--accent-ink);border:1px solid var(--accent-line);
+  transition:background var(--t-fast),color var(--t-fast),transform var(--t-fast)}
+.rc-play svg{width:18px;height:18px;display:block}
+.rc-play:hover{transform:scale(1.05)}
+.rc-play[aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.rc-body{min-width:0}
+.rc-title b{font-size:var(--fs-lead);font-weight:600;letter-spacing:-.005em}
+.rc-meta{margin-top:3px;color:var(--ink-2);font-size:var(--fs-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-meta .sep{color:var(--line-strong);margin:0 7px}
+.rc-track{display:flex;align-items:center;gap:10px;margin-top:10px}
+.rc-bar{flex:1 1 auto;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.rc-fill{display:block;height:100%;width:0;background:var(--accent);border-radius:2px}
+.rc-time{font-size:var(--fs-meta);color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rc-ops{display:flex;align-items:center;gap:8px}
+.rc-opt{padding:7px 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-2);
+  font-size:var(--fs-meta);white-space:nowrap;cursor:pointer;
+  transition:border-color var(--t-fast),color var(--t-fast),background var(--t-fast)}
+.rc-opt:hover{border-color:var(--line-strong);color:var(--ink)}
+.rc-opt.on{border-color:var(--accent-line);background:var(--accent-weak);color:var(--accent-ink)}
+.rc-opt[hidden]{display:none}
+/* 底层 `<audio>` 视觉隐藏（探针仍能 `#list audio` 找到它、`play()` 它） */
+.rc-audio{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;padding:0;margin:-1px}
+
+/* —— 点评线（就地展开，平铺按时间，不做父子嵌套 —— docs/08 §8.4） —— */
+.rc-thread{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.rc-thread[hidden]{display:none}
+.rc-th-item{display:flex;gap:10px;align-items:baseline;padding:6px 0}
+.rc-th-who{font-weight:600;font-size:var(--fs-meta);color:var(--ink);white-space:nowrap}
+.rc-th-at{color:var(--ink-3);font-size:var(--fs-meta);white-space:nowrap}
+.rc-th-tx{color:var(--ink-2);font-size:var(--fs-body);line-height:1.55}
+.rc-th-none{color:var(--ink-3);font-size:var(--fs-meta);padding:4px 0}
+.rc-th-in{display:flex;gap:8px;margin-top:10px}
+.rc-th-in input{flex:1 1 auto;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:var(--fs-body);color:var(--ink)}
+.rc-th-in input:focus{outline:none;border-color:var(--accent-line)}
+
+/* —— 录音台：两个独立入口（页面内录音 / 选择本机文件）+ 演示条 / 回执条 —— */
+/* ⚠️ 规格硬规矩（docs/08 §8.4）：两个入口必须**彼此独立**；「选择本机文件」是**带 `for` 的 `<label>`**
+   （视觉隐藏的 `<input type="file">` 由它触发，键盘 / 读屏也点得到），不是裸控件、也不是 JS 模拟点击。 */
+.rc-picks{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px}
+.rc-pick{display:flex;gap:13px;align-items:center;text-align:left;padding:16px;cursor:pointer;
+  border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);text-decoration:none;
+  transition:border-color var(--t-fast),background var(--t-fast),transform var(--t-fast)}
+.rc-pick:hover{border-color:var(--accent-line);background:var(--accent-weak);transform:translateY(-1px)}
+.rc-pick-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--surface-2);color:var(--accent-ink);border:1px solid var(--line)}
+.rc-pick-ic svg{width:20px;height:20px}
+.rc-pick-tx{min-width:0}
+.rc-pick-t{display:block;font-weight:600;font-size:var(--fs-body)}
+.rc-pick-s{display:block;color:var(--ink-3);font-size:var(--fs-meta);margin-top:3px}
+.rc-recdemo{display:none;align-items:center;gap:14px;flex-wrap:wrap;margin-top:16px;padding:14px 16px;
+  border:1px solid var(--accent-line);border-radius:11px;background:var(--accent-weak)}
+.rc-recdemo.on{display:flex}
+.rc-rd-dot{width:11px;height:11px;border-radius:50%;background:var(--accent);flex:0 0 auto;animation:rcPulse 1.1s ease-in-out infinite}
+@keyframes rcPulse{0%,100%{opacity:1}50%{opacity:.32}}
+.rc-rd-time{font-variant-numeric:tabular-nums;font-weight:600;font-size:var(--fs-lead);color:var(--accent-ink)}
+.rc-rd-wave{display:flex;align-items:center;gap:3px;height:26px;flex:1 1 160px}
+.rc-rd-wave i{display:block;width:3px;border-radius:2px;background:var(--accent);height:30%}
+.rc-recdemo.on .rc-rd-wave i{animation:rcBar .9s ease-in-out infinite}
+@keyframes rcBar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+.rc-rd-note{color:var(--accent-ink);font-size:var(--fs-meta)}
+.rc-updone{display:none;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding:14px 16px;
+  border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+.rc-updone.on{display:flex}
+.rc-updone .nm{font-weight:600}
+.rc-updone .sz{color:var(--ink-3);font-size:var(--fs-meta)}
+
+/* —— 节拍器：圆弧拍点（两页共用 `.mt-`） ——
+   几拍就几个点；当前拍变色、重音拍与普通拍异色；**点圆点 = 设 / 取消那一拍的重音**。
+   ⚠️ 拍点指示是 docs/14 §14.6.6 明确允许的「非 idle 动画」——用户主动开始/停、每闪对应一拍、只动颜色。
+   ⚠️ 亮色不用朱砂（铁律 2：红只留给异常）。 */
+.mt-metro{margin-top:6px}
+.mt-stage{max-width:380px;margin:6px auto 0}
+.mt-arc{display:block;width:100%;height:auto}
+.mt-arc .mt-base{fill:none;stroke:var(--line);stroke-width:1.5}
+/* ⚠️ pointer-events:all —— 不然 fill:none 的圆只有那一圈描边能点中，圈里是"空的"。 */
+.mt-dot{fill:none;stroke:var(--line-strong);stroke-width:1.5;cursor:pointer;pointer-events:all;
+  transition:fill .12s linear,stroke .12s linear}
+.mt-dot:hover{fill:var(--accent-weak);stroke:var(--accent)}
+.mt-dot[data-acc="1"]{stroke:var(--accent);stroke-width:2}
+.mt-dot.on{fill:var(--accent-line);stroke:var(--accent-line)}          /* 普通拍响：浅 */
+.mt-dot.on[data-acc="1"]{fill:var(--accent);stroke:var(--accent)}      /* 重音拍响：深 */
+.mt-read{text-align:center;margin-top:-4px}
+.mt-read .big{font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);font-size:34px;line-height:1;color:var(--ink)}
+.mt-read .unit{font-size:12px;color:var(--ink-3);letter-spacing:.14em;margin-left:5px}
+.mt-read .term{display:block;margin-top:6px;font-size:12.5px;color:var(--accent-ink);letter-spacing:.03em}
+.mt-read .sig{display:block;margin-top:2px;font-size:12px;color:var(--ink-3);letter-spacing:.06em}
+.mt-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:11px 16px;margin:14px 0 2px}
+.mt-f{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);margin:0}
+.mt-f input[type="number"]{width:64px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font-variant-numeric:tabular-nums}
+.mt-f select{padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
+.mt-f .slash{color:var(--ink-3);margin:0 2px}
+.mt-tap{min-width:96px}
+.mt-tip{margin:11px 0 0;font-size:12.5px;color:var(--ink-3);line-height:1.65}
+.mt-tip.warn{color:var(--danger)}
+
+/* —— 入场 —— */
+.rc-rec.ar,.rc-card.ar{opacity:0;transform:translateY(10px)}
+.rc-rec.ar.in,.rc-card.ar.in{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .rc-recs{padding:0 16px}
+  .rc-card{margin:0 16px var(--gap);padding:18px 16px}
+  .rc-dback{padding:0 16px}
+  .ev-lhead .rc-head-tools{width:100%}
+  .rc-picks{grid-template-columns:1fr}
+  .rc-f2{grid-template-columns:1fr}
+  .rc-rec-top{grid-template-columns:40px minmax(0,1fr);gap:12px}
+  .rc-ops{grid-column:1 / -1;justify-content:flex-end;margin-top:4px}
+  .mt-ctl{flex-direction:column;align-items:stretch;gap:10px}
+  .mt-f{justify-content:space-between}
+  .mt-f input[type="number"]{width:88px}
+  .mt-ctl .rc-btn{width:100%}
+  .mt-stage{max-width:none}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-rec.ar,.rc-rec.ar.in,.rc-card.ar,.rc-card.ar.in{opacity:1;transform:none;transition:none}
+  .rc-rec,.rc-pick{transition:none}
+  /* ⚠️ 只降级视觉、绝不静音（docs/14 §14.6.6）：节拍器照常响，拍点只瞬时变色、不做闪烁 */
+  .rc-rd-dot,.rc-recdemo.on .rc-rd-wave i{animation:none}
+  .mt-dot{transition:none}
+}
+
+/* ============ §15 曲谱页精装修（pieces.html / piece-detail.html，2026-10-15 新增）============
+   用户先看了 `样张-精装-曲谱.html` 才拍板落真站（同活动页 / 演出页 / 录音页那几轮的节奏）。
+   **通用件一律复用 §12**：`.ev-appbar/.ev-today/.ticon/.ev-pop/.pop-h/.pop-cur/.seedrow/.seedswatch`（外观控件行）、
+   `.ev-lhead`（列表头）、`.ev-filters` + `.fchip`（状态药丸）、`.ev-group` + `.g-h`（分组）、`.ev-empty`（空态）、
+   `.ev-tag.cancel`（已停排那枚朱砂签）；卡片与提示用既有的 `.cell` / `.lab` / `.chip`，
+   按钮用既有的 `.go` / `.go-ghost` / `.go-sm`（与 §13 的演出页一致 —— §14 那套 `.rc-btn*` 只在录音页）。
+   详情头三件套 `.dmeta` / `.dnote` / `.dact` 是 §13 里的**无前缀通用名**（`concert-detail.html` 在用）⇒ 直接复用。
+   ⚠️ 改这一节**不许动 §12 / §13 / §14** —— 活动页 / 演出页 / 录音页靠它们；改完要回头测三页没被带坏。 */
+
+/* —— 列表头右侧的搜索框：`#q` 是个裸 `input`，靠外壳画圆角与放大镜 —— */
+.pc-srch{
+  display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;
+  min-width:196px;flex:1 1 196px;max-width:280px;
+  border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-3);
+  transition:border-color var(--t-fast);
+}
+.pc-srch:focus-within{border-color:var(--accent-line)}
+.pc-srch svg{width:15px;height:15px;flex:0 0 auto}
+.pc-srch input{border:0;background:none;outline:none;font-size:13.5px;width:100%;color:var(--ink)}
+
+/* —— 列表行：`<div class="pc-crow">` 套一个**整行 `<a class="pc-row">`** + 一枚行内「编辑」按钮 ——
+   ⚠️ 与 §13 同一个形态分叉（理由也同一条）：HTML 不许交互内容套交互内容 ⇒ `<button>` 不能放进 `<a>`，
+   所以让 `<a>` 仍当整卡、按钮做**兄弟节点**绝对定位在卡内 —— 中键新标签 / 无 JS 也照样能点。
+   ⚠️ 整卡是 `<a>` ⇒ **必须自写 `color` + `text-decoration`**（否则吃 Bootstrap 全局链接蓝 + 下划线，`docs/14` 铁律 1 子条 / D29）。 */
+.pc-crow{position:relative}
+.pc-crow.has-edit .pc-row{padding-right:84px}
+.pc-row{
+  display:grid;grid-template-columns:56px minmax(0,1fr) auto 20px;align-items:center;gap:14px;width:100%;
+  padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+  color:var(--ink);text-decoration:none;cursor:pointer;box-shadow:var(--sh-1);
+  transition:background var(--t-fast),border-color var(--t-fast),transform var(--t-fast),box-shadow var(--t-fast);
+}
+.pc-row:hover{border-color:var(--line-strong);box-shadow:var(--sh-2);transform:translateY(-1px)}
+.pc-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* 行首「曲牌印」：上排曲名首字（**仿宋**，与姓名/留言/寄语同一栈）、下排体裁小字。形制同演出页 `.datebox` 的两行块。 */
+.pc-row .seal{
+  align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:var(--surface-2);border-radius:10px;padding:8px 0;
+}
+.pc-row .seal .ch{
+  font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-size:22px;line-height:1;color:var(--ink);
+}
+.pc-row .seal .cat{font-size:11px;letter-spacing:.06em;color:var(--ink-3);white-space:nowrap}
+.pc-row .body{min-width:0}
+.pc-row .title{display:flex;align-items:center;gap:9px;min-width:0}
+.pc-row .title b{font-size:var(--fs-lead);font-weight:600;letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-row .meta{margin-top:3px;color:var(--ink-2);font-size:var(--fs-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-row .meta .sep{color:var(--line-strong);margin:0 8px}
+.pc-row .sub{margin-top:4px;display:flex;align-items:center;gap:10px;color:var(--ink-3);font-size:var(--fs-meta)}
+.pc-row .st{justify-self:end}
+.pc-row .chev{color:var(--ink-3);display:grid;place-items:center;transition:transform var(--t-fast),color var(--t-fast)}
+.pc-row:hover .chev{transform:translateX(3px);color:var(--accent-ink)}
+.pc-row .chev svg{width:18px;height:18px}
+/* 已停排：曲名与曲牌印一起转灰（行本身照旧可点进详情） */
+.pc-row.is-paused .title b,.pc-row.is-paused .seal .ch,.pc-row.is-paused .seal .cat{color:var(--ink-3)}
+.pc-row-edit{
+  position:absolute;right:44px;top:50%;transform:translateY(-50%);z-index:2;
+  padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+  color:var(--ink-2);font-size:var(--fs-meta);letter-spacing:.02em;cursor:pointer;white-space:nowrap;
+  transition:border-color var(--t-fast),color var(--t-fast),background var(--t-fast);
+}
+.pc-row-edit:hover{border-color:var(--line-strong);color:var(--ink);background:var(--surface-2)}
+/* 难度点阵：⚠️ **不许叫 `.penta .pv`** —— 那套是"五声点阵"，会被 `BAND.alive` 当点阵逐点点亮 */
+.pc-diff{display:inline-flex;align-items:center;gap:3px;vertical-align:middle}
+.pc-diff i{width:7px;height:7px;border-radius:50%;background:var(--line-strong);display:block}
+.pc-diff i.on{background:var(--accent)}
+
+/* —— 详情：返回曲谱库（**真链接**，无 JS 也能回） —— */
+.pc-dback{
+  display:inline-flex;align-items:center;gap:7px;margin:0 0 14px;
+  color:var(--ink-2);font-size:var(--fs-meta);text-decoration:none;cursor:pointer;
+}
+.pc-dback svg{width:15px;height:15px}
+.pc-dback:hover{color:var(--ink)}
+
+/* —— 详情：标题卡（曲名用**仿宋**大字，像谱面上的题名） —— */
+.pc-dhead h2{
+  margin:0;font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-weight:400;font-size:var(--fs-title);line-height:1.12;
+}
+.pc-dhead .d-top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+.pc-dhead .d-top>div{min-width:0}
+
+/* —— 详情：附件——「谱子 / 音频」两个小节（各带计数与空态） —— */
+.pc-subh{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:var(--fs-meta);letter-spacing:.12em;color:var(--ink-3)}
+.pc-subh .n{letter-spacing:.04em}
+.pc-subh::after{content:"";flex:1 1 auto;height:1px;background:var(--line)}
+.pc-att{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:11px 14px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--surface);margin-bottom:8px;
+}
+.pc-att .nm{flex:1 1 160px;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 附件类型小签（谱子 / 音频）：§12 的 `.ev-tag` 没有"常态"档（只 today / cancel 两档），这里自己写一枚 */
+.pc-kind{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:11.5px;letter-spacing:.03em;white-space:nowrap}
+.pc-att .sz{color:var(--ink-3);font-size:var(--fs-meta)}   /* 样张这里是内联 style —— 落地按"零内联定色"收成类 */
+.pc-att .ops{display:flex;gap:8px;margin-left:auto}
+.pc-upl{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.pc-upl select{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:var(--fs-body)}
+.pc-upl input[type="file"]{flex:1 1 200px;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink-2);font-size:var(--fs-meta)}
+
+/* —— 新建 / 编辑弹层（列表页与详情页**各带一个**；样张是单文件里一个共用，两页拆开后必须各存一份） ——
+   ⚠️ 不用 Bootstrap `.modal`：样张这套 `.mo` 是纯 token 驱动的居中卡，配色/夜间跟着主题走。
+   ⚠️ z-index 取 **120**（不取样张的 80）—— 与 `.fview` / `.ann` 同属"点开一个临时面"那一档（`docs/15` §15.5），
+   这样它在侧栏 / 细标题栏之上；`BAND.confirm` 的 Bootstrap 弹层是 1055，仍然盖得住本层。 */
+.pc-mo{position:fixed;inset:0;z-index:120;display:none;place-items:center;padding:20px;
+  background:rgba(12,18,16,.5);backdrop-filter:blur(3px)}
+.pc-mo.open{display:grid}
+.pc-mocard{
+  width:100%;max-width:560px;max-height:86vh;overflow:auto;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--sh-3);padding:24px;
+}
+.pc-mocard h3{margin:0 0 6px;font-size:var(--fs-title);font-weight:600}
+.pc-mohint{color:var(--ink-3);font-size:var(--fs-meta);margin:0 0 16px;line-height:1.6}
+.pc-mogrid{display:flex;flex-wrap:wrap;gap:12px}
+.pc-mogrid .f{flex:1 1 150px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.pc-mogrid .f.wide{flex:1 1 100%}
+.pc-mogrid label{font-size:var(--fs-meta);color:var(--ink-3)}
+.pc-mogrid input,.pc-mogrid select,.pc-mogrid textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:var(--fs-body);color:var(--ink);
+}
+.pc-mogrid input:focus,.pc-mogrid select:focus,.pc-mogrid textarea:focus{outline:none;border-color:var(--accent-line)}
+.pc-mofoot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+/* —— 逐行入场（与 `.evrow.ar` / `.cn-prog li.ar` 同构；起点类由 `BAND.alive()` 同步下到行上） —— */
+.pc-row.ar{opacity:0;transform:translateY(10px)}
+.pc-row.ar.in{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+
+@media (max-width: 720px), (pointer: coarse) {
+  /* ⚠️ 列表头的计数串（「共 N 首 · 在练 2 · 备选 1 …」）在窄屏很长，会把「曲谱库」三个字挤成两行 ——
+     让它自己折到第二行（h2 不收缩）。§13 / §14 的计数短（「3 场」），这条对它们无影响。 */
+  .ev-lhead .sec{flex-wrap:wrap}
+  .ev-lhead .sec h2{flex:0 0 auto}
+  .pc-srch{flex:1 1 100%;max-width:none}
+  .pc-row{grid-template-columns:50px minmax(0,1fr) 18px;gap:12px;padding:10px 12px}
+  /* ⚠️ 行内不放「编辑」（窄屏挤）+ 状态签也不放：**编辑走详情页**，那页照样有「编辑曲谱」 */
+  .pc-row .st,.pc-crow.has-edit .pc-row-edit{display:none}
+  .pc-crow.has-edit .pc-row{padding-right:12px}
+  .pc-row .title b{white-space:normal}
+  .pc-dhead .d-top{gap:12px}
+  .pc-att .nm{flex:1 1 100%}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-row.ar,.pc-row.ar.in{opacity:1;transform:none;transition:none}
+  .pc-row,.pc-row .chev{transition:none}
+}
+
+/* ============ §16 考勤与请假页精装修（my-attendance.html / approve-leave.html，2026-10-17 新增）============
+   用户看过 `样张-精装-我的出勤.html` 后拍板：把「我的考勤」+「我的请假」**合并成一页「我的出勤」**
+   （一页三段、滚动看全），并按样张屏二重写「请假审批」。
+   **通用件一律复用 §12**：`.ev-appbar/.ev-today/.ticon/.ev-pop/.pop-h/.pop-cur/.seedrow/.seedswatch`（外观控件行）、
+   `.ev-lhead` + `.sec` + `.sub`（列表头）、`.ev-filters` + `.fchip`（药丸）、`.ev-group` + `.g-h`（分组）、
+   `.ev-rows`（纵向堆叠）、`.ev-empty`（空态）；按钮用既有 `.go` / `.go-ghost` / `.go-sm`。
+   ⚠️ 改这一节**不许动 §12 / §13 / §14 / §15** —— 活动 / 演出 / 录音 / 曲谱靠它们；改完要回头测那几页没被带坏。
+   ⚠️ 样张里的裸类名（`.st` / `.seal` / `.lr` / `.pc` / `.srow` / `.btn` / `.card` / `.tag`）**一律不照抄**：
+   `.btn` / `.card` 是 Bootstrap 保留名，`.seal` 已被 §15 的 `.pc-row .seal` 占用 ⇒ 全部收进 `at-` 前缀。 */
+
+/* —— 段一：成对统计卡（出勤率与请假次数**必须同卡**，docs/05 §5.4 硬规则） —— */
+.at-glance{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* ⚠️ `display:grid` 会压过浏览器给 `[hidden]` 的 `display:none`（同权重、后者更早）⇒ 必须显式补一条，
+   否则荣誉团员 / 指挥的「两张卡整个不渲染」会变成"照样显示空网格"。 */
+.at-glance[hidden]{display:none}
+.at-gcard{padding:18px 20px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--sh-1)}
+.at-gcard .lab{margin:0}
+.at-rate{margin-top:8px;display:flex;align-items:baseline;gap:9px}
+.at-rate b{
+  font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-size:38px;line-height:1;font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums;
+}
+.at-rate .u{font-size:var(--fs-meta);color:var(--ink-3)}
+.at-leave{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:var(--fs-meta);color:var(--ink-2);letter-spacing:.03em}
+.at-leave b{
+  font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-size:23px;font-weight:400;color:var(--ink);margin:0 3px;font-variant-numeric:tabular-nums;
+}
+.at-split{margin-top:6px;font-size:var(--fs-meta);color:var(--ink-3);font-variant-numeric:tabular-nums}
+/* 荣誉团员不计考勤（docs/05 §5.4）⇒ 两张卡整个不渲染、换成这一行说明（不是把数字改成 0） */
+.at-noattend{display:none;padding:16px 18px;border:1px dashed var(--line-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--ink-2);font-size:var(--fs-meta);line-height:1.75}
+.at-noattend.show{display:block}
+.at-hintline{color:var(--ink-3);font-size:var(--fs-meta);margin:10px 0 20px;line-height:1.65}
+
+/* —— 段间留白（替代样张里那处内联 `margin-top:30px`） —— */
+.at-sec-gap{margin-top:30px}
+
+/* —— 段二：请假记录行 —— */
+.at-flab{font-size:var(--fs-meta);color:var(--ink-3);letter-spacing:.06em;align-self:center;margin-right:2px}
+.at-lr{
+  display:grid;grid-template-columns:66px minmax(0,1fr);gap:16px;
+  padding:15px 18px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--sh-1);
+  transition:border-color var(--t-fast),box-shadow var(--t-fast);
+}
+.at-lr:hover{border-color:var(--line-strong);box-shadow:var(--sh-2)}
+.at-db{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;align-self:start;background:var(--surface-2);border-radius:10px;padding:10px 0}
+.at-db .d{
+  font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-size:18px;line-height:1;color:var(--ink);letter-spacing:.01em;
+}
+.at-db .w{font-size:11px;letter-spacing:.06em;color:var(--ink-3)}
+.at-body{min-width:0}
+.at-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
+.at-t{font-size:var(--fs-lead);font-weight:600;letter-spacing:-.005em;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.at-meta{margin-top:5px;color:var(--ink-2);font-size:var(--fs-meta);line-height:1.65}
+.at-meta.linked{color:var(--accent-ink)}
+.at-ops{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+/* 体裁小签：§12 的 `.ev-tag` 只有 today / cancel 两档（没有常态），这里自己写一枚中性签 */
+.at-kind{
+  display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);
+  font-size:11.5px;letter-spacing:.03em;white-space:nowrap;
+}
+
+/* —— 状态药丸：朱砂只给"异常"（已驳回 / 逾期未批）；已通过走青绿；已撤回是正常操作 ⇒ 中性淡化 —— */
+.at-st{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:999px;font-size:11.5px;letter-spacing:.03em;white-space:nowrap;border:1px solid transparent}
+.at-st.pending{background:var(--surface-2);color:var(--ink-2);border-color:var(--line-strong)}
+.at-st.ok{background:var(--accent-weak);color:var(--accent-ink);border-color:var(--accent-line)}
+.at-st.no{background:var(--danger-weak);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
+.at-st.done{background:var(--surface-2);color:var(--ink-3);border-color:var(--line)}
+
+/* —— 双签章：一条申请有几个审批槽就画几枚（槽位数由活动类型定死，前端不硬编码） ——
+   ⚠️ 这是 `docs/14`「印本来就该是朱砂」的**明确例外**（用户 2026-10-15 拍板）：印跟状态变色；
+   **姓名一律墨色**（红笔写活人名犯忌），红只留给「✕ 已驳回」几个字。 */
+.at-seals{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.at-seal{flex:1 1 150px;min-width:0;display:flex;flex-direction:column;gap:3px;padding:8px 12px;border-radius:10px;border:1px dashed var(--line-strong);background:var(--surface-2)}
+.at-seal .r{font-size:10.5px;letter-spacing:.1em;color:var(--ink-3)}
+.at-seal .v{font-size:12.5px;color:var(--ink-3);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.at-seal .v .who{
+  font-family:"BandFang","FangSong","STFangsong","仿宋",var(--font-ui);
+  font-size:16px;letter-spacing:.02em;line-height:1.1;color:var(--ink);
+}
+.at-seal .v .note{font-size:11.5px;opacity:.86}
+.at-seal.ok{border-style:solid;border-color:var(--accent-line);background:var(--accent-weak)}
+.at-seal.ok .r,.at-seal.ok .v{color:var(--accent-ink)}
+.at-seal.no{border-style:solid;border-color:color-mix(in srgb,var(--danger) 34%,transparent);background:var(--danger-weak)}
+.at-seal.no .r,.at-seal.no .v{color:var(--danger)}
+.at-seal.mine{border-width:1.5px;box-shadow:0 0 0 3px var(--accent-weak)}
+
+/* —— 段三：逐场明细（紧凑行，按月分组）——
+   状态配色：出勤＝墨色（默认态不强调）／请假＝中性描边／缺勤＝朱砂／未来＝灰。
+   ⚠️ 活动名是 `<a>` ⇒ 必须自写 `color` + `text-decoration`（docs/14 铁律 1 子条 / D29）。 */
+.at-sess{display:flex;flex-direction:column;gap:2px}
+.at-srow{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:14px;align-items:center;padding:11px 12px;border-radius:10px;border:1px solid transparent;transition:background var(--t-fast),border-color var(--t-fast)}
+.at-srow:hover{background:var(--surface-2);border-color:var(--line)}
+.at-srow .sd{font-size:var(--fs-meta);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.at-srow .se{min-width:0;font-size:var(--fs-body);color:var(--ink-2)}
+.at-srow .se a{color:var(--ink);text-decoration:none;cursor:pointer}
+.at-srow .se a:hover{color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px}
+.at-srow .se .k{color:var(--ink-3);font-size:var(--fs-meta);margin-left:7px}
+.at-ms{font-size:12px;letter-spacing:.03em;white-space:nowrap}
+.at-ms.p{color:var(--ink-3)}   /* 出勤：默认态，不挂色 */
+.at-ms.l{color:var(--ink-2);border:1px solid var(--line-strong);border-radius:999px;padding:3px 10px}
+.at-ms.a{color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);background:var(--danger-weak);border-radius:999px;padding:3px 10px}
+.at-ms.soon,.at-ms.none{color:var(--ink-3)}
+.at-more{display:flex;justify-content:center;padding:14px 0 2px}
+
+/* —— 屏二：待我审批卡 —— */
+.at-pcs{display:flex;flex-direction:column;gap:12px}
+.at-pc{padding:16px 18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--sh-1)}
+.at-pc .hd{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
+.at-note{width:100%;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:var(--fs-body);color:var(--ink)}
+.at-note:focus{outline:none;border-color:var(--accent-line)}
+.at-acts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.at-acts .go-danger{background:var(--surface);color:var(--danger);border:1.5px solid color-mix(in srgb,var(--danger) 34%,transparent)}
+.at-acts .go-danger:hover{background:var(--danger-weak);color:var(--danger)}
+
+/* —— 逐行入场（与 `.evrow.ar` / `.pc-row.ar` 同构；起点类由 `BAND.alive()` 同步下到行上） —— */
+.at-gcard.ar,.at-lr.ar,.at-srow.ar,.at-pc.ar{opacity:0;transform:translateY(10px)}
+.at-gcard.ar.in,.at-lr.ar.in,.at-srow.ar.in,.at-pc.ar.in{opacity:1;transform:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .at-glance{grid-template-columns:1fr;gap:10px}
+  .at-gcard{padding:15px 16px}
+  .at-rate b{font-size:33px}
+  .at-lr{grid-template-columns:54px minmax(0,1fr);gap:12px;padding:14px}
+  .at-top{grid-template-columns:1fr;gap:9px}
+  .at-ops{justify-content:flex-start}
+  .at-seals{flex-direction:column}
+  .at-seal{flex:1 1 auto}
+  .at-srow{grid-template-columns:50px minmax(0,1fr) auto;gap:10px;padding:10px 4px}
+  .at-pc .hd{grid-template-columns:1fr;gap:9px}
+  .at-acts .go{flex:1 1 auto}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-gcard.ar,.at-lr.ar,.at-srow.ar,.at-pc.ar{opacity:1;transform:none;transition:none}
 }

@@ -19,109 +19,377 @@
 <body>
 <div id="navbar"></div>
 
-<h2 class="mb-3">待我审批</h2>
-<div id="pending"></div>
-<p id="pending-empty" class="py-3" hidden>没有等你审批的申请</p>
+<!-- ══ 外观控件行（docs/14 §14.6.2b；键沿用 band.palette / band.theme）══ -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </button>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+  <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+    <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+    <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+      <button class="seedswatch on" type="button" data-p="jade"   title="墨·青" aria-pressed="true"></button>
+      <button class="seedswatch"    type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+      <button class="seedswatch"    type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
+    </div>
+  </div>
+</div>
 
-<h2 class="mt-4 mb-3">全部申请（角色范围内）</h2>
-<table class="tb" id="leave-table">
-  <thead><tr><th>日期</th><th>活动</th><th>申请人</th><th>声部</th><th>状态</th><th>进度</th></tr></thead>
-  <tbody id="all-rows"></tbody>
-</table>
+<!-- 请假审批（docs/05 §5.5 / docs/14 §14.6.4，交接单 #204）：屏二。
+     上块＝待我审批的卡（每条申请有几个审批槽就画几枚印；我能签的那一槽加环）；
+     下块＝角色范围内的全部申请（客户端六枚药丸筛选）。
+     ⚠️ 只有 `status === PENDING` 且 `approvals` 里有 `iCanDecide` 的槽，才给意见框和批准 / 驳回；
+        其余（逾期未批但已无待签槽 / 已处理）只读。 -->
+<div class="ev-lhead">
+  <span class="sec"><h2>待我审批</h2><span class="sub" id="pend-count"></span></span>
+</div>
+<div class="at-pcs" id="pending"></div>
+<div class="ev-empty" id="pending-empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.2V3h6v1.2M9 11l2 2 4-4.4"/></svg>
+  </span>
+  <b>没有等你审批的申请</b>
+  <span>有新申请时会出现在这里</span>
+</div>
+
+<div class="ev-lhead at-sec-gap">
+  <span class="sec"><h2>全部申请</h2><span class="sub" id="all-count">我的角色范围内</span></span>
+</div>
+<div class="ev-filters" id="allfilter" role="group" aria-label="按状态筛选"></div>
+<div class="ev-rows" id="allrows"></div>
+<div class="ev-empty" id="all-empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3M9 14h6"/></svg>
+  </span>
+  <b>没有符合条件的申请</b>
+  <span>换个筛选看看</span>
+</div>
 
 <script>
-const reqStatus = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', CANCELED: '已撤回' };
+'use strict';
 
-function progressText(r) {
-  return r.approvals
-    .map((a) => `${a.requiredRole === 'LEADER' ? '团长' : '声部长'}：${
-      a.decision === 'APPROVED' ? '已批' : a.decision === 'REJECTED' ? '已驳回' : '未批'
-    }${a.approverName ? '（' + a.approverName + '）' : ''}${a.note ? ' ' + a.note : ''}`)
-    .join(' · ');
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+/* 后端 `requiredRole` 存的是 Role 枚举名（LeaveService.create:93-95），不是中文。 */
+const ROLE_LABEL = { SECTION_LEADER: '声部长', LEADER: '团长' };
+const FILTERS = [
+  ['all', '全部'],
+  ['PENDING', '待审批'],
+  ['APPROVED', '已通过'],
+  ['REJECTED', '已驳回'],
+  ['CANCELED', '已撤回'],
+  ['overdue', '逾期未批'],
+];
+
+let pending = [];
+let all = [];
+let allTotal = 0;
+let allFilter = 'all';
+
+const $ = (id) => document.getElementById(id);
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
 }
 
-function card(r) {
-  const el = document.createElement('div');
-  el.className = 'cell mb-3';
-  const head = document.createElement('div');
-  head.className = 'd-flex justify-content-between align-items-center';
-  const title = document.createElement('h2');
-  title.className = 'mb-0';
-  title.textContent = `${r.memberName} · ${r.eventTitle}`;
-  head.appendChild(title);
-  const state = document.createElement('span');
-  state.className = 'chip' + (r.overdue || r.status === 'REJECTED' ? ' warn' : '');
-  state.textContent = r.overdue ? '逾期未批（已按缺勤计）' : reqStatus[r.status];
-  head.appendChild(state);
-  el.appendChild(head);
+function dparts(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return { d: iso || '—', w: '' };
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return { d: Number(m[2]) + '/' + Number(m[3]), w: '周' + WD[dt.getDay()] };
+}
+function statusOf(r) {
+  if (r.overdue) return { cls: 'no', text: '逾期未批 · 已按缺勤计' };
+  return ({
+    PENDING: { cls: 'pending', text: '待审批' },
+    APPROVED: { cls: 'ok', text: '已通过' },
+    REJECTED: { cls: 'no', text: '已驳回' },
+    CANCELED: { cls: 'done', text: '已撤回' },
+  })[r.status] || { cls: 'pending', text: r.status || '—' };
+}
+/* 我能签的槽：`PENDING` 且 `iCanDecide`。整单已结束（通过 / 驳回 / 撤回）时不再给操作。 */
+function mineIdxOf(r) {
+  if (r.status !== 'PENDING') return null;
+  const i = (r.approvals || []).findIndex((a) => a.iCanDecide);
+  return i >= 0 ? i : null;
+}
+/* 双签章：几个审批槽就画几枚。印跟状态变色是「印本来就该是朱砂」的明确例外（docs/14，用户 2026-10-15 拍板）；
+   **姓名一律墨色**（红笔写活人名犯忌），红只留给「✕ 已驳回」几个字。 */
+function sealsNode(r, mineIdx) {
+  const box = el('div', 'at-seals');
+  (r.approvals || []).forEach((a, i) => {
+    const cls = a.decision === 'APPROVED' ? ' ok' : a.decision === 'REJECTED' ? ' no' : '';
+    const mine = (mineIdx != null && i === mineIdx) ? ' mine' : '';
+    const seal = el('div', 'at-seal' + cls + mine);
+    seal.appendChild(el('span', 'r', ROLE_LABEL[a.requiredRole] || a.requiredRole || '审批'));
+    const v = el('span', 'v');
+    if (a.decision === 'APPROVED') {
+      v.appendChild(document.createTextNode('✓ 已批'));
+      v.appendChild(el('span', 'who', a.approverName || '—'));
+    } else if (a.decision === 'REJECTED') {
+      v.appendChild(document.createTextNode('✕ 已驳回'));
+      v.appendChild(el('span', 'who', a.approverName || '—'));
+    } else {
+      v.appendChild(document.createTextNode('未批'));
+    }
+    if (a.note) v.appendChild(el('span', 'note', a.note));
+    seal.appendChild(v);
+    box.appendChild(seal);
+  });
+  return box;
+}
 
-  const meta = document.createElement('p');
-  meta.className = 'chip mb-0 mt-2';
-  meta.textContent = `${r.eventDate}${r.reason ? ' · ' + r.reason : ''} · ` + progressText(r);
-  el.appendChild(meta);
+/* ---------- 上块 · 待我审批 ---------- */
+function pendCard(r) {
+  const dp = dparts(r.eventDate);
+  const st = statusOf(r);
+  const mineIdx = mineIdxOf(r);
+  const card = el('article', 'at-pc');
+  card.dataset.id = r.id;
 
-  const mine = r.approvals.filter((a) => a.iCanDecide);
-  if (mine.length > 0 && r.status === 'PENDING') {
-    const note = document.createElement('input');
-    note.className = 'mt-3 w-100';
+  const hd = el('div', 'hd');
+  const left = el('div');
+  const title = el('div', 'at-t');
+  title.appendChild(document.createTextNode(`${r.memberName || '—'} · ${r.eventTitle || '（未命名活动）'}`));
+  if (r.eventKind) title.appendChild(el('span', 'at-kind', BAND.kindLabel(r.eventKind)));
+  left.appendChild(title);
+  const bits = [`${dp.d} ${dp.w}`];
+  if (r.sectionName) bits.push(r.sectionName);
+  bits.push('理由：' + (r.reason || '—'));
+  left.appendChild(el('div', 'at-meta', bits.join(' · ')));
+  hd.appendChild(left);
+  hd.appendChild(el('span', 'at-st ' + st.cls, st.text));
+  card.appendChild(hd);
+  card.appendChild(sealsNode(r, mineIdx));
+
+  if (mineIdx != null) {
+    const note = el('input', 'at-note');
+    note.type = 'text';
     note.placeholder = '审批意见（可空）';
-    const btns = document.createElement('div');
-    btns.className = 'mt-2 d-flex gap-2';
-    for (const [label, cls, decision] of [['批准', '', 'APPROVED'], ['驳回', 'go-ghost', 'REJECTED']]) {
-      const btn = document.createElement('button');
-      btn.className = `go go-sm ${cls}`;
-      btn.textContent = label;
-      btn.addEventListener('click', async () => {
-        if (decision === 'REJECTED'
-            && !await BAND.confirm({ title: `驳回 ${r.memberName} 的申请？`, body: '整单将立即驳回。' })) return;
-        const res = await BAND.must(`/api/leave-approvals/${mine[0].id}/decide`, {
+    note.setAttribute('aria-label', '审批意见');
+    card.appendChild(note);
+
+    const acts = el('div', 'at-acts');
+    const ok = el('button', 'go go-sm', '批准');
+    ok.type = 'button';
+    const no = el('button', 'go go-sm go-danger', '驳回');
+    no.type = 'button';
+    const decide = async (decision) => {
+      if (decision === 'REJECTED'
+          && !await BAND.confirm({ title: `驳回 ${r.memberName} 的申请？`, body: '整单将立即驳回。' })) return;
+      ok.disabled = true;
+      no.disabled = true;
+      try {
+        const res = await BAND.must(`/api/leave-approvals/${r.approvals[mineIdx].id}/decide`, {
           method: 'POST',
           body: { decision, note: note.value.trim() || null },
         });
-        // 覆盖了一条已有签到必须当场说清（docs/05 §5.5：留痕 + 当场提示，缺一不可，不许静默）
+        // 覆盖了一条已有签到必须**当场说清**（docs/05 §5.5：留痕 + 当场提示，缺一不可，不许静默）
         BAND.toast(res && res.attendanceOverridden
           ? `${r.memberName} 已签到，其考勤已改为请假`
-          : '已处理', 'success');
-        load();
-      });
-      btns.appendChild(btn);
-    }
-    el.appendChild(note);
-    el.appendChild(btns);
+          : (decision === 'APPROVED' ? '已批准' : '已驳回'), 'success');
+        await load();
+      } catch (e) {
+        ok.disabled = false;
+        no.disabled = false;   // toast 已由 must 弹出
+      }
+    };
+    ok.addEventListener('click', () => decide('APPROVED'));
+    no.addEventListener('click', () => decide('REJECTED'));
+    acts.append(ok, no);
+    card.appendChild(acts);
   }
-  return el;
+  return card;
 }
 
+/* ---------- 下块 · 全部申请 ---------- */
+function matchAll(r) {
+  if (allFilter === 'all') return true;
+  if (allFilter === 'overdue') return !!r.overdue;
+  if (allFilter === 'PENDING') return r.status === 'PENDING' && !r.overdue;
+  return r.status === allFilter;
+}
+function countAll(k) {
+  if (k === 'all') return all.length;
+  return all.filter((r) => (k === 'overdue' ? !!r.overdue
+    : (k === 'PENDING' ? (r.status === 'PENDING' && !r.overdue) : r.status === k))).length;
+}
+function allRow(r) {
+  const dp = dparts(r.eventDate);
+  const st = statusOf(r);
+  const row = el('article', 'at-lr');
+  row.dataset.id = r.id;
+  row.dataset.st = r.overdue ? 'overdue' : r.status;
+
+  const db = el('div', 'at-db');
+  db.appendChild(el('span', 'd', dp.d));
+  db.appendChild(el('span', 'w', dp.w));
+  row.appendChild(db);
+
+  const body = el('div', 'at-body');
+  const top = el('div', 'at-top');
+  const left = el('div');
+  const title = el('div', 'at-t');
+  title.appendChild(document.createTextNode(`${r.memberName || '—'} · ${r.eventTitle || '（未命名活动）'}`));
+  if (r.eventKind) title.appendChild(el('span', 'at-kind', BAND.kindLabel(r.eventKind)));
+  left.appendChild(title);
+  left.appendChild(el('div', 'at-meta', `${r.sectionName || '—'} · 理由：${r.reason || '—'}`));
+  top.appendChild(left);
+
+  const ops = el('div', 'at-ops');
+  ops.appendChild(el('span', 'at-st ' + st.cls, st.text));
+  top.appendChild(ops);
+
+  body.appendChild(top);
+  body.appendChild(sealsNode(r, mineIdxOf(r)));
+  row.appendChild(body);
+  return row;
+}
+function renderAllFilters() {
+  const host = $('allfilter');
+  host.innerHTML = '';
+  for (const [k, label] of FILTERS) {
+    const b = el('button', 'fchip', `${label} ${countAll(k)}`);
+    b.type = 'button';
+    b.dataset.f = k;
+    b.setAttribute('aria-pressed', String(allFilter === k));
+    b.addEventListener('click', () => {
+      if (allFilter === k) return;
+      allFilter = k;
+      renderAllFilters();
+      renderAll();
+    });
+    host.appendChild(b);
+  }
+}
+function renderAll() {
+  const rows = all.filter(matchAll);
+  $('all-count').textContent = allTotal > all.length
+    ? `已显示 ${all.length} / 共 ${allTotal} 条`
+    : (allFilter === 'all' ? `共 ${all.length} 条` : `${rows.length} / ${all.length} 条`);
+  $('all-empty').classList.toggle('show', rows.length === 0);
+  const host = $('allrows');
+  host.innerHTML = '';
+  rows.forEach((r) => host.appendChild(allRow(r)));
+}
+
+/* ---------- 载入 ---------- */
 async function load() {
   const me = await BAND.renderNav('approve-leave.html');
   if (!me) return;
-  const pending = await BAND.must('/api/leave-requests?scope=needsMe&status=PENDING&size=50');
-  const host = document.getElementById('pending');
-  host.innerHTML = '';
-  document.getElementById('pending-empty').hidden = pending.list.length > 0;
-  for (const r of pending.list) host.appendChild(card(r));
 
-  const all = await BAND.must('/api/leave-requests?scope=all&size=100');
-  const tbody = document.getElementById('all-rows');
-  tbody.innerHTML = '';
-  for (const r of all.list) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td><span class="chip"></span></td><td></td>';
-    tr.children[0].textContent = r.eventDate;
-    tr.children[1].textContent = r.eventTitle;
-    tr.children[2].textContent = r.memberName;
-    tr.children[3].textContent = r.sectionName || '';
-    const chip = tr.querySelector('.chip');
-    chip.textContent = r.overdue ? '逾期未批' : reqStatus[r.status];
-    if (r.overdue || r.status === 'REJECTED') chip.classList.add('warn');
-    tr.children[5].textContent = r.approvals
-      .map((a) => `${a.requiredRole === 'LEADER' ? '团长' : '声部长'} ${
-        a.decision === 'APPROVED' ? '已批' : a.decision === 'REJECTED' ? '已驳' : '未批'}`)
-      .join(' / ');
-    tbody.appendChild(tr);
-  }
-  BAND.alive(document.getElementById('leave-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  const [pend, a] = await Promise.all([
+    BAND.must('/api/leave-requests?scope=needsMe&status=PENDING&size=50'),
+    BAND.must('/api/leave-requests?scope=all&size=100'),
+  ]);
+
+  pending = pend.list || [];
+  $('pend-count').textContent = `${pending.length} 条`;
+  $('pending-empty').classList.toggle('show', pending.length === 0);
+  const host = $('pending');
+  host.innerHTML = '';
+  pending.forEach((r) => host.appendChild(pendCard(r)));
+
+  all = a.list || [];
+  allTotal = a.total || all.length;
+  renderAllFilters();
+  renderAll();
+
+  BAND.alive(host, $('allrows'));
 }
+
+/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
+const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
+const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
+const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
+};
+function setPalette(p) {
+  if (!PAL_NAME[p]) p = 'jade';
+  document.documentElement.dataset.palette = p;
+  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+    const on = b.dataset.p === p;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+  });
+  const cur = $('pop-cur');
+  if (cur) cur.textContent = PAL_NAME[p];
+  store.set('band.palette', p);
+}
+function setTheme(t) {
+  const on = t === 'dark';
+  document.documentElement.dataset.theme = on ? 'dark' : 'light';
+  const btn = $('night-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+  }
+  const ic = $('night-ic');
+  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
+  store.set('band.theme', document.documentElement.dataset.theme);
+}
+function toggleNight() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const btn = $('night-btn');
+  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+  const root = document.documentElement.style;
+  root.setProperty('--cx', cx + 'px');
+  root.setProperty('--cy', cy + 'px');
+  root.setProperty('--cr', cr + 'px');
+  const cls = document.documentElement.classList;
+  cls.add('theme-xvt');
+  try {
+    const t = document.startViewTransition(() => setTheme(next));
+    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
+    else cls.remove('theme-xvt');
+  } catch (e) {
+    cls.remove('theme-xvt');
+    setTheme(next);
+  }
+}
+function openPop(o) {
+  const pop = $('theme-pop');
+  if (!pop) return;
+  pop.hidden = !o;
+  $('theme-btn').setAttribute('aria-expanded', String(o));
+}
+function renderToday() {
+  const d = new Date();
+  $('today-txt').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+$('theme-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPop($('theme-pop').hidden);
+});
+$('night-btn').addEventListener('click', toggleNight);
+$('palette').addEventListener('click', (e) => {
+  const b = e.target.closest('.seedswatch');
+  if (b) setPalette(b.dataset.p);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
+
+renderToday();
+setPalette(store.get('band.palette', 'jade'));
+setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

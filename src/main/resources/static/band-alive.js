@@ -103,7 +103,14 @@ const ALIVE = (() => {
       const dots = [...root.querySelectorAll('.penta .pv')];
       const lit = dots.map((d) => d.classList.contains('on'));   // ⚠️ 要在摘掉之前记下"哪些该亮"
       const bars = [...root.querySelectorAll('.attbar b')];
-      const rows = [...root.querySelectorAll('.tb tbody tr')];
+      // `.evrow` = 活动页精装修的卡片行（docs/14 §14.6.4「活动页」，2026-10-11）——
+      // 与表格行同一套「列表逐行入场」；起点/终态类由下面 `.ar` / `.in` 分支统一处理。
+      // `.cn-prog li` = 演出详情改成有序列表后的曲目行（docs/14 §14.6.4「演出页」，2026-10-11）——
+      // 原来是 `.tb tbody tr` 拿到的，换成 `<ol>` 后要显式补上（参演名单药丸不做逐条入场，横向换行没意义）。
+      // `.pc-row` = 曲谱库的卡片行（docs/14 §14.6.4「曲谱页」，2026-10-15）——同 `.evrow`：原来是 `table.tb` 里的行。
+      // `.at-gcard / .at-lr / .at-srow / .at-pc` = 考勤与请假两页（docs/14 §14.6.4「我的出勤 / 请假审批」，2026-10-17）——
+      // 统计卡、请假记录行、逐场明细行、待审卡共用「逐行入场」；起点 / 终态类由 §16 的 `.at-*.ar` / `.at-*.in` 处理。
+      const rows = [...root.querySelectorAll('.tb tbody tr, .evrow, .cn-prog li, .pc-row, .at-gcard, .at-lr, .at-srow, .at-pc')];
       // 空态（还没数据）：**不占位**，将来有数据时仍能播
       if (!numbers.length && !dots.length && !bars.length && !rows.length) continue;
       played.add(root);
