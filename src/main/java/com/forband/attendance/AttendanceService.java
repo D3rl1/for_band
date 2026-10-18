@@ -37,6 +37,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -136,16 +137,19 @@ public class AttendanceService {
     @Transactional
     public AttendanceRow changeStatus(long attendanceId, AttendanceMarkRequest request,
                                       CurrentUser operator) {
-        if (!AttendanceStatus.PRESENT.equals(request.status())
-                && !AttendanceStatus.LEAVE.equals(request.status())) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "状态只能为 PRESENT / LEAVE");
+        String newStatus = request.status();
+        // 四态（DECISIONS D33）：只能改**已有**记录；ABSENT 同样是改判，绝不通过本接口补一行
+        if (newStatus == null || !Set.of(AttendanceStatus.PRESENT, AttendanceStatus.PARTIAL,
+                AttendanceStatus.LEAVE, AttendanceStatus.ABSENT).contains(newStatus)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "状态只能为 PRESENT / PARTIAL / LEAVE / ABSENT");
         }
         Attendance attendance = attendanceMapper.selectById(attendanceId);
         if (attendance == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "考勤记录不存在");
         }
         String beforeStatus = attendance.getStatus();   // 留痕要"改前 → 改后"两个都给（docs/11 §11.2）
-        attendance.setStatus(request.status());
+        attendance.setStatus(newStatus);
         attendanceMapper.updateById(attendance);
         opLogWriter.write(operator, OpAction.ATTENDANCE_SET_STATUS, "attendance", attendanceId,
                 Map.of("status", beforeStatus),
@@ -187,7 +191,7 @@ public class AttendanceService {
                 .toList();
 
         AttendanceStatsService.Summary summary = statsService.summarize(expected.size(),
-                records.stream().filter(r -> AttendanceStatus.PRESENT.equals(r.getStatus())).count(),
+                records.stream().filter(r -> AttendanceStatus.isPresent(r.getStatus())).count(),
                 records.stream().filter(r -> AttendanceStatus.LEAVE.equals(r.getStatus())).count());
         return new EventAttendance(event.getId(), event.getTitle(), event.getDate(), event.getKind(),
                 event.getStatus(), rows, summary.expected(), summary.present(), summary.leave(),
@@ -247,7 +251,7 @@ public class AttendanceService {
             List<Attendance> records = attendanceMapper.selectList(
                     new LambdaQueryWrapper<Attendance>().eq(Attendance::getEventId, event.getId()));
             AttendanceStatsService.Summary summary = statsService.summarize(expected.size(),
-                    records.stream().filter(r -> AttendanceStatus.PRESENT.equals(r.getStatus())).count(),
+                    records.stream().filter(r -> AttendanceStatus.isPresent(r.getStatus())).count(),
                     records.stream().filter(r -> AttendanceStatus.LEAVE.equals(r.getStatus())).count());
             return new SessionView(event.getId(), event.getTitle(), event.getDate(), event.getKind(),
                     summary.expected(), summary.present(), summary.leave(), summary.absent(),

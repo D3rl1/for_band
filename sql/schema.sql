@@ -102,12 +102,13 @@ CREATE TABLE IF NOT EXISTS event (
     KEY idx_status (status)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '活动';
 
--- ⑥ attendance 考勤（docs/13 §13.3⑥）。只存 PRESENT/LEAVE，缺勤靠推导（DECISIONS D9）。
+-- ⑥ attendance 考勤（docs/13 §13.3⑥）。四态 PRESENT/PARTIAL/LEAVE/ABSENT（DECISIONS D9 修订 / D33）：
+-- 缺勤通常不落库、靠应到名单推导；ABSENT 行只来自人工改判已有记录。无 DDL 迁移。
 CREATE TABLE IF NOT EXISTS attendance (
     id        BIGINT      NOT NULL AUTO_INCREMENT,
     event_id  BIGINT      NOT NULL,
     member_id BIGINT      NOT NULL,
-    status    VARCHAR(12) NOT NULL COMMENT 'PRESENT/LEAVE',
+    status    VARCHAR(12) NOT NULL COMMENT 'PRESENT/PARTIAL/LEAVE/ABSENT',
     marked_at DATETIME    NOT NULL COMMENT '签到时间点（不判断迟到，D17）',
     marked_by BIGINT      NOT NULL COMMENT '代签留痕，本人签时 = member_id',
     PRIMARY KEY (id),

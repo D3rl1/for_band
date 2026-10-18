@@ -1,5 +1,7 @@
 package com.forband.attendance;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.forband.auth.CurrentUser;
 import com.forband.event.dto.EventCreateRequest;
 import com.forband.leave.LeaveService;
@@ -12,8 +14,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -257,6 +263,173 @@ class CheckInTests extends IntegrationTestBase {
         assertTrue(row.get("after").toString().contains("LEAVE"));
     }
 
+    // ---------- 四态（DECISIONS D33 / 交接单 #218） ----------
+
+    @Test
+    void change_status_accepts_four_states_and_rejects_unknown() throws Exception {
+        long eventId = event(startsInMinutes(10), 60);
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                .andExpect(status().isOk());
+        long recordId = recordIdOf(eventId, memberAId);
+
+        for (String state : List.of("PARTIAL", "LEAVE", "ABSENT", "PRESENT")) {
+            api(adminToken(), "PUT", "/api/attendance/" + recordId, "{\"status\":\"" + state + "\"}")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value(state));
+            assertEquals(state, statusOf(recordId), "落库要与响应一致：" + state);
+        }
+
+        // 非法值 / 缺字段都走 10001 校验错误，且**不能改掉已有状态**
+        for (String body : List.of("{\"status\":\"HALF\"}", "{}")) {
+            api(adminToken(), "PUT", "/api/attendance/" + recordId, body)
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value(10001));
+        }
+        assertEquals("PRESENT", statusOf(recordId));
+    }
+
+    @Test
+    void manual_reclassification_persists_and_never_creates_a_row() throws Exception {
+        long eventId = event(startsInMinutes(10), 60);
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                .andExpect(status().isOk());
+        long recordId = recordIdOf(eventId, memberAId);
+
+        api(adminToken(), "PUT", "/api/attendance/" + recordId, "{\"status\":\"PARTIAL\"}")
+                .andExpect(status().isOk());
+        assertEquals("PARTIAL", statusOf(recordId));
+        api(adminToken(), "PUT", "/api/attendance/" + recordId, "{\"status\":\"ABSENT\"}")
+                .andExpect(status().isOk());
+        assertEquals("ABSENT", statusOf(recordId));
+
+        // ABSENT 只允许改判**已有行**：不存在的 attendanceId 一律 404，绝不借机补一行
+        api(adminToken(), "PUT", "/api/attendance/999999", "{\"status\":\"ABSENT\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(10002));
+        assertEquals(1, countAttendance(eventId));
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM attendance WHERE id = 999999", Integer.class));
+    }
+
+    @Test
+    void check_in_after_manual_status_is_40002_and_keeps_status() throws Exception {
+        long eventId = event(startsInMinutes(10), 60);
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                .andExpect(status().isOk());
+        long recordId = recordIdOf(eventId, memberAId);
+
+        for (String state : List.of("ABSENT", "PARTIAL")) {
+            api(adminToken(), "PUT", "/api/attendance/" + recordId, "{\"status\":\"" + state + "\"}")
+                    .andExpect(status().isOk());
+            // 已有任意记录（含改判出来的 ABSENT / PARTIAL）都算"签过"，不覆盖
+            api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(40002));
+            assertEquals(state, statusOf(recordId));
+        }
+        assertEquals(1, countAttendance(eventId));
+    }
+
+    @Test
+    void four_states_conserve_across_event_sessions_summary_and_stats() throws Exception {
+        // 先补齐应到人数：团员甲 + 声部长 + 丙 + 丁 = 4（指挥不算应到）
+        long memberCId = createMember(admin, "团员丙", "memberC", section1, "MEMBER").id();
+        long memberDId = createMember(admin, "团员丁", "memberD", section1, "MEMBER").id();
+        long eventId = event(startsInMinutes(10), 60);
+
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                .andExpect(status().isOk());                      // 甲 PRESENT
+        insertAttendance(eventId, leaderId, "PARTIAL");           // 声部长 遗憾离场
+        insertAttendance(eventId, memberCId, "LEAVE");            // 丙 请假
+        // 丁不写任何行 → 应为缺勤
+
+        // ① 活动详情：守恒式 expected = present + leave + absent，且 PARTIAL 并进 present
+        String eventBody = api(adminToken(), "GET", "/api/events/" + eventId + "/attendance", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.expected").value(4))
+                .andExpect(jsonPath("$.data.present").value(2))
+                .andExpect(jsonPath("$.data.leave").value(1))
+                .andExpect(jsonPath("$.data.absent").value(1))
+                .andExpect(jsonPath("$.data.rate").value(0.5))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        // 没有第五个统计数：data 的字段集合就是这 11 个（含明细 rows）
+        JsonNode data = new ObjectMapper().readTree(eventBody).path("data");
+        Set<String> keys = new HashSet<>();
+        data.fieldNames().forEachRemaining(keys::add);
+        assertEquals(Set.of("eventId", "eventTitle", "eventDate", "eventKind", "eventStatus", "rows",
+                "expected", "present", "leave", "absent", "rate"), keys);
+        assertEquals(data.path("expected").asInt(),
+                data.path("present").asInt() + data.path("leave").asInt() + data.path("absent").asInt());
+
+        // ② 历次场次（管理视图）同一口径
+        api(adminToken(), "GET", "/api/attendance/sessions?size=50", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list[0].eventId").value((int) eventId))
+                .andExpect(jsonPath("$.data.list[0].expected").value(4))
+                .andExpect(jsonPath("$.data.list[0].present").value(2))
+                .andExpect(jsonPath("$.data.list[0].leave").value(1))
+                .andExpect(jsonPath("$.data.list[0].absent").value(1))
+                .andExpect(jsonPath("$.data.list[0].rate").value(0.5));
+
+        // ③ 个人汇总：PARTIAL 计出勤；无记录者由守恒式成为缺勤
+        api(adminToken(), "GET", "/api/members/" + memberAId + "/attendance-summary", null)
+                .andExpect(jsonPath("$.data.rehearsal.expected").value(1))
+                .andExpect(jsonPath("$.data.rehearsal.present").value(1))
+                .andExpect(jsonPath("$.data.rehearsal.leave").value(0))
+                .andExpect(jsonPath("$.data.rehearsal.absent").value(0))
+                .andExpect(jsonPath("$.data.rehearsal.rate").value(1.0));
+        api(adminToken(), "GET", "/api/members/" + leaderId + "/attendance-summary", null)
+                .andExpect(jsonPath("$.data.rehearsal.present").value(1))
+                .andExpect(jsonPath("$.data.rehearsal.absent").value(0));
+        api(adminToken(), "GET", "/api/members/" + memberDId + "/attendance-summary", null)
+                .andExpect(jsonPath("$.data.rehearsal.expected").value(1))
+                .andExpect(jsonPath("$.data.rehearsal.present").value(0))
+                .andExpect(jsonPath("$.data.rehearsal.leave").value(0))
+                .andExpect(jsonPath("$.data.rehearsal.absent").value(1))
+                .andExpect(jsonPath("$.data.rehearsal.rate").value(0.0));
+
+        // ④ 全员聚合：同样 4/2/1/1
+        api(adminToken(), "GET", "/api/attendance/stats", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.kinds[0].kind").value("REHEARSAL"))
+                .andExpect(jsonPath("$.data.kinds[0].expected").value(4))
+                .andExpect(jsonPath("$.data.kinds[0].present").value(2))
+                .andExpect(jsonPath("$.data.kinds[0].leave").value(1))
+                .andExpect(jsonPath("$.data.kinds[0].absent").value(1))
+                .andExpect(jsonPath("$.data.kinds[0].rate").value(0.5))
+                .andExpect(jsonPath("$.data.kinds[1].expected").value(0));
+    }
+
+    @Test
+    void csv_uses_four_chinese_labels_and_unknown_status_is_not_present() throws Exception {
+        long memberCId = createMember(admin, "团员丙", "memberC", section1, "MEMBER").id();
+        createMember(admin, "团员丁", "memberD", section1, "MEMBER");
+        long eventId = event(startsInMinutes(10), 60);
+
+        api(memberAToken, "POST", "/api/events/" + eventId + "/attendance", "{}")
+                .andExpect(status().isOk());
+        insertAttendance(eventId, leaderId, "PARTIAL");
+        insertAttendance(eventId, memberCId, "LEAVE");
+        // 丁无记录 → 缺勤
+
+        String csv = api(adminToken(), "GET", "/api/attendance/export?kind=REHEARSAL", null)
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertEquals(1, countOf(csv, "出勤"), "PRESENT 只应出现一次");
+        assertEquals(1, countOf(csv, "遗憾离场"));
+        assertEquals(1, countOf(csv, "请假"));
+        assertEquals(1, countOf(csv, "缺勤"), "无记录者要显示缺勤");
+
+        // 未知状态输出原串，**绝不能兜底成「出勤」**（旧实现就是 else → 出勤）
+        jdbc.update("UPDATE attendance SET status = 'MYSTERY' WHERE event_id = ? AND member_id = ?",
+                eventId, memberAId);
+        String second = api(adminToken(), "GET", "/api/attendance/export?kind=REHEARSAL", null)
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertEquals(0, countOf(second, "出勤"));
+        assertEquals(1, countOf(second, "MYSTERY"));
+    }
+
     // ---------- 造数 ----------
 
     private long event(LocalDateTime start, long durationMinutes) {
@@ -278,5 +451,30 @@ class CheckInTests extends IntegrationTestBase {
         return jdbc.queryForObject(
                 "SELECT marked_by FROM attendance WHERE event_id = ? AND member_id = ?",
                 Long.class, eventId, memberId);
+    }
+
+    private long recordIdOf(long eventId, long memberId) {
+        return jdbc.queryForObject(
+                "SELECT id FROM attendance WHERE event_id = ? AND member_id = ?",
+                Long.class, eventId, memberId);
+    }
+
+    private String statusOf(long attendanceId) {
+        return jdbc.queryForObject(
+                "SELECT status FROM attendance WHERE id = ?", String.class, attendanceId);
+    }
+
+    /** 直接造一条考勤行（绕开签到窗口，用来铺四态）；marked_by 必填，借本人占位。 */
+    private void insertAttendance(long eventId, long memberId, String status) {
+        jdbc.update("INSERT INTO attendance (event_id, member_id, status, marked_at, marked_by)"
+                + " VALUES (?, ?, ?, NOW(), ?)", eventId, memberId, status, memberId);
+    }
+
+    private static int countOf(String text, String needle) {
+        int count = 0;
+        for (int i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length())) {
+            count++;
+        }
+        return count;
     }
 }

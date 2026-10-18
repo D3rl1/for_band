@@ -52,13 +52,15 @@ public class MeService {
 
         List<RecentActivityItem> items = new ArrayList<>();
         // 取 top-N 走分页插件（生成的 LIMIT 是绑定参数）——不拼 SQL 片段，见 SECURITY.md C1
-        // attendance 只取 PRESENT 行：LEAVE 行是请假批准的后果，与 leave_request 重复——请假以申请单为准
+        // attendance 只取"到场"两类：LEAVE 是请假批准的后果，与 leave_request 重复（以申请单为准）；
+        // ABSENT 是改判结果、没有到场事实，也不进个人流水（DECISIONS D33）
         for (Attendance a : attendanceMapper.selectPage(new Page<>(1, n, false),
                 new LambdaQueryWrapper<Attendance>()
                         .eq(Attendance::getMemberId, user.memberId())
-                        .eq(Attendance::getStatus, AttendanceStatus.PRESENT)
+                        .in(Attendance::getStatus, AttendanceStatus.PRESENT, AttendanceStatus.PARTIAL)
                         .orderByDesc(Attendance::getMarkedAt)).getRecords()) {
-            items.add(new RecentActivityItem("CHECKIN", a.getMarkedAt(), a.getEventId(), null, "出勤"));
+            items.add(new RecentActivityItem("CHECKIN", a.getMarkedAt(), a.getEventId(), null,
+                    AttendanceStatus.PARTIAL.equals(a.getStatus()) ? "遗憾离场" : "出勤"));
         }
         for (LeaveRequest r : requestMapper.selectPage(new Page<>(1, n, false),
                 new LambdaQueryWrapper<LeaveRequest>()

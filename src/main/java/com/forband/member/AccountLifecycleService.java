@@ -122,6 +122,8 @@ public class AccountLifecycleService {
         // 清空声部的唯一途径是显式标记（docs/03 §3.4 边界②）：`sectionId == null` 在本接口一律当"未提供"
         // （`updateById` 忽略 null 字段），否则弹窗里"选无声部"会被静默忽略、点了没反应。
         boolean clearSection = Boolean.TRUE.equals(request.clearSection());
+        // 乐器同理（#217）：不带 instrument = 不改；要清空必须带 clearInstrument，否则 null 会被忽略
+        boolean clearInstrument = Boolean.TRUE.equals(request.clearInstrument());
         Long effectiveSectionId = clearSection ? null
                 : (request.sectionId() != null ? request.sectionId() : member.getSectionId());
         String effectiveRole = request.role() != null ? request.role() : member.getRole();
@@ -178,7 +180,7 @@ public class AccountLifecycleService {
         upd.setRole(request.role());
         upd.setStatus(request.status());
         upd.setStudentNo(request.studentNo());
-        upd.setInstrument(request.instrument());
+        upd.setInstrument(clearInstrument ? null : request.instrument());
         upd.setPhone(request.phone());
         upd.setNote(request.note());
         upd.setJoinedAt(request.joinedAt());
@@ -205,6 +207,12 @@ public class AccountLifecycleService {
             memberMapper.update(null, new LambdaUpdateWrapper<Member>()
                     .eq(Member::getId, id)
                     .set(Member::getSectionId, null));
+        }
+        if (clearInstrument && member.getInstrument() != null) {
+            // 乐器同样要显式 set null，否则"清空后保存"看起来成功、原值还在（#217）
+            memberMapper.update(null, new LambdaUpdateWrapper<Member>()
+                    .eq(Member::getId, id)
+                    .set(Member::getInstrument, null));
         }
 
         if (statusChanged) {

@@ -104,9 +104,11 @@ public class AttendanceStatsService {
                     .eq(Attendance::getEventId, event.getId())
                     .eq(Attendance::getMemberId, member.getId()));
             if (record != null) {
-                if (AttendanceStatus.PRESENT.equals(record.getStatus())) {
+                // 四态（DECISIONS D33）：PARTIAL 计出勤；ABSENT 不加入任一项，仍留在 expected 里,
+                // 由 summarize 的守恒式推导为缺勤（不能把 ABSENT 当成请假——旧实现就是 else → leave）
+                if (AttendanceStatus.isPresent(record.getStatus())) {
                     present++;
-                } else {
+                } else if (AttendanceStatus.LEAVE.equals(record.getStatus())) {
                     leave++;
                 }
             }
@@ -126,7 +128,7 @@ public class AttendanceStatsService {
             List<Attendance> records = attendanceMapper.selectList(
                     new LambdaQueryWrapper<Attendance>().eq(Attendance::getEventId, event.getId()));
             expected += rosterResolver.expectedMembers(event).size();
-            present += records.stream().filter(r -> AttendanceStatus.PRESENT.equals(r.getStatus())).count();
+            present += records.stream().filter(r -> AttendanceStatus.isPresent(r.getStatus())).count();
             leave += records.stream().filter(r -> AttendanceStatus.LEAVE.equals(r.getStatus())).count();
         }
         Summary summary = summarize(expected, present, leave);

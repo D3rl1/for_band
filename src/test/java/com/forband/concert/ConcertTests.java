@@ -50,7 +50,7 @@ class ConcertTests extends IntegrationTestBase {
         setMemberStatus(admin, honoraryId, "GRADUATED");
         memberService.update(honoraryId, new com.forband.member.dto.MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null,
-                LocalDate.now().plusYears(2), null, null, null, null, null, null), admin);
+                LocalDate.now().plusYears(2), null, null, null, null, null, null, null), admin);
     }
 
     @Test

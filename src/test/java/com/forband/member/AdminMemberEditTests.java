@@ -1,5 +1,7 @@
 package com.forband.member;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.forband.auth.CurrentUser;
 import com.forband.member.dto.MemberCreateResponse;
 import com.forband.support.IntegrationTestBase;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -150,6 +153,120 @@ class AdminMemberEditTests extends IntegrationTestBase {
                 "SELECT status FROM member WHERE id = ?", String.class, honoraryId));
         assertNull(jdbc.queryForObject(
                 "SELECT honorary_until FROM member WHERE id = ?", Object.class, honoraryId));
+    }
+
+    // ---------- #217 编辑弹窗补乐器：补设 / 修改 / 显式清空 ----------
+
+    @Test
+    void instrument_can_be_set_modified_and_cleared() throws Exception {
+        assertNull(jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId),
+                "前置：建号时没填乐器");
+
+        // 补设：以前没有任何入口能把乐器补上（建号后只能改角色/声部/状态）
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"笙\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.instrument").value("笙"));
+        assertEquals("笙", jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId));
+
+        // 修改
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"箫\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.instrument").value("箫"));
+        assertEquals("箫", jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId));
+
+        // 清空必须走显式标记：只发 `instrument: null`（或干脆不发）都会被 updateById 忽略
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"clearInstrument\":true}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.instrument").doesNotExist());
+        assertNull(jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId),
+                "带了 clearInstrument 就必须真的清空，不能静默失效");
+    }
+
+    @Test
+    void partial_update_without_instrument_keeps_it_and_only_the_flag_clears() throws Exception {
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"笙\"}")
+                .andExpect(status().isOk());
+
+        // 不带 instrument 的部分更新（换角色）不能顺手把乐器抹掉
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"role\":\"LEADER\"}")
+                .andExpect(status().isOk());
+        assertEquals("笙", jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId),
+                "没传乐器 = 这次不改（部分更新的语义不能被 #217 打破）");
+
+        // 只带 clearInstrument（连 role 都不带）也能单独清空
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"clearInstrument\":true}")
+                .andExpect(status().isOk());
+        assertNull(jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId));
+        assertEquals("LEADER", jdbc.queryForObject(
+                "SELECT role FROM member WHERE id = ?", String.class, memberAId),
+                "清乐器不能误改角色");
+    }
+
+    @Test
+    void instrument_over_32_chars_is_rejected_10001_and_db_unchanged() throws Exception {
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"笙\"}")
+                .andExpect(status().isOk());
+
+        String tooLong = "笙".repeat(33);
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId,
+                "{\"instrument\":\"" + tooLong + "\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(10001));
+        assertEquals("笙", jdbc.queryForObject(
+                "SELECT instrument FROM member WHERE id = ?", String.class, memberAId),
+                "被拒的请求一个字都不许落库");
+
+        // 边界值 32 要放行（别把上限写成 < 32）
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId,
+                "{\"instrument\":\"" + "笙".repeat(32) + "\"}")
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void instrument_update_leaves_other_account_fields_untouched() throws Exception {
+        // ⚠️ 全程 COALESCE：MySQL 的 CONCAT 只要有一个 NULL 就整串 NULL（student_no 是空的）
+        String before = jdbc.queryForObject(
+                "SELECT CONCAT(COALESCE(role, ''), '|', COALESCE(section_id, ''), '|',"
+                        + " COALESCE(status, ''), '|', COALESCE(student_no, ''))"
+                        + " FROM member WHERE id = ?", String.class, memberAId);
+
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"二胡\"}")
+                .andExpect(status().isOk());
+
+        String after = jdbc.queryForObject(
+                "SELECT CONCAT(COALESCE(role, ''), '|', COALESCE(section_id, ''), '|',"
+                        + " COALESCE(status, ''), '|', COALESCE(student_no, ''))"
+                        + " FROM member WHERE id = ?", String.class, memberAId);
+        assertEquals(before, after, "只改乐器时账号级字段必须原样");
+    }
+
+    @Test
+    void account_update_snapshot_has_no_instrument_key() throws Exception {
+        api(adminToken(), "PUT", "/api/admin/members/" + memberAId, "{\"instrument\":\"笙\"}")
+                .andExpect(status().isOk());
+
+        // docs/11 §11.3：operation_log 快照只存账号级关键字段；乐器不进快照，
+        // 免得"大家都有乐器"之后日志被一堆无关 diff 塞满
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM operation_log WHERE action = 'ACCOUNT_UPDATE'", Integer.class));
+        var log = jdbc.queryForMap(
+                "SELECT `before`, `after` FROM operation_log"
+                        + " WHERE action = 'ACCOUNT_UPDATE' ORDER BY id DESC LIMIT 1");
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode before = mapper.readTree(log.get("before").toString());
+        JsonNode after = mapper.readTree(log.get("after").toString());
+        assertFalse(before.has("instrument"), "before 快照不该含 instrument");
+        assertFalse(after.has("instrument"), "after 快照不该含 instrument");
+        // 但账号级字段照旧要留痕（别把整份快照一起弄丢了）
+        for (JsonNode snapshot : new JsonNode[]{before, after}) {
+            assertEquals(4, snapshot.size(), "快照仍是 role/sectionId/status/joinedAt 四键");
+        }
     }
 
     // ---------- 角色白名单：不含 ADMIN ----------

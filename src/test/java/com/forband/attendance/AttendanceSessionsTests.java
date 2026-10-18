@@ -80,6 +80,32 @@ class AttendanceSessionsTests extends IntegrationTestBase {
     }
 
     @Test
+    void partial_counts_as_present_and_explicit_absent_passes_through() throws Exception {
+        jdbc.update("UPDATE attendance SET status = 'PARTIAL' WHERE event_id = ? AND member_id = ?",
+                rehearsalId, memberAId);
+        jdbc.update("INSERT INTO attendance (event_id, member_id, status, marked_at, marked_by) "
+                + "VALUES (?, ?, 'ABSENT', NOW(), ?)", classAId, memberAId, memberAId);
+
+        // 管理视图：PARTIAL 计入出勤（排练仍 出勤 1 / 缺勤 3），ABSENT 行不算任何加分项
+        api(adminToken(), "GET", "/api/attendance/sessions?size=50", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list[1].eventId").value((int) classAId))
+                .andExpect(jsonPath("$.data.list[1].expected").value(2))
+                .andExpect(jsonPath("$.data.list[1].present").value(0))
+                .andExpect(jsonPath("$.data.list[1].leave").value(0))
+                .andExpect(jsonPath("$.data.list[1].absent").value(2))
+                .andExpect(jsonPath("$.data.list[2].eventId").value((int) rehearsalId))
+                .andExpect(jsonPath("$.data.list[2].present").value(1))
+                .andExpect(jsonPath("$.data.list[2].leave").value(0))
+                .andExpect(jsonPath("$.data.list[2].absent").value(3));
+
+        // 团员自己那一格：四态**原样下发**（前端据此显示「遗憾离场」「缺勤」）
+        api(memberAToken, "GET", "/api/attendance/sessions?size=50", null)
+                .andExpect(jsonPath("$.data.list[0].mine").value("ABSENT"))
+                .andExpect(jsonPath("$.data.list[1].mine").value("PARTIAL"));
+    }
+
+    @Test
     void ordinary_member_gets_only_their_own_status_and_no_counts() throws Exception {
         // ⚠️ 团员的范围**只有两场**：本声部的声部课 + 团级排练（乙声部的声部课不在他的列表里）。
         api(memberAToken, "GET", "/api/attendance/sessions?size=50", null)

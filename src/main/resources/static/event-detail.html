@@ -19,138 +19,211 @@
 <body>
 <div id="navbar"></div>
 
-<div id="info" class="cell mb-4"><div class="lab">加载中…</div></div>
-<div id="checkin-area" class="mb-4"></div>
-<div id="banner" class="cell mb-4" hidden></div>
+<!-- 信息头卡：日期块 + 眉标/状态 + 标题 + 事实行 + 正文 + 落款（`docs/14` §14.6.4「活动详情」） -->
+<section class="ed-hero" id="hero" hidden>
+  <div class="ed-date" aria-hidden="true">
+    <span class="m" id="hero-month">—</span>
+    <span class="d" id="hero-day">—</span>
+    <span class="w" id="hero-week"></span>
+  </div>
+  <div>
+    <div class="ed-eye">
+      <span id="hero-kind"></span>
+      <span class="ed-st soon" id="hero-state">未开始</span>
+    </div>
+    <div class="ed-title" id="hero-title"></div>
+    <div class="ed-facts">
+      <span>时间 <b id="hero-time">—</b></span>
+      <span>地点 <b id="hero-loc">—</b></span>
+      <span>对象 <b id="hero-obj">—</b></span>
+    </div>
+    <p class="ed-content" id="hero-content" hidden></p>
+    <p class="ed-foot" id="hero-foot"></p>
+  </div>
+</section>
 
-<!-- 这场活动练了哪些曲（docs/04 §4.5，期 3 起）：只读，所有角色都能看；没关联曲目时整块不出现 -->
-<div id="pieces" class="cell mb-4" hidden>
-  <div class="lab">练了哪些曲</div>
-  <div id="pieces-list"></div>
+<!-- 签到 / 请假双卡：桌面并排、手机上下叠。两卡始终都在（按身份与状态给只读说明） -->
+<div class="ed-ops" id="ops">
+  <section class="ed-op" id="checkin-area">
+    <div class="ed-op-h">
+      <h2>签到</h2>
+      <span class="sub" id="checkin-sub"></span>
+    </div>
+    <div class="body" id="checkin-body"><div class="ed-readonly">加载中…</div></div>
+  </section>
+  <section class="ed-op" id="leave-area">
+    <div class="ed-op-h">
+      <h2>请假</h2>
+      <span class="sub" id="leave-sub"></span>
+    </div>
+    <div class="body" id="leave-body"><div class="ed-readonly">加载中…</div></div>
+  </section>
 </div>
 
-<h2 class="mb-3">考勤</h2>
-<table class="tb" id="att-table">
-  <thead><tr><th>团员</th><th>声部</th><th>状态</th><th>签到时间</th><th>代签人</th><th class="act"></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<p class="chip" id="summary"></p>
+<!-- 这场活动练了哪些曲（docs/04 §4.5，期 3 起）：只读，所有角色都能看；没关联曲目时整块不出现 -->
+<section class="ed-card" id="pieces" hidden>
+  <h2>练了哪些曲</h2>
+  <ol class="ed-pieces" id="pieces-list"></ol>
+</section>
+
+<!-- 考勤：五数 + 出勤横条 + 逐人明细。统计永远是全场口径（docs/05） -->
+<section class="ed-card" id="att-card">
+  <div class="ed-op-h">
+    <h2>考勤</h2>
+    <span class="sub" id="att-sub">加载中…</span>
+  </div>
+  <p class="ed-cancelnote" id="att-cancelnote" hidden>这场活动已取消，考勤统计整场排除，不计入任何人。</p>
+  <div id="att-summary">
+    <div class="ed-sum" id="summary"></div>
+    <div class="attbar ed-bar" id="att-barwrap"><b id="att-bar"></b></div>
+    <div class="ed-bar-note"><span id="att-barleft"></span><span id="att-note"></span></div>
+  </div>
+  <div class="ed-rows">
+    <table class="ed-table" id="att-table">
+      <thead><tr><th>团员</th><th>状态</th><th>签到时间</th><th>代签人</th><th>操作</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</section>
 
 <script>
+'use strict';
+
 const id = new URLSearchParams(location.search).get('id');
-const statusText = { PRESENT: '出勤', LEAVE: '请假' };
+const statusText = { PRESENT: '出勤', PARTIAL: '遗憾离场', LEAVE: '请假', ABSENT: '缺勤' };
+const el = (id) => document.getElementById(id);
 
-async function load() {
-  const me = await BAND.renderNav('events.html');
-  if (!me) return;
-  const e = await BAND.must(`/api/events/${id}`);
-  const canceled = e.status === 'CANCELED';
-  document.querySelector('.head h1').textContent = e.title; // 页标题 = 活动名
+let me = null;
+let ev = null;         // GET /api/events/{id}
+let canceled = false;
+let started = false;   // 已过开场时间
+let ended = false;     // 已过结束时间
+let myRow = null;      // 自己那行（拿 markedAt；EventView 没有 myMarkedAt）
+let leaveOpen = false; // 请假表单是否展开（重渲染时保持）
 
-  const info = document.getElementById('info');
-  const timeRange = `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}`;
-  const eyebrow = `${BAND.kindLabel(e.kind)}${canceled ? ' · 已取消，签到关闭' : ''}`;
-  if (BAND.isMobile()) {
-    // 手机端：样张 `v-event-detail` 的卡片（眉标 + 时段大字 `.big` + `.dl` 键值）
-    info.innerHTML = `<div class="lab"></div><h2 id="info-title" class="mb-1"></h2>
-      <div class="big" id="info-time"></div>
-      <dl class="dl"><dt>日期</dt><dd id="info-date"></dd>
-        <dt>地点</dt><dd id="info-loc"></dd>
-        <dt>对象</dt><dd id="info-obj"></dd></dl>
-      <p class="mb-0 mt-2 text-secondary" id="info-content" hidden></p>`;
-    info.querySelector('.lab').textContent = eyebrow;
-    document.getElementById('info-title').textContent = e.title;
-    document.getElementById('info-time').textContent = timeRange;
-    document.getElementById('info-date').textContent = e.date;
-    document.getElementById('info-loc').textContent = e.location || '地点待定';
-    document.getElementById('info-obj').textContent = e.sectionName || '全员';
-  } else {
-    info.innerHTML = `<div class="lab"></div><h2 id="info-title" class="mb-2"></h2>
-      <p class="mb-0" id="info-when"></p><p class="mb-0 text-secondary" id="info-content" hidden></p>`;
-    info.querySelector('.lab').textContent = eyebrow;
-    document.getElementById('info-title').textContent = e.title;
-    document.getElementById('info-when').textContent =
-      `${e.date} ${timeRange} · ${e.location || '地点待定'}` +
-      (e.sectionName ? ` · ${e.sectionName}` : '');
-  }
-  if (e.content) {
-    const c = document.getElementById('info-content');
-    c.hidden = false;
-    c.textContent = e.content;
-  }
-
-  // 练了哪些曲：只读展示（能不能改由活动管理页负责，服务端把权限收在 PUT /api/events/{id}/pieces）
-  const links = await BAND.must(`/api/events/${id}/pieces`);
-  if (links.length) {
-    const box = document.getElementById('pieces');
-    const host = document.getElementById('pieces-list');
-    box.hidden = false;
-    host.innerHTML = '';
-    for (const p of links) {
-      const row = document.createElement('p');
-      row.className = 'mb-1';
-      const a = document.createElement('a');
-      a.href = `/piece-detail.html?id=${p.pieceId}`;
-      a.textContent = `${p.orderNo ? p.orderNo + '. ' : ''}${p.title || '（曲目已删除）'}`;
-      row.appendChild(a);
-      const meta = document.createElement('span');
-      meta.className = 'chip ms-2 mb-0';
-      meta.textContent = [p.composer ? `作曲 ${p.composer}` : null, p.statusLabel]
-        .filter(Boolean).join(' · ');
-      row.appendChild(meta);
-      host.appendChild(row);
-    }
-  }
-
-  const banner = document.getElementById('banner');
-  if (e.updatedByName && e.updatedByName !== e.createdByName) {
-    banner.hidden = false;
-    banner.innerHTML = `<div class="lab">修改痕迹</div><p class="mb-0"></p>`;
-    banner.querySelector('p').textContent =
-      `已被 ${e.updatedByName} 修改于 ${BAND.stamp(e.updatedAt)}`;
-  }
-
-  renderCheckin(me, e, canceled);
-  await loadRows(me, canceled);
-  // ⚠️ 在两个常驻容器都写完**之后**才播。`loadRows` 会被签到 / 代签 / 改考勤 / 定时器反复重调，
-  // 但"播过"的标志只认这两个容器 ⇒ 后续重渲染直接给终值，不重播（docs/14 §14.6.4 ②）。
-  // ⚠️ 手机端那张 `#att-sum` 必须一并交给 alive —— 出勤横条在那张卡里，不给它 root 就永远停在 scaleX(0)。
-  const attSum = document.getElementById('att-sum');
-  BAND.alive(document.getElementById('summary'), document.getElementById('att-table'),
-    ...(attSum ? [attSum] : []));
+function dateParts(v) {
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  return { m: mo, d, w: '日一二三四五六'[new Date(y, mo - 1, d).getDay()] };
 }
 
-function renderCheckin(me, e, canceled) {
-  const area = document.getElementById('checkin-area');
-  area.innerHTML = '';
-  // 荣誉团员只读（docs/02 §2.3）：不显示签到按钮，也不显示请假入口
-  if (me.role === 'HONORARY') return;
-  if (canceled) return;
-  if (e.myAttendanceStatus) {
-    const label = statusText[e.myAttendanceStatus] || e.myAttendanceStatus;
-    if (BAND.isMobile()) {
-      // 手机端：样张 `v-event-detail` 的 `.signed`（✓ + 状态）。
-      // ⚠️ **不加样张那颗「撤销」**——本人签到本就撤不掉，样张那颗是简化（照约束②不抄）。
-      const box = document.createElement('div');
-      box.className = 'signed';
-      box.innerHTML = '<span class="sd-mark">✓</span><div class="sd-body"><b></b></div>';
-      box.querySelector('.sd-body b').textContent =
-        e.myAttendanceStatus === 'PRESENT' ? '已签到'
-          : e.myAttendanceStatus === 'LEAVE' ? '已请假' : label;
-      area.appendChild(box);
-    } else {
-      const done = document.createElement('p');
-      done.className = 'chip';
-      done.textContent = `你的状态：${label}`;
-      area.appendChild(done);
-    }
+const hhmm = (v) => String(v || '').slice(0, 5);
+
+/** 签到时间：同一天只给 HH:MM，跨天带上 MM-DD（`BAND.stamp` 出的是 `YYYY-MM-DD HH:MM`）。 */
+function markedAtText(iso) {
+  const s = BAND.stamp(iso);
+  if (!s) return '';
+  return String(s).slice(0, 10) === ev.date ? String(s).slice(11) : String(s).slice(5);
+}
+
+function renderHero() {
+  const p = dateParts(ev.date);
+  el('hero-month').textContent = p ? p.m + ' 月' : '—';
+  el('hero-day').textContent = p ? String(p.d) : '—';
+  el('hero-week').textContent = p ? '周' + p.w : '';
+  el('hero-kind').textContent = BAND.kindLabel(ev.kind);
+  el('hero-title').textContent = ev.title;
+  el('hero-time').textContent = hhmm(ev.startTime) + '–' + hhmm(ev.endTime);
+  el('hero-loc').textContent = ev.location || '地点待定';
+  el('hero-obj').textContent = ev.sectionName || '全员';
+
+  // 状态顺序：取消 > 已结束 > 进行中 > 未开始。取消是异常态，用朱砂；进行中用松绿
+  const st = el('hero-state');
+  if (canceled) { st.className = 'ed-st canceled'; st.textContent = '已取消'; }
+  else if (ended) { st.className = 'ed-st'; st.textContent = '已结束'; }
+  else if (started) { st.className = 'ed-st ok'; st.textContent = '进行中'; }
+  else { st.className = 'ed-st soon'; st.textContent = '未开始'; }
+
+  const content = el('hero-content');
+  content.hidden = !ev.content;
+  content.textContent = ev.content || '';
+
+  // 落款：创建人常显；改过才追一句（原 `#banner` 的修改痕迹并进头卡底部）
+  const foot = el('hero-foot');
+  let text = '由 ' + (ev.createdByName || '—') + ' 创建';
+  if (ev.updatedByName && ev.updatedByName !== ev.createdByName) {
+    text += ' · 已被 ' + ev.updatedByName + ' 修改于 ' + BAND.stamp(ev.updatedAt);
+  }
+  foot.textContent = text;
+}
+
+function renderCheckin() {
+  const body = el('checkin-body');
+  const sub = el('checkin-sub');
+  body.innerHTML = '';
+
+  if (canceled) {
+    sub.textContent = '签到已关闭';
+    body.innerHTML = '<div class="ed-readonly">活动已取消，签到关闭。</div>';
     return;
   }
-  const notStarted = new Date(`${e.date}T${e.startTime}`) > new Date();
+  // 荣誉团员只读（docs/02 §2.3）：不计考勤，没有签到入口
+  if (me.role === 'HONORARY') {
+    sub.textContent = '无需签到';
+    body.innerHTML = '<div class="ed-readonly">荣誉团员不计考勤，无需签到。</div>';
+    return;
+  }
+
+  const status = ev.myAttendanceStatus;
+  if (status) {
+    // 四态（DECISIONS D33）：已有记录一律只读，绝不再给签到按钮
+    let stampText = '已 签 到';
+    let stampClass = 'stamp';
+    let lineText = '';
+    let dimText = '需要更正请联系团长';
+    if (status === 'PRESENT') {
+      sub.textContent = '已签到';
+      const t = myRow && myRow.markedAt ? markedAtText(myRow.markedAt) : '';
+      lineText = (t ? t + ' 签到' : '已签到')
+        + (myRow && myRow.markedByName && myRow.markedByName !== me.name ? ' · 由 ' + myRow.markedByName + ' 代签' : '');
+      dimText = '签到后本人不能撤销；需要更正请联系团长';
+    } else if (status === 'PARTIAL') {
+      sub.textContent = '遗憾离场';
+      stampText = '遗 憾 离 场';
+      stampClass = 'stamp is-neutral';   // 到场但提前走：不是异常态，不用朱砂
+      lineText = '这场记为「遗憾离场」——到场了，但提前离开';
+    } else if (status === 'LEAVE') {
+      sub.textContent = '已请假';
+      stampText = '已 请 假';
+      lineText = '这场记为请假';
+    } else if (status === 'ABSENT') {
+      sub.textContent = '缺勤';
+      stampText = '缺 勤';
+      stampClass = 'stamp is-danger';    // 缺勤才是异常态
+      lineText = '这场记为缺勤';
+    } else {
+      sub.textContent = status;
+      stampText = status;
+      lineText = '这场已有考勤记录';
+    }
+
+    const box = document.createElement('div');
+    box.className = 'ed-signed';
+    const stamp = document.createElement('span');
+    stamp.className = stampClass;
+    stamp.textContent = stampText;
+
+    const when = document.createElement('div');
+    when.className = 'ed-when';
+    const line = document.createElement('div');
+    line.textContent = lineText;
+    const dim = document.createElement('span');
+    dim.className = 'dim';
+    dim.textContent = dimText;
+    when.append(line, document.createElement('br'), dim);
+    box.append(stamp, when);
+    body.appendChild(box);
+    return;
+  }
+
+  sub.textContent = ended ? '已结束' : started ? '已开始' : ev.date.slice(5) + ' ' + hhmm(ev.startTime) + ' 开始';
+
   const wrap = document.createElement('div');
   wrap.className = 'stamp-wrap d-inline-block';
   const btn = document.createElement('button');
   btn.className = 'go';
+  btn.type = 'button';
   btn.textContent = '签 到';
   btn.addEventListener('click', async () => {
     // 签到一按就落库、自己撤不掉 → 先确认（docs/05 §5.3 留痕块）；取消则**不发请求**
@@ -168,80 +241,313 @@ function renderCheckin(me, e, canceled) {
     } catch (err) { /* toast 已在 must 中弹出 */ }
   });
   wrap.appendChild(btn);
-  area.appendChild(wrap);
+  body.appendChild(wrap);
 
-  if (notStarted) {
-    const leaveBtn = document.createElement('button');
-    leaveBtn.className = 'go go-ghost go-sm ms-2 align-text-bottom';
-    leaveBtn.textContent = '请假';
-    leaveBtn.addEventListener('click', () => toggleLeaveForm(wrap));
-    area.appendChild(leaveBtn);
-  }
+  const fine = document.createElement('p');
+  fine.className = 'fine';
+  fine.textContent = '签到后本人不能撤销；到不了的请走右边「请假」。';
+  body.appendChild(fine);
 }
 
-function toggleLeaveForm(wrap) {
-  if (wrap.nextElementSibling && wrap.nextElementSibling.id === 'leave-form') {
-    wrap.nextElementSibling.remove();
+function renderLeave() {
+  const body = el('leave-body');
+  const sub = el('leave-sub');
+  body.innerHTML = '';
+
+  if (canceled) {
+    sub.textContent = '已关闭';
+    body.innerHTML = '<div class="ed-readonly">活动已取消，不再接收请假申请。</div>';
     return;
   }
+  if (me.role === 'HONORARY') {
+    sub.textContent = '无需请假';
+    body.innerHTML = '<div class="ed-readonly">荣誉团员不能提交请假。</div>';
+    return;
+  }
+
+  const status = ev.myAttendanceStatus;
+  if (status) {
+    // 已有任何考勤记录都不再开放请假表单（PARTIAL / ABSENT 之前会掉进表单）
+    sub.textContent = status === 'LEAVE' ? '已请假' : '已有记录';
+    const box = document.createElement('div');
+    box.className = 'ed-readonly';
+    box.textContent = status === 'LEAVE'
+      ? '这场你已请假。需要更正请联系团长。'
+      : `这场已有考勤记录（${statusText[status] || status}），需要更正请联系团长。`;
+    body.appendChild(box);
+    return;
+  }
+  // 请假申请的状态（`PENDING` / `APPROVED`）在行数据里，不在 EventView 上
+  const leaveStatus = myRow && myRow.leaveStatus;
+  if (leaveStatus === 'PENDING') {
+    sub.textContent = '等待审批';
+    body.innerHTML = '<div class="ed-readonly">请假申请已提交，正在等审批；未批之前仍算应到。</div>';
+    return;
+  }
+  if (leaveStatus === 'APPROVED') {
+    sub.textContent = '已批准';
+    body.innerHTML = '<div class="ed-readonly">这场请假已批准。需要撤回请联系团长。</div>';
+    return;
+  }
+  if (started) {
+    sub.textContent = '已开始';
+    body.innerHTML = '<div class="ed-readonly">活动已经开始，需要请假请直接联系团长。</div>';
+    return;
+  }
+
+  sub.textContent = '开始前可提交';
+  if (!leaveOpen) {
+    const btn = document.createElement('button');
+    btn.className = 'go go-ghost';
+    btn.type = 'button';
+    btn.textContent = '请 假';
+    btn.addEventListener('click', () => {
+      leaveOpen = true;
+      renderLeave();
+      const ta = el('leave-reason');
+      if (ta) ta.focus();
+    });
+    body.appendChild(btn);
+    const fine = document.createElement('p');
+    fine.className = 'fine';
+    fine.textContent = '理由必填。提交后等待审批，未批之前仍算应到。';
+    body.appendChild(fine);
+    return;
+  }
+
   const form = document.createElement('div');
-  form.id = 'leave-form';
-  form.className = 'd-flex gap-2 mt-2';
-  const input = document.createElement('input');
-  input.className = 'flex-grow-1';
-  input.placeholder = '请假理由（必填）';
+  form.className = 'ed-form';
+
+  const label = document.createElement('label');
+  label.htmlFor = 'leave-reason';
+  label.textContent = '请假理由';
+
+  const ta = document.createElement('textarea');
+  ta.id = 'leave-reason';
+  ta.maxLength = 255;
+  ta.placeholder = '例如：学校家长会，晚上走不开';
+
+  const acts = document.createElement('div');
+  acts.className = 'acts';
   const submit = document.createElement('button');
-  submit.className = 'go go-ghost go-sm';
+  submit.className = 'go go-sm';
+  submit.type = 'button';
   submit.textContent = '提交申请';
+  const cancel = document.createElement('button');
+  cancel.className = 'go go-ghost go-sm';
+  cancel.type = 'button';
+  cancel.textContent = '取消';
+  const count = document.createElement('span');
+  count.className = 'count';
+  count.textContent = '0 / 255';
+  acts.append(submit, cancel, count);
+
+  form.append(label, ta, acts);
+  body.appendChild(form);
+
+  ta.addEventListener('input', () => { count.textContent = ta.value.length + ' / 255'; });
+  cancel.addEventListener('click', () => {
+    leaveOpen = false;
+    renderLeave();
+    BAND.toast('已取消，没有提交申请');
+  });
   submit.addEventListener('click', async () => {
     // 理由必填（docs/05 §5.5）——这里只是体验，后端才是闸门
-    const reason = input.value.trim();
+    const reason = ta.value.trim();
     if (!reason) {
       BAND.toast('请填写请假理由');
-      input.focus();
+      ta.focus();
       return;
     }
+    const ok = await BAND.confirm({
+      title: '提交请假申请？',
+      body: '理由：' + reason,
+      ok: '提 交',
+    });
+    if (!ok) return;
     await BAND.must(`/api/events/${id}/leave-requests`, {
       method: 'POST',
       body: { reason },
     });
+    leaveOpen = false;
     BAND.toast('已提交，等待审批', 'success');
     load();
   });
-  form.append(input, submit);
-  wrap.after(form);
+  ta.focus();
 }
 
-async function loadRows(me, canceled) {
-  const d = await BAND.must(`/api/events/${id}/attendance`);
-  const tbody = document.getElementById('rows');
+function renderPieces(links) {
+  const box = el('pieces');
+  const host = el('pieces-list');
+  host.innerHTML = '';
+  if (!links || !links.length) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  links.forEach((p, i) => {
+    const li = document.createElement('li');
+    li.className = 'ed-piece';
+
+    const no = document.createElement('span');
+    no.className = 'no';
+    no.textContent = String(i + 1).padStart(2, '0');
+
+    const mid = document.createElement('span');
+    const t = document.createElement('span');
+    t.className = 't';
+    const a = document.createElement('a');
+    a.href = '/piece-detail.html?id=' + encodeURIComponent(p.pieceId);
+    a.textContent = p.title || '（曲目已删除）';
+    t.appendChild(a);
+    mid.appendChild(t);
+    if (p.composer) {
+      const m = document.createElement('span');
+      m.className = 'm';
+      m.textContent = '作曲 ' + p.composer;
+      mid.appendChild(m);
+    }
+
+    li.append(no, mid);
+    if (p.statusLabel) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = p.statusLabel;
+      li.appendChild(chip);
+    }
+    host.appendChild(li);
+  });
+}
+
+function renderAtt(d) {
+  const sub = el('att-sub');
+  const note = el('att-note');
+  const barWrap = el('att-barwrap');
+  el('att-cancelnote').hidden = !canceled;
+
+  if (canceled) {
+    sub.textContent = '活动已取消，整场不入统计';
+    el('att-summary').hidden = true;
+    barWrap.style.setProperty('--r', 0);
+  } else {
+    el('att-summary').hidden = false;
+    sub.textContent = '应到 ' + d.expected + ' 人';
+
+    // ⚠️ 未来的场次：服务端也把没记录的人算成 absent，但那是"还没开始"，不是"缺勤"。
+    //    这里改成「未开始」，出勤率给 `—`。（2026-10-18 修复，复盘见 desktop_agent/debug_log.md）
+    const cells = started
+      ? [
+        ['应 到', d.expected, ''],
+        ['出 勤', d.present, ''],
+        ['请 假', d.leave, ''],
+        ['缺 勤', d.absent, d.absent ? 'hot' : ''],
+        ['出勤率', BAND.ratePct(d.rate, d.expected), ''],
+      ]
+      : [
+        ['应 到', d.expected, ''],
+        ['出 勤', d.present, ''],
+        ['请 假', d.leave, ''],
+        ['未开始', d.absent, ''],
+        ['出勤率', '—', ''],
+      ];
+
+    const sum = el('summary');
+    sum.innerHTML = '';
+    for (const cell of cells) {
+      const box = document.createElement('div');
+      box.className = 'ed-stat' + (cell[2] ? ' ' + cell[2] : '');
+      const k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = cell[0];
+      const n = document.createElement('div');
+      n.className = 'n';
+      n.setAttribute('data-count', '');
+      n.textContent = String(cell[1]);
+      box.append(k, n);
+      sum.appendChild(box);
+    }
+
+    barWrap.style.setProperty('--r', started ? (d.rate || 0) : 0);
+    el('att-barleft').textContent = started
+      ? '出勤 ' + d.present + ' / 应到 ' + d.expected
+      : '签到尚未产生';
+    note.textContent = ended ? '已结束' : started ? '进行中' : '活动未开始';
+  }
+
+  const tbody = el('rows');
   tbody.innerHTML = '';
   const canChange = me.role === 'ADMIN' || me.role === 'LEADER';
   const canMark = ['ADMIN', 'LEADER'].includes(me.role);   // 代签收窄到管理员 + 团长（docs/02 §2.3）
+
   for (const r of d.rows) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td><td></td><td class="act"></td>';
-    // 姓名格：头像 + 姓名（与名册同一套姿势，走 paintAvatar 唯一入口）
-    const nameWrap = document.createElement('span');
-    nameWrap.className = 'av-name';
-    const avSlot = document.createElement('span');
-    avSlot.className = 'av-sm';
-    BAND.paintAvatar(avSlot, r);
-    nameWrap.append(avSlot, document.createTextNode(r.name));
-    tr.children[0].appendChild(nameWrap);
-    tr.children[1].textContent = r.sectionName || '';
-    const chip = tr.querySelector('.chip');
-    if (r.status === 'LEAVE') { chip.textContent = statusText.LEAVE; }
-    else if (r.status === 'PRESENT') { chip.textContent = statusText.PRESENT; }
-    else { chip.textContent = '缺勤'; chip.classList.add('warn'); } // 缺勤是异常态：朱砂
-    tr.children[3].textContent = r.markedAt ? BAND.stamp(r.markedAt).slice(5) : '';
-    tr.children[4].textContent = r.markedByName || '';
-    const action = tr.children[5];
-    // 有生效中请假的人不出现「代签」（docs/05 §5.3）：已驳回 / 已撤回不算——他该来，要能补签
+    tr.className = 'ed-arow';
+
+    // 1 团员：头像 + 姓名 + 声部（走 paintAvatar 唯一入口）
+    const tdWho = document.createElement('td');
+    const who = document.createElement('span');
+    who.className = 'ed-who';
+    const av = document.createElement('span');
+    av.className = 'ed-av';
+    av.setAttribute('aria-hidden', 'true');
+    BAND.paintAvatar(av, r);
+    const nm = document.createElement('span');
+    nm.className = 'ed-nm';
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = r.name;
+    const s = document.createElement('span');
+    s.className = 's';
+    s.textContent = r.sectionName || '';
+    nm.append(n, s);
+    who.append(av, nm);
+    tdWho.appendChild(who);
+
+    // 2 状态：未来的场次显示「未开始」，不是「缺勤」（2026-10-18 修复）
+    const tdSt = document.createElement('td');
+    const st = document.createElement('span');
+    if (r.status === 'PRESENT') { st.className = 'ed-st present'; st.textContent = '出勤'; }
+    else if (r.status === 'PARTIAL') { st.className = 'ed-st partial'; st.textContent = '遗憾离场'; }
+    else if (r.status === 'LEAVE') { st.className = 'ed-st leave'; st.textContent = '请假'; }
+    else if (r.status === 'ABSENT') { st.className = 'ed-st absent'; st.textContent = '缺勤'; }
+    else if (canceled) { st.className = 'ed-st soon'; st.textContent = '未签到'; }
+    else if (!started) { st.className = 'ed-st soon'; st.textContent = '未开始'; }
+    else { st.className = 'ed-st absent'; st.textContent = '缺勤'; } // 缺勤是异常态：朱砂
+    tdSt.appendChild(st);
+
+    // 3 签到时间（手机端 `.k` 露出「签到」小标签）
+    const tdTime = document.createElement('td');
+    const time = document.createElement('span');
+    time.className = 'ed-time';
+    const tk = document.createElement('span');
+    tk.className = 'k';
+    tk.textContent = '签到';
+    time.append(tk, document.createTextNode(r.markedAt ? markedAtText(r.markedAt) : '—'));
+    tdTime.appendChild(time);
+
+    // 4 代签人
+    const tdBy = document.createElement('td');
+    const by = document.createElement('span');
+    by.className = 'ed-by';
+    const bk = document.createElement('span');
+    bk.className = 'k';
+    bk.textContent = '代签';
+    by.append(bk, document.createTextNode(r.markedByName || '—'));
+    tdBy.appendChild(by);
+
+    // 5 操作：取消的活动一律没有按钮；有生效中请假的人不出现「代签」（docs/05 §5.3）
+    const tdAct = document.createElement('td');
+    tdAct.className = 'ed-act';
     const onLeave = r.leaveStatus === 'PENDING' || r.leaveStatus === 'APPROVED';
-    if (!canceled && canMark && !r.status && !onLeave) {
+    if (canceled) {
+      const none = document.createElement('span');
+      none.className = 'none';
+      none.textContent = '—';
+      tdAct.appendChild(none);
+    } else if (canMark && !r.status && !onLeave) {
       const btn = document.createElement('button');
       btn.className = 'go go-ghost go-sm';
+      btn.type = 'button';
       btn.textContent = '代签';
       btn.addEventListener('click', async () => {
         // 确认层里**写明为谁签**——一行一个按钮，点错行的代价是改别人的考勤
@@ -250,50 +556,66 @@ async function loadRows(me, canceled) {
         BAND.toast(`已为 ${r.name} 签到`, 'success');
         load();
       });
-      action.appendChild(btn);
-    } else if (!canceled && canChange && r.status) {
+      tdAct.appendChild(btn);
+    } else if (canChange && r.status) {
       const sel = document.createElement('select');
-      sel.innerHTML = '<option value="PRESENT">出勤</option><option value="LEAVE">请假</option>';
+      sel.innerHTML = '<option value="PRESENT">出勤</option><option value="PARTIAL">遗憾离场</option>'
+        + '<option value="LEAVE">请假</option><option value="ABSENT">缺勤</option>';
       sel.value = r.status;
       sel.addEventListener('change', async () => {
         if (!r.recordId) return;
         // 开下拉手滑点到「请假」就直接写库 → 必须先确认，且写明"对谁、从什么改成什么"
         const ok = await BAND.confirm({
-          title: `把 ${r.name} 的考勤从「${statusText[r.status]}」改成「${statusText[sel.value]}」？`,
+          title: `把 ${r.name} 的考勤从「${statusText[r.status] || r.status}」改成「${statusText[sel.value]}」？`,
         });
         if (!ok) { sel.value = r.status; return; }   // 取消：回滚下拉，且不发请求
         await BAND.must(`/api/attendance/${r.recordId}`, { method: 'PUT', body: { status: sel.value } });
         BAND.toast('已更新', 'success');
         load();
       });
-      action.appendChild(sel);
+      tdAct.appendChild(sel);
+    } else {
+      const none = document.createElement('span');
+      none.className = 'none';
+      none.textContent = '—';
+      tdAct.appendChild(none);
     }
+
+    tr.append(tdWho, tdSt, tdTime, tdBy, tdAct);
     tbody.appendChild(tr);
   }
-  // 出勤率与请假数成对展示（docs/05 硬规则）。⚠️ 五个数**各自一个 span**——「界面的活性」① 要求
-  // "要数的数字必须各自在独立元素里"；`·` 与「出勤率」这类标签留在外面当文本节点。
-  document.getElementById('summary').innerHTML =
-    `应到 <span class="n" data-count>${d.expected}</span> · 出勤 <span class="n" data-count>${d.present}</span>`
-    + ` · 请假 <span class="n" data-count>${d.leave}</span> · 缺勤 <span class="n" data-count>${d.absent}</span>`
-    + ` · 出勤率 <span class="n" data-count>${BAND.ratePct(d.rate, d.expected)}</span>`;
+}
 
-  // 手机端：把「出勤横条 + 汇总」做成一张卡摆在明细表前（样张 `v-event-detail` 的 `.card`）。
-  // ⚠️ 卡建好后就**只更新**横条，别重建：`#summary` 是要被搬进来的**常驻节点**，重建会丢引用。
-  if (BAND.isMobile()) {
-    let card = document.getElementById('att-sum');
-    if (!card) {
-      card = document.createElement('div');
-      card.id = 'att-sum';
-      card.className = 'cell mb-4';
-      document.getElementById('att-table').before(card);
-      card.appendChild(document.getElementById('summary'));
-      const bar = document.createElement('div');
-      bar.className = 'attbar';
-      bar.innerHTML = '<b></b>';
-      card.appendChild(bar);
-    }
-    card.querySelector('.attbar').style.setProperty('--r', d.rate || 0);
-  }
+async function load() {
+  me = await BAND.renderNav('events.html');
+  if (!me) return;
+
+  ev = await BAND.must(`/api/events/${id}`);
+  canceled = ev.status === 'CANCELED';
+  const startAt = new Date(`${ev.date}T${ev.startTime}`);
+  const endAt = ev.endTime ? new Date(`${ev.date}T${ev.endTime}`) : null;
+  const now = new Date();
+  started = startAt <= now;
+  ended = !!(endAt && !isNaN(endAt.getTime()) && endAt <= now);
+  document.querySelector('.head h1').textContent = ev.title; // 页标题 = 活动名
+
+  const d = await BAND.must(`/api/events/${id}/attendance`);
+  // EventView 没有 myMarkedAt ⇒ 从行数据里找自己那一行
+  myRow = (d.rows || []).find((r) => String(r.memberId) === String(me.id)) || null;
+
+  el('hero').hidden = false;
+  renderHero();
+  renderCheckin();
+  renderLeave();
+  renderAtt(d);
+
+  // 练了哪些曲：只读展示（能不能改由活动管理页负责，服务端把权限收在 PUT /api/events/{id}/pieces）
+  const links = await BAND.must(`/api/events/${id}/pieces`);
+  renderPieces(links);
+
+  // ⚠️ 在常驻容器写完**之后**才播。`loadRows` 会被签到 / 代签 / 改考勤反复重调，
+  // 但"播过"的标志只认这两个容器 ⇒ 后续重渲染直接给终值，不重播（docs/14 §14.6.4 ②）。
+  BAND.alive(el('att-summary'), el('att-table'));
 }
 
 load();

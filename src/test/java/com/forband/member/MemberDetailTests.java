@@ -50,7 +50,7 @@ class MemberDetailTests extends IntegrationTestBase {
         memberService.update(memberAId, new MemberUpdateRequest(
                 null, null, null, null, "2020001", "笙", "13800000000", "想转声部",
                 null, LocalDate.of(2020, 9, 1), "fluent-frog", "吹笙的", "wx-abc",
-                LocalDate.of(1999, 3, 5), null), admin);
+                LocalDate.of(1999, 3, 5), null, null), admin);
     }
 
     @Test
@@ -175,7 +175,7 @@ class MemberDetailTests extends IntegrationTestBase {
         setMemberStatus(admin, h.id(), "GRADUATED");
         memberService.update(h.id(), new MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
-                null, null, null, null, null), admin);
+                null, null, null, null, null, null), admin);
         return loginToken("honorary", h.initialPassword());
     }
 }

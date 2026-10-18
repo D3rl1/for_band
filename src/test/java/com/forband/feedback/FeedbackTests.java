@@ -41,7 +41,7 @@ class FeedbackTests extends IntegrationTestBase {
         setMemberStatus(admin, h.id(), "GRADUATED");
         memberService.update(h.id(), new com.forband.member.dto.MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null,
-                LocalDate.now().plusYears(2), null, null, null, null, null, null), admin);
+                LocalDate.now().plusYears(2), null, null, null, null, null, null, null), admin);
         honoraryToken = loginToken("honorary", h.initialPassword());
     }
 

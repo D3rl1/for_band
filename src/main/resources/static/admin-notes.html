@@ -19,42 +19,53 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="lab">发布一条更新公告</div>
-  <p class="chip">一次手写一条 = 一次发布。发布后不可改、不可删——要改就再发一条（团员读过的历史要稳定）。</p>
-  <div class="row g-2">
-    <div class="col-12">
-      <input id="n-title" class="w-100" maxlength="64" placeholder="标题（≤64 字，如：签到加了确认，不会再手滑点错）">
+<!-- 2026-10-18 精装：一条公告一张卡、正文换行原样保留；已发布列表**没有任何编辑/删除入口**。 -->
+<div class="ct-narrow">
+  <form class="adm-card" id="note-form">
+    <div class="fld">
+      <div class="ct-lab-row">
+        <label for="n-title">标题</label>
+        <span class="ct-count" id="n-count">0 / 64</span>
+      </div>
+      <input class="inp" id="n-title" maxlength="64"
+        placeholder="标题（≤64 字，如：签到加了确认，不会再手滑点错）">
     </div>
-    <div class="col-12">
-      <textarea id="n-content" class="w-100" rows="8"
+    <div class="fld ct-fld-gap">
+      <label for="n-content">正文</label>
+      <textarea class="inp" id="n-content" rows="7"
         placeholder="正文（纯文本，换行会原样保留；不用写 markdown，写了也不解析）"></textarea>
     </div>
-    <div class="col-12">
-      <button id="publish" class="go go-sm" type="button">发布</button>
-    </div>
-  </div>
-</div>
+    <button class="go ct-pub-submit" id="publish" type="submit">发 布</button>
+  </form>
 
-<h2 class="mt-4 mb-3">已发布的</h2>
-<div id="list"></div>
-<p id="empty" class="py-4" hidden>还没发布过公告</p>
+  <!-- 中性底 + 朱砂左线：这里红的是「收不回」这件事，不是人名 -->
+  <div class="ct-warn" role="note">
+    <p><b>发布后不可改、不可删</b>。要改就再发一条——团员读过的历史要稳定。</p>
+  </div>
+
+  <div class="adm-sec">
+    <h2>已发布的（<span id="note-count">0</span>）</h2>
+    <span class="meta">倒序 · 只读</span>
+  </div>
+  <div class="ct-pub-wrap" id="list"></div>
+  <p class="ct-fb-empty" id="empty" hidden>还没发布过公告</p>
+</div>
 
 <script>
 'use strict';
 
 function row(n) {
-  const el = document.createElement('div');
-  el.className = 'cell mb-2';
-  const title = document.createElement('b');
+  const el = document.createElement('article');
+  el.className = 'ct-pub';
+  const title = document.createElement('h3');
   title.textContent = n.title;
-  const when = document.createElement('span');
-  when.className = 'chip ms-2 mb-0';
-  when.textContent = BAND.stamp(n.publishedAt);
+  const meta = document.createElement('p');
+  meta.className = 'ct-meta';
+  meta.textContent = [BAND.stamp(n.publishedAt), n.publishedByName].filter(Boolean).join(' · ');
   const body = document.createElement('p');
-  body.className = 'ann-body mt-2 mb-0';
+  body.className = 'ct-body';
   body.textContent = n.content;
-  el.append(title, when, body);
+  el.append(title, meta, body);
   return el;
 }
 
@@ -64,11 +75,18 @@ async function load() {
   const d = await BAND.must('/api/release-notes?size=50');
   const host = document.getElementById('list');
   host.innerHTML = '';
+  host.hidden = d.list.length === 0;
   document.getElementById('empty').hidden = d.list.length > 0;
   for (const n of d.list) host.appendChild(row(n));
+  document.getElementById('note-count').textContent = String(d.list.length);
 }
 
-document.getElementById('publish').addEventListener('click', async () => {
+document.getElementById('n-title').addEventListener('input', (e) => {
+  document.getElementById('n-count').textContent = `${e.target.value.length} / 64`;
+});
+
+document.getElementById('note-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const title = document.getElementById('n-title').value.trim();
   const content = document.getElementById('n-content').value.trim();
   if (!title || !content) {
@@ -84,6 +102,7 @@ document.getElementById('publish').addEventListener('click', async () => {
   await BAND.must('/api/admin/release-notes', { method: 'POST', body: { title, content } });
   document.getElementById('n-title').value = '';
   document.getElementById('n-content').value = '';
+  document.getElementById('n-count').textContent = '0 / 64';
   BAND.toast('已发布', 'success');
   load();
 });

@@ -19,57 +19,70 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="p-id">
-    <span class="p-av" id="big-av"></span>
-    <div class="p-who">
-      <div class="p-name" id="big-name"></div>
-      <div class="p-tags" id="big-tags"></div>
+<!-- 与 `profile.html` 共用同一套 `.pf-*` 名片（同一块 `mountShowcaseCount`、同一句 `identityTags`）。 -->
+<article class="pf-card" id="pf-card">
+  <div class="pf-av" id="big-av"></div>
+  <div class="pf-id">
+    <div class="pf-name" id="big-name"></div>
+    <div class="pf-tags" id="big-tags"></div>
+    <!-- ⭐ 「参演过 N 场专场」（`交接单 #117`）。**这是给别人看的**，所以只放这一个数。
+         ⚠️ **0 也显示 `0`**（不是 `—`）——那是事实。 -->
+    <div class="pf-show">参演过 <b id="showcase-n">—</b> 场专场</div>
+    <p class="pf-intro" id="d-intro"></p>
+    <div class="pf-facts two">
+      <div class="pf-fact"><div class="k">生 日</div><div class="v" id="d-birthday">—</div></div>
+      <div class="pf-fact"><div class="k">入 团</div><div class="v" id="d-joined">—</div></div>
     </div>
   </div>
-  <!-- ⭐ 「参演过 N 场专场」（`交接单 #117`）：与 `profile.html` **共用同一块**（同一个
-       `mountShowcaseCount`、同一套标记）。**这是给别人看的**，所以只放这一个数。
-       ⚠️ **0 也显示 `0`**（不是 `—`）——那是事实。 -->
-  <p class="p-count mt-2">参演过 <b id="showcase-n">—</b> 场专场</p>
-</div>
-
-<div class="cell mb-4 rows">
-  <div class="lab">简介</div>
-  <p class="mb-0" id="d-intro"></p>
-  <div class="lab mt-3">生日</div>
-  <p class="mb-0" id="d-birthday"></p>
-  <div class="lab mt-3">入团</div>
-  <p class="mb-0" id="d-joined"></p>
-</div>
+</article>
 
 <!-- 「最近来看过我的人」：**只在看自己的主页时出现**（docs/14 §14.6.4）。看别人时连请求都不发。 -->
-<div class="cell mb-4" id="cell-visits" hidden>
-  <div class="lab">最近来看过我的人</div>
-  <p class="chip mb-0" id="v-empty" hidden>还没有人来看过</p>
-  <ul class="mb-2" id="v-list"></ul>
-  <button id="v-clear" class="go go-ghost go-sm" type="button" hidden>清空记录</button>
-</div>
+<section class="pf-visits" id="cell-visits" hidden>
+  <div class="card-h">
+    <h2>最近来看过我的人</h2>
+    <button id="v-clear" class="go go-ghost go-sm" type="button" hidden>清空记录</button>
+  </div>
+  <p class="pf-fine">一天只记一条：谁 · 哪天来过。</p>
+  <ul class="pf-vlist" id="v-list"></ul>
+  <p class="pf-vempty" id="v-empty" hidden>还没有人来看过</p>
+</section>
 
 <script>
 'use strict';
 
 let me = null;
 
+const el = (id) => document.getElementById(id);
+
 /** 谁来看过我（倒序）。⚠️ **只说"谁 · 哪天来过"**，不说"来了几次"——去重粒度就是一天一条。 */
 async function loadVisits() {
   const d = await BAND.must('/api/me/profile-visits?page=1&size=20');
-  const list = document.getElementById('v-list');
+  const list = el('v-list');
   list.innerHTML = '';
   for (const v of d.list) {
     const li = document.createElement('li');
-    li.textContent = `${v.viewerName} · ${v.visitDate === BAND.localDayKey() ? '今天来过' : v.visitDate + ' 来过'}`;
+    li.className = 'pf-visit';
+
+    const av = document.createElement('span');
+    av.className = 'pf-vav';
+    av.textContent = Array.from(v.viewerName || '?')[0];
+
+    const nm = document.createElement('span');
+    nm.className = 'pf-vn';
+    nm.textContent = v.viewerName;
+
+    const tm = document.createElement('span');
+    tm.className = 'pf-vt';
+    tm.textContent = v.visitDate === BAND.localDayKey() ? '今天来过' : v.visitDate + ' 来过';
+
+    li.append(av, nm, tm);
     list.appendChild(li);
   }
-  document.getElementById('v-empty').hidden = d.list.length > 0;
-  document.getElementById('v-clear').hidden = d.list.length === 0;
+  el('v-empty').hidden = d.list.length > 0;
+  el('v-clear').hidden = d.list.length === 0;
 }
 
-document.getElementById('v-clear').addEventListener('click', async () => {
+el('v-clear').addEventListener('click', async () => {
   const yes = await BAND.confirm({
     title: '清空访客记录？',
     body: '清掉之后就看不到"谁来过"了，而且不能恢复。',
@@ -88,17 +101,21 @@ async function load() {
   // ⚠️ 接口是 `GET /api/members/{id}`，**不是** `/api/me/profile` —— 后者不许收 memberId
   //    （docs/03 §3.3 写死的红线：收了就等于开了水平越权）。
   const m = await BAND.must('/api/members/' + encodeURIComponent(id || ''));
-  BAND.paintAvatar(document.getElementById('big-av'), m);
-  document.getElementById('big-name').textContent = m.name;
-  document.getElementById('big-tags').textContent = BAND.identityTags(m);
-  await BAND.mountShowcaseCount(document.getElementById('showcase-n'), m.id);
-  document.getElementById('d-intro').textContent = m.intro || '（还没写）';
+  BAND.paintAvatar(el('big-av'), m);
+  el('big-name').textContent = m.name;
+  el('big-tags').textContent = BAND.identityTags(m);
+  await BAND.mountShowcaseCount(el('showcase-n'), m.id);
+
   // ⚠️ **前端不自己判角色**（docs/14 §14.6.4）：服务端裁完什么就显示什么。
   //    这里拿到的生日本来就只到「月-日」、学号与管理员备注本来就没了。
-  document.getElementById('d-birthday').textContent = m.birthday || '（未填）';
-  document.getElementById('d-joined').textContent = m.joinedAt || '—';
+  const intro = el('d-intro');
+  intro.textContent = m.intro || '还没有简介';
+  intro.classList.toggle('empty', !m.intro);
+  el('d-birthday').textContent = m.birthday || '未填';
+  el('d-joined').textContent = m.joinedAt ? String(m.joinedAt).slice(0, 10) : '—';
+
   if (String(me.id) === String(id)) {
-    document.getElementById('cell-visits').hidden = false;
+    el('cell-visits').hidden = false;
     await loadVisits();
   }
 }

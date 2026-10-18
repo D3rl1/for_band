@@ -19,52 +19,109 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="lab">单场活动</div>
-  <form id="single-form" class="row g-2">
-    <div class="col-4 col-md-2">
-      <select id="k-kind" class="w-100">
-        <option value="REHEARSAL">排练</option>
-        <option value="SECTION_CLASS">声部课</option>
-        <option value="DRESS_REHEARSAL">彩排</option>
-      </select>
-    </div>
-    <div class="col-8 col-md-3"><input id="k-title" class="w-100" placeholder="标题*" required></div>
-    <div class="col-6 col-md-2"><input id="k-date" type="date" class="w-100" required></div>
-    <div class="col-3 col-md-2"><input id="k-start" type="time" class="w-100" required></div>
-    <div class="col-3 col-md-2"><input id="k-end" type="time" class="w-100" required></div>
-    <div class="col-6 col-md-2"><select id="k-section" class="w-100" disabled></select></div>
-    <div class="col-6 col-md-3"><input id="k-location" class="w-100" placeholder="地点"></div>
-    <div class="col-6 col-md-2"><button class="go go-sm" type="submit">创建</button></div>
-  </form>
+<!-- 2026-10-18 精装：两张表单卡桌面并排、手机上下叠；周几是药丸多选；列表一行一场。 -->
+<div class="adm-ev-forms">
+  <div class="adm-card">
+    <h3>单场活动</h3>
+    <form id="single-form" class="form-grid">
+      <div class="fld">
+        <label for="k-kind">类型</label>
+        <select id="k-kind" class="inp">
+          <option value="REHEARSAL">排练</option>
+          <option value="SECTION_CLASS">声部课</option>
+          <option value="DRESS_REHEARSAL">彩排</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label for="k-title">标题</label>
+        <input id="k-title" class="inp" placeholder="必填" required>
+      </div>
+      <div class="fld">
+        <label for="k-date">日期</label>
+        <input id="k-date" type="date" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="k-start">开始</label>
+        <input id="k-start" type="time" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="k-end">结束</label>
+        <input id="k-end" type="time" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="k-section">声部</label>
+        <select id="k-section" class="inp" disabled></select>
+      </div>
+      <div class="fld span2">
+        <label for="k-location">地点</label>
+        <input id="k-location" class="inp" placeholder="选填">
+      </div>
+      <div class="fld span2 form-actions">
+        <button class="go adm-submit" type="submit">创建</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="adm-card">
+    <h3>批量生成</h3>
+    <p class="chip mb-3">按星期几生成；节假日之后逐场取消。</p>
+    <form id="batch-form" class="form-grid">
+      <div class="fld">
+        <label for="b-kind">类型</label>
+        <select id="b-kind" class="inp">
+          <option value="REHEARSAL">排练</option>
+          <option value="SECTION_CLASS">声部课</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label for="b-title">标题</label>
+        <input id="b-title" class="inp" placeholder="必填" required>
+      </div>
+      <div class="fld">
+        <label for="b-from">开始日期</label>
+        <input id="b-from" type="date" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="b-to">结束日期</label>
+        <input id="b-to" type="date" class="inp" required>
+      </div>
+      <div class="fld span2">
+        <label>星期几（可多选）</label>
+        <div class="wds" id="b-weekdays"></div>
+      </div>
+      <div class="fld">
+        <label for="b-start">开始</label>
+        <input id="b-start" type="time" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="b-end">结束</label>
+        <input id="b-end" type="time" class="inp" required>
+      </div>
+      <div class="fld">
+        <label for="b-section">声部</label>
+        <select id="b-section" class="inp" disabled></select>
+      </div>
+      <div class="fld">
+        <label for="b-location">地点</label>
+        <input id="b-location" class="inp" placeholder="选填">
+      </div>
+      <div class="fld span2 form-actions">
+        <button class="go adm-submit" type="submit">批量生成</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<div class="cell mb-4">
-  <div class="lab">批量生成（按星期几，节假日之后逐场取消）</div>
-  <form id="batch-form" class="row g-2 align-items-center">
-    <div class="col-4 col-md-2">
-      <select id="b-kind" class="w-100">
-        <option value="REHEARSAL">排练</option>
-        <option value="SECTION_CLASS">声部课</option>
-      </select>
-    </div>
-    <div class="col-8 col-md-3"><input id="b-title" class="w-100" placeholder="标题*" required></div>
-    <div class="col-4 col-md-2"><input id="b-from" type="date" class="w-100" required></div>
-    <div class="col-4 col-md-2"><input id="b-to" type="date" class="w-100" required></div>
-    <div class="col-12 col-md-3 d-flex gap-2 flex-wrap" id="b-weekdays"></div>
-    <div class="col-3 col-md-2"><input id="b-start" type="time" class="w-100" required></div>
-    <div class="col-3 col-md-2"><input id="b-end" type="time" class="w-100" required></div>
-    <div class="col-4 col-md-2"><input id="b-location" class="w-100" placeholder="地点"></div>
-    <div class="col-4 col-md-2"><select id="b-section" class="w-100" disabled></select></div>
-    <div class="col-4 col-md-2"><button class="go go-sm" type="submit">批量生成</button></div>
-  </form>
+<div class="adm-sec">
+  <h2>活动列表</h2>
+  <span class="meta" id="ev-count">取消后整场排除统计</span>
 </div>
 
-<h2 class="mb-3">活动列表</h2>
-<table class="tb" id="admin-events-table">
-  <thead><tr><th>日期</th><th>类型</th><th>标题</th><th>时间</th><th>声部</th><th>状态</th><th class="act"></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
+<div class="adm-ev-list">
+  <table class="tb adm-ev-table" id="admin-events-table">
+    <tbody id="rows"></tbody>
+  </table>
+</div>
 
 <!-- 曲目单弹层：勾选顺序即练习顺序（整体替换，见 PUT /api/events/{id}/pieces） -->
 <div class="modal fade" id="pieces-modal">
@@ -88,6 +145,12 @@
 let sections = [];
 let me = null;
 const dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+
+/** 2026-10-18：日期块右下角那个「周X」，只用于扫读；用本地零点解析，避免时区把日期挪一天。 */
+function weekdayLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return '周' + dayNames[(d.getDay() + 6) % 7];
+}
 
 /**
  * 「这场活动我能不能改」——与后端 `EventService.checkEditPermission` 同一套口径：
@@ -117,9 +180,10 @@ async function load() {
     (e) => syncSectionSelect(e.target.value, document.getElementById('k-section')));
   document.getElementById('b-kind').addEventListener('change',
     (e) => syncSectionSelect(e.target.value, document.getElementById('b-section')));
+  // 药丸多选：`#b-weekdays input:checked` 仍是取值入口（value 1–7，周日＝7）
   document.getElementById('b-weekdays').innerHTML = dayNames
-    .map((n, i) => `<div class="form-check"><input class="form-check-input" type="checkbox" value="${i + 1}" id="wd${i}">
-      <label class="form-check-label chip" for="wd${i}">${n}</label></div>`).join('');
+    .map((n, i) => `<label class="wd"><input type="checkbox" value="${i + 1}"><span>周${n}</span></label>`)
+    .join('');
   await loadRows();
 }
 
@@ -128,27 +192,53 @@ async function loadRows() {
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
   for (const e of d.list) {
+    const canceled = e.status === 'CANCELED';
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td><span class="chip"></span></td><td class="act"></td>';
-    tr.children[0].textContent = e.date;
-    tr.children[1].textContent = BAND.kindLabel(e.kind);
-    const title = tr.children[2];
-    if (e.status === 'CANCELED') {
+    if (canceled) tr.classList.add('off');
+    tr.innerHTML = '<td class="adm-ev-date"></td><td class="adm-ev-main"></td>'
+      + '<td class="adm-ev-tagcell"></td><td class="adm-ev-act act"></td>';
+    // 日期块：MM-DD 大字 + 周X 小字
+    const dateB = document.createElement('b');
+    dateB.textContent = e.date.slice(5);
+    const dateS = document.createElement('small');
+    dateS.textContent = weekdayLabel(e.date);
+    tr.children[0].append(dateB, dateS);
+    // 标题 + 时间/地点/声部；取消场次标题加删除线（保留原文，不吞字）
+    const title = document.createElement('p');
+    title.className = 'adm-ev-t';
+    if (canceled) {
       const s = document.createElement('s');
       s.textContent = e.title;
       title.appendChild(s);
     } else {
       title.textContent = e.title;
     }
-    tr.children[3].textContent = `${e.startTime.slice(0, 5)}-${e.endTime.slice(0, 5)} ${e.location || ''}`;
-    tr.children[4].textContent = e.sectionName || '';
-    tr.querySelector('.chip').textContent = e.status === 'CANCELED' ? '已取消' : '';
-    if (e.status !== 'CANCELED' && canEditEvent(e)) {
+    const meta = document.createElement('p');
+    meta.className = 'adm-ev-m';
+    meta.textContent = [
+      `${e.startTime.slice(0, 5)}-${e.endTime.slice(0, 5)}`,
+      e.location,
+      e.sectionName,
+    ].filter(Boolean).join(' · ');
+    tr.children[1].append(title, meta);
+    // 类型标签（中性色）；取消场次再加一枚朱砂「已取消」——红只落在这枚标签上
+    const kindTag = document.createElement('span');
+    kindTag.className = 'adm-ev-tag';
+    kindTag.textContent = BAND.kindLabel(e.kind);
+    tr.children[2].appendChild(kindTag);
+    if (canceled) {
+      const offTag = document.createElement('span');
+      offTag.className = 'adm-ev-tag off';
+      offTag.textContent = '已取消';
+      tr.children[2].appendChild(offTag);
+    }
+    // 取消行**不给任何操作按钮**（曲目单与取消都没意义了）
+    if (!canceled && canEditEvent(e)) {
       const piecesBtn = document.createElement('button');
-      piecesBtn.className = 'go go-ghost go-sm me-1';
+      piecesBtn.className = 'go go-ghost go-sm';
       piecesBtn.textContent = '曲目单';
       piecesBtn.addEventListener('click', () => openPiecesModal(e));
-      tr.children[6].appendChild(piecesBtn);
+      tr.children[3].appendChild(piecesBtn);
 
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'go go-ghost go-sm';
@@ -159,14 +249,18 @@ async function loadRows() {
         BAND.toast('已取消', 'success');
         loadRows();
       });
-      tr.children[6].appendChild(cancelBtn);
+      tr.children[3].appendChild(cancelBtn);
     }
     tbody.appendChild(tr);
   }
+  const canceledCount = d.list.filter((e) => e.status === 'CANCELED').length;
+  document.getElementById('ev-count').textContent =
+    `共 ${d.list.length} 场` + (canceledCount ? ` · 已取消 ${canceledCount} 场` : '') + ' · 取消后整场排除统计';
   BAND.alive(document.getElementById('admin-events-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
 }
 
 let piecesTarget = null;
+let pmOrder = [];   // 勾选顺序＝练习顺序；取消勾选会把它从序列里摘掉，后面的序号跟着前移
 
 /** 曲目单：勾选顺序即练习顺序（列表按勾选先后重排，提交时就是这个数组）。 */
 async function openPiecesModal(event) {
@@ -181,23 +275,51 @@ async function openPiecesModal(event) {
     .concat(all.list.filter((p) => !current.includes(p.id)));
   document.getElementById('pm-empty').hidden = ordered.length > 0;
   host.innerHTML = '';
+  pmOrder = ordered.filter((p) => current.includes(p.id)).map((p) => p.id);
   ordered.forEach((p) => {
     const row = document.createElement('label');
-    row.className = 'd-flex align-items-center gap-2 py-1';
+    row.className = 'pm-row';
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.value = p.id;
     box.checked = current.includes(p.id);
     const name = document.createElement('span');
+    name.className = 'pm-name';
     name.textContent = `${p.title}${p.composer ? ' · ' + p.composer : ''}（${p.statusLabel}）`;
-    row.append(box, name);
+    const idx = document.createElement('span');
+    idx.className = 'pm-idx';
+    box.addEventListener('change', () => {
+      if (box.checked) {
+        if (!pmOrder.includes(p.id)) pmOrder.push(p.id);
+      } else {
+        pmOrder = pmOrder.filter((id) => id !== p.id);
+      }
+      refreshPmIndex();
+    });
+    row.append(box, name, idx);
     host.appendChild(row);
   });
+  refreshPmIndex();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('pieces-modal')).show();
 }
 
+function refreshPmIndex() {
+  document.querySelectorAll('#pm-list .pm-row').forEach((row) => {
+    const box = row.querySelector('input');
+    const idx = row.querySelector('.pm-idx');
+    const at = pmOrder.indexOf(Number(box.value));
+    idx.textContent = box.checked && at >= 0 ? String(at + 1) : '';
+  });
+}
+
 document.getElementById('pm-save').addEventListener('click', async () => {
-  const picked = [...document.querySelectorAll('#pm-list input:checked')].map((b) => Number(b.value));
+  const boxes = new Map(
+    [...document.querySelectorAll('#pm-list input')].map((b) => [Number(b.value), b]));
+  // ⚠️ 按 `pmOrder`（勾选先后）提交，而不是 DOM 顺序：弹层文案承诺"勾选顺序就是练习顺序"
+  const picked = pmOrder.filter((id) => {
+    const b = boxes.get(id);
+    return b && b.checked;
+  });
   await BAND.must(`/api/events/${piecesTarget}/pieces`, {
     method: 'PUT',
     body: { pieceIds: picked },

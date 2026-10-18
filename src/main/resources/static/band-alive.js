@@ -110,7 +110,9 @@ const ALIVE = (() => {
       // `.pc-row` = 曲谱库的卡片行（docs/14 §14.6.4「曲谱页」，2026-10-15）——同 `.evrow`：原来是 `table.tb` 里的行。
       // `.at-gcard / .at-lr / .at-srow / .at-pc` = 考勤与请假两页（docs/14 §14.6.4「我的出勤 / 请假审批」，2026-10-17）——
       // 统计卡、请假记录行、逐场明细行、待审卡共用「逐行入场」；起点 / 终态类由 §16 的 `.at-*.ar` / `.at-*.in` 处理。
-      const rows = [...root.querySelectorAll('.tb tbody tr, .evrow, .cn-prog li, .pc-row, .at-gcard, .at-lr, .at-srow, .at-pc')];
+      // `.ed-arow` = 活动详情精装后的考勤行（docs/14 §14.6.4「活动详情」，2026-10-18）——与 `.evrow` 同理，
+      // 原来是 `table.tb` 的行，换成 `.ed-table` 后要显式补上；起点 / 终态样式在 §17.2。
+      const rows = [...root.querySelectorAll('.tb tbody tr, .evrow, .cn-prog li, .pc-row, .at-gcard, .at-lr, .at-srow, .at-pc, .ed-arow')];
       // 空态（还没数据）：**不占位**，将来有数据时仍能播
       if (!numbers.length && !dots.length && !bars.length && !rows.length) continue;
       played.add(root);

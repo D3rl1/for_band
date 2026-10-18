@@ -93,6 +93,8 @@ const NO_ATTEND_ROLES = ['CONDUCTOR', 'HONORARY'];
 const CANCEL_BLOCKED_ROLES = ['CONDUCTOR', 'HONORARY'];
 const MS = {
   PRESENT: { cls: 'p', text: '出勤' },
+  // 遗憾离场（DECISIONS D33）：到场但提前离开，按出勤算；中性墨色，**不复用缺勤的红**
+  PARTIAL: { cls: 'pt', text: '遗憾离场' },
   LEAVE: { cls: 'l', text: '请假' },
   ABSENT: { cls: 'a', text: '缺勤' },
 };
@@ -106,7 +108,7 @@ const FILTERS = [
   ['CANCELED', '已撤回'],
   ['overdue', '逾期未批'],
 ];
-const SESS_FILTERS = [['all', '全部'], ['PRESENT', '出勤'], ['LEAVE', '请假'], ['ABSENT', '缺勤']];
+const SESS_FILTERS = [['all', '全部'], ['PRESENT', '出勤'], ['PARTIAL', '遗憾离场'], ['LEAVE', '请假'], ['ABSENT', '缺勤']];
 
 let me = null;
 let noAttend = false;

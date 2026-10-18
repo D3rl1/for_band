@@ -208,6 +208,39 @@ class LeaveFlowTests extends IntegrationTestBase {
                 String.class, futureEventId, memberAId));
     }
 
+    /**
+     * #218：PARTIAL / ABSENT 也是"已有考勤记录"，请假批准照样能覆盖成 LEAVE，
+     * 且日志 before 必须保留原值（不能把遗憾离场 / 缺勤静默洗成出勤再改）。
+     */
+    @Test
+    void approval_over_partial_or_absent_is_also_trailed() {
+        for (String original : List.of("PARTIAL", "ABSENT")) {
+            // 每个状态换一场活动：同人同场已有通过过的请假会撞 40004
+            long eventId = event(startsInMinutes(60), 60);
+            jdbc.update("INSERT INTO attendance (event_id, member_id, status, marked_at, marked_by)"
+                    + " VALUES (?, ?, ?, NOW(), ?)", eventId, memberAId, original, memberAId);
+
+            RequestView request = leaveService.create(eventId, new CreateRequest("临时有事"), memberA);
+            leaveService.decide(request.approvals().get(0).id(),
+                    new DecideRequest("APPROVED", null), secLeader);
+            RequestView finalView = leaveService.decide(request.approvals().get(1).id(),
+                    new DecideRequest("APPROVED", null), tuanzhang);
+
+            assertTrue(finalView.attendanceOverridden(),
+                    original + " 行也必须被认成「覆盖了已有记录」");
+            assertEquals("LEAVE", jdbc.queryForObject(
+                    "SELECT status FROM attendance WHERE event_id = ? AND member_id = ?",
+                    String.class, eventId, memberAId));
+
+            Map<String, Object> log = jdbc.queryForMap(
+                    "SELECT `before`, `after` FROM operation_log"
+                            + " WHERE action = 'ATTENDANCE_OVERRIDE_BY_LEAVE' ORDER BY id DESC LIMIT 1");
+            assertTrue(log.get("before").toString().contains("\"" + original + "\""),
+                    "日志 before 要保留原值 " + original + "，实际：" + log.get("before"));
+            assertTrue(log.get("after").toString().contains("\"LEAVE\""));
+        }
+    }
+
     @Test
     void approval_without_prior_checkin_is_not_flagged() {
         RequestView request = leaveService.create(futureEventId, new CreateRequest("有事"), memberA);
@@ -338,7 +371,7 @@ class LeaveFlowTests extends IntegrationTestBase {
         setMemberStatus(admin, h.id(), "GRADUATED");
         memberService.update(h.id(), new MemberUpdateRequest(
                 null, null, "HONORARY", null, null, null, null, null, LocalDate.now().plusYears(2), null,
-                null, null, null, null, null), admin);
+                null, null, null, null, null, null), admin);
         return currentUserOf(h.id());
     }
 

@@ -80,6 +80,29 @@ class MeTests extends IntegrationTestBase {
     }
 
     @Test
+    void partial_is_listed_with_its_own_label_and_absent_is_excluded() throws Exception {
+        long partialEvent = event("甲场", LocalDateTime.now().plusHours(2));
+        long absentEvent = event("乙场", LocalDateTime.now().plusHours(3));
+        long presentEvent = event("丙场", LocalDateTime.now().plusHours(4));
+
+        LocalDateTime now = LocalDateTime.now();
+        insertAttendance(partialEvent, memberAId, now.minusMinutes(30), "PARTIAL");
+        insertAttendance(absentEvent, memberAId, now.minusMinutes(20), "ABSENT");
+        insertAttendance(presentEvent, memberAId, now.minusMinutes(10), "PRESENT");
+
+        String body = api(memberAToken, "GET", "/api/me/recent-activity?limit=10", null)
+                .andExpect(status().isOk())
+                // PARTIAL 是"到场了但提前走"——进流水、带自己的文案；ABSENT 没有到场事实，不进流水
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].eventId").value((int) presentEvent))
+                .andExpect(jsonPath("$.data[0].note").value("出勤"))
+                .andExpect(jsonPath("$.data[1].eventId").value((int) partialEvent))
+                .andExpect(jsonPath("$.data[1].note").value("遗憾离场"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertFalse(body.contains("\"eventId\":" + absentEvent), "ABSENT 不该出现在最近流水里");
+    }
+
+    @Test
     void only_returns_own_rows() throws Exception {
         long mine = event("我的排练", LocalDateTime.now().plusHours(2));
         long others = event("别人的排练", LocalDateTime.now().plusHours(3));
@@ -104,8 +127,13 @@ class MeTests extends IntegrationTestBase {
 
     /** 直接落库并**显式给时间**：同一秒内造的行排序不稳定（DATETIME 没有小数秒）。 */
     private void insertAttendance(long eventId, long memberId, LocalDateTime markedAt) {
+        insertAttendance(eventId, memberId, markedAt, "PRESENT");
+    }
+
+    private void insertAttendance(long eventId, long memberId, LocalDateTime markedAt, String status) {
         jdbc.update("INSERT INTO attendance (event_id, member_id, status, marked_at, marked_by)"
-                + " VALUES (?, ?, 'PRESENT', ?, ?)", eventId, memberId, Timestamp.valueOf(markedAt), memberId);
+                + " VALUES (?, ?, ?, ?, ?)", eventId, memberId, status,
+                Timestamp.valueOf(markedAt), memberId);
     }
 
     private void insertLeave(long eventId, long memberId, LocalDateTime appliedAt) {

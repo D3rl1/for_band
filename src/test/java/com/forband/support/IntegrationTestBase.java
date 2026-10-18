@@ -137,7 +137,7 @@ public abstract class IntegrationTestBase {
         memberService.update(memberId,
                 new com.forband.member.dto.MemberUpdateRequest(
                         null, null, null, status, null, null, null, null, null, null,
-                        null, null, null, null, null), admin);
+                        null, null, null, null, null, null), admin);
     }
 
     protected CurrentUser currentUserOf(long memberId) {

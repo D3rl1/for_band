@@ -502,6 +502,8 @@ const metro = { on: false, bpm: 80, num: 4, den: 4, sub: 1, step: 0, beat: 0, ne
 window.__metro = { on: false, ticks: [] };
 let tapTimes = [];
 let MT_BASE_HINT = '';
+let startSeq = 0;                                  // 防「await 音频期间又点一次 / 改设置重起」造成双启动
+const DIAG = new URLSearchParams(location.search).get('diag') === '1';
 
 const mEl = (id) => document.getElementById(id);
 const mClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -565,6 +567,21 @@ function setHint(text, warn) {
   h.classList.toggle('warn', !!warn);
 }
 
+const MT_RUN_HINT = '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+
+/** `?diag=1` 才显示：真机出问题让机主截这一行，比猜浏览器内核快。 */
+function diagSuffix() {
+  if (!DIAG) return '';
+  const ac = BAND._ac;
+  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建') + ' · UA: ' + navigator.userAgent;
+}
+
+function showMetroFailure(e) {
+  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。请换用手机自带浏览器或 Chrome 再试。';
+  setHint(msg + diagSuffix(), true);
+  BAND.toast(msg);
+}
+
 /* 视觉跟着**已排定的拍**走：延时按音频时钟算（音频时钟准，JS 定时器会漂）。`epoch` 防"停→重开"时点亮错的点。 */
 function queueVisual(beat, when, epoch) {
   const ac = BAND._ac;
@@ -591,12 +608,28 @@ function schedule() {
   }
 }
 
-function startMetro() {
+async function startMetro() {
   if (metro.on) return;
+  const seq = ++startSeq;
+  // ⚠️ 先确认音频**真的在跑**，再开始排拍。上下文挂着时 `currentTime` 不走 ⇒ 只会排出第一拍、
+  //    之后永远排不动；以前这里不核 state，页面看着"已开始"其实已经冻住，且全程不提示。
+  const ac = await BAND.ensureAudio();
+  if (seq !== startSeq) return;                         // 等音频期间被停止 / 改设置重起过
+  if (!ac) {
+    const msg = BAND.audioIssueText();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
   metro.beat = 0;
   metro.step = 0;
-  const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响（顺便把唯一的 `_ac` 建出来）
-  if (t0 === null) { setHint('这台设备出不了声（拿不到音频）。', true); BAND.toast('这台设备出不了声（拿不到音频）'); return; }
+  const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响
+  if (t0 === null) {
+    const msg = BAND.audioIssueText();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
   metro.on = true;
   window.__metro.on = true;
   metro.epoch++;
@@ -611,11 +644,12 @@ function startMetro() {
   btn.textContent = '停止';
   btn.classList.remove('rc-btn-primary');
   btn.classList.add('rc-btn-line');
-  const hint = mEl('m-hint');                           // 上一次"切后台就停了"的警告，重新开始时还原
-  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_BASE_HINT; }
+  const hint = mEl('m-hint');
+  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_RUN_HINT + diagSuffix(); }
 }
 
 function stopMetro() {
+  startSeq++;                                           // 让还在等音频的 startMetro 作废
   if (metro.timer) clearInterval(metro.timer);
   metro.timer = null;
   metro.on = false;
@@ -626,13 +660,15 @@ function stopMetro() {
   btn.textContent = '开始';
   btn.classList.remove('rc-btn-line');
   btn.classList.add('rc-btn-primary');
+  const hint = mEl('m-hint');
+  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_BASE_HINT + diagSuffix(); }
 }
 
 /** ⚠️ 规格写死：切到后台时**必须明确提示"节拍器已停"，不许静默**——无声无息地哑掉比报错更坏。 */
 function metroNotice(text) { setHint(text, true); BAND.toast(text); }
 
 /** 改设置：正在响时无缝重启（清旧排程、重起）。 */
-function metroRestart() { if (metro.on) { stopMetro(); startMetro(); } }
+function metroRestart() { if (metro.on) { stopMetro(); startMetro().catch(showMetroFailure); } }
 
 function setBpm(v) {
   metro.bpm = mClamp(Math.round(Number(v)) || 80, BPM_MIN, BPM_MAX);
@@ -712,7 +748,12 @@ function initMetro() {
   paintSig();
   renderArc();
 
-  mEl('m-toggle').addEventListener('click', () => { if (metro.on) stopMetro(); else startMetro(); });
+  mEl('m-toggle').addEventListener('click', () => {
+    try {
+      if (metro.on) { stopMetro(); return; }
+      startMetro().catch(showMetroFailure);
+    } catch (e) { showMetroFailure(e); }     // 任何异常都落到提示行：不许"点了没反应"
+  });
   mEl('m-tap').addEventListener('click', tapHit);
   const bpmIn = mEl('m-bpm');
   const bpmHandler = () => { if (bpmIn.value !== '') setBpm(bpmIn.value); };

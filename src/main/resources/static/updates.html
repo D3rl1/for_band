@@ -19,13 +19,15 @@
 <body>
 <div id="navbar"></div>
 
-<h2 class="mb-3">更新日志</h2>
-<div id="list"></div>
-<p id="empty" class="py-4" hidden>还没有更新公告——管理员发布之后，这里会按时间倒序列出来</p>
-<div class="d-flex justify-content-between align-items-center mt-3">
-  <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
-  <p id="pageinfo" class="chip mb-0"></p>
-  <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+<!-- 2026-10-18 精装：标题/日期/正文三层，正文纯文本 + 保留换行；除翻页外无任何入口（docs/14） -->
+<div class="upd-wrap">
+  <div id="list"></div>
+  <p id="empty" class="upd-empty" hidden>还没有更新公告——管理员发布之后，这里会按时间倒序列出来</p>
+  <div class="pager">
+    <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
+    <span id="pageinfo" class="pager-n"></span>
+    <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+  </div>
 </div>
 
 <script>
@@ -35,17 +37,17 @@ let page = 1;
 const SIZE = 10;
 
 function card(n) {
-  const el = document.createElement('div');
-  el.className = 'cell mb-3';
+  const el = document.createElement('article');
+  el.className = 'upd-card';
   const title = document.createElement('h2');
-  title.className = 'mb-1';
+  title.className = 'upd-t';
   title.textContent = n.title;
   const when = document.createElement('p');
-  when.className = 'chip mb-2';
+  when.className = 'upd-d';
   when.textContent = BAND.stamp(n.publishedAt)
     + (n.publishedByName ? ' · ' + n.publishedByName : '');
-  const body = document.createElement('p');
-  body.className = 'ann-body mb-0';
+  const body = document.createElement('div');
+  body.className = 'upd-b';
   // 正文**纯文本 + 保留换行**，绝不解析 HTML/markdown（docs/15 §15.2 + SECURITY.md C3）
   body.textContent = n.content;
   el.append(title, when, body);
@@ -61,7 +63,7 @@ async function load() {
   document.getElementById('empty').hidden = d.list.length > 0;
   for (const n of d.list) host.appendChild(card(n));
   const pages = Math.max(1, Math.ceil(d.total / SIZE));
-  document.getElementById('pageinfo').textContent = `第 ${page} / ${pages} 页 · 共 ${d.total} 条`;
+  document.getElementById('pageinfo').textContent = `第 ${page}/${pages} 页 · 共 ${d.total} 条`;
   document.getElementById('prev').disabled = page <= 1;
   document.getElementById('next').disabled = page >= pages;
 }

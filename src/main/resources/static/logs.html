@@ -19,18 +19,29 @@
 <body>
 <div id="navbar"></div>
 
-<!-- 存储用量（docs/08 §8.3/§8.5：后台显示用量、到阈值提醒）。**仅管理员渲染**；超阈值整行变朱砂。 -->
-<p id="storage" class="chip" hidden></p>
+<!-- 2026-10-18 精装：两枚 `p.chip` 保持纯文字（不并成药丸），内容列单行省略 + title 全文；
+     手机端时间/人一行、动作/对象/IP 一行、内容一行。仅管理员可见，403 整页静默。 -->
+<div class="chips" id="chips" hidden>
+  <!-- 存储用量（docs/08 §8.3/§8.5：后台显示用量、到阈值提醒）。**仅管理员渲染**；超阈值整行变朱砂。 -->
+  <p id="storage" class="chip" hidden></p>
 
-<!-- 上次成功备份（docs/12 §12.5「⚡ 备份成败怎么让应用知道」③：顶部、与存储用量同一区域）。
-     **仅管理员渲染**；未知 / 从没成功过 / 超 48 小时 → 标红（读不到状态本身就是"备份情况不明"）。 -->
-<p id="backup" class="chip" hidden></p>
+  <!-- 上次成功备份（docs/12 §12.5「⚡ 备份成败怎么让应用知道」③：顶部、与存储用量同一区域）。
+       **仅管理员渲染**；未知 / 从没成功过 / 超 48 小时 → 标红（读不到状态本身就是"备份情况不明"）。 -->
+  <p id="backup" class="chip" hidden></p>
+</div>
 
-<table class="tb" id="logs-table">
-  <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<nav class="mt-3"><ul class="pagination pagination-sm" id="pager"></ul></nav>
+<div class="table-card">
+  <table class="tb lg-table" id="logs-table">
+    <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="pager">
+  <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
+  <span id="pageinfo" class="pager-n"></span>
+  <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+</div>
 
 <script>
 // ⚠️ 新增 action 串时**记得在这里加中文名**，否则日志页会显示英文裸串（本次就补了一批）
@@ -83,6 +94,7 @@ async function showStorage() {
     .map((k) => `${k.label} ${BAND.sizeText(k.bytes)}（${k.count}）`)
     .join(' · ');
   el.hidden = false;
+  document.getElementById('chips').hidden = false;
   el.textContent = `文件存储：已用 ${BAND.sizeText(d.totalBytes)} / 警戒线 ${BAND.sizeText(d.thresholdBytes)}`
     + `（共 ${d.totalCount} 个文件${kinds ? '：' + kinds : ''}）`
     + (d.overThreshold ? ' —— 已超过警戒线，该清理一下了（系统不会自动删任何东西）' : '');
@@ -105,6 +117,7 @@ async function showBackup() {
   const d = s.data;
   const stale = !d.known || !d.lastSuccessAt || d.staleHours > 48;
   el.hidden = false;
+  document.getElementById('chips').hidden = false;
   if (d.known && d.lastSuccessAt) {
     const t = BAND.stamp(d.lastSuccessAt, 'sec');
     el.textContent = `上次成功备份：${t}（${d.staleHours} 小时前）`;
@@ -124,32 +137,43 @@ async function load() {
   if (!me) return;
   showStorage();
   showBackup();
-  const d = await BAND.must(`/api/operation-logs?page=${page}&size=20`);
+  // ⚠️ 本页仅管理员可见：403 要**整页静默**（docs/14 §17.3）。
+  // 用 BAND.api 而不是 BAND.must —— must 会 toast 并 throw，普通团员一进来就是一条错误提示
+  // 加一个没人接的 unhandled rejection。
+  const envelope = await BAND.api(`/api/operation-logs?page=${page}&size=20`);
+  if (envelope.code !== 0) {
+    document.querySelector('.table-card').style.display = 'none';
+    document.querySelector('.pager').style.display = 'none';
+    return;
+  }
+  const d = envelope.data;
   const tbody = document.getElementById('rows');
   tbody.innerHTML = '';
   for (const log of d.list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td>';
+    tr.innerHTML = '<td class="lg-time"></td><td class="lg-who"></td><td class="lg-act"></td>'
+      + '<td class="lg-obj"></td><td class="lg-ip"></td><td class="lg-detail"></td>';
     tr.children[0].textContent = BAND.stamp(log.createdAt, 'sec');
     tr.children[1].textContent = log.operatorName || log.operatorId;
     tr.children[2].textContent = actionLabels[log.action] || log.action;
     tr.children[3].textContent = (log.targetType || '') + (log.targetId ? ' #' + log.targetId : '');
     tr.children[4].textContent = log.ip || '';
-    tr.children[5].textContent = compact(log.after) || compact(log.before);
+    const detail = compact(log.after) || compact(log.before);
+    tr.children[5].textContent = detail;
+    // 内容列桌面单行省略；全文挂在 title 上，悬停可看（手机端整段换行显示，不丢内容）
+    tr.children[5].setAttribute('title', detail);
     tbody.appendChild(tr);
   }
   BAND.alive(document.getElementById('logs-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
-  const pager = document.getElementById('pager');
-  pager.innerHTML = '';
+  page = d.page || page;
   const totalPages = Math.max(1, Math.ceil(d.total / d.size));
-  for (let p = 1; p <= totalPages; p++) {
-    const li = document.createElement('li');
-    li.className = 'page-item' + (p === d.page ? ' active' : '');
-    li.innerHTML = `<a class="page-link" href="#">${p}</a>`;
-    li.querySelector('a').addEventListener('click', (e) => { e.preventDefault(); page = p; load(); });
-    pager.appendChild(li);
-  }
+  document.getElementById('pageinfo').textContent = `第 ${page}/${totalPages} 页 · 共 ${d.total} 条`;
+  document.getElementById('prev').disabled = page <= 1;
+  document.getElementById('next').disabled = page >= totalPages;
 }
+
+document.getElementById('prev').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+document.getElementById('next').addEventListener('click', () => { page++; load(); });
 
 load();
 </script>

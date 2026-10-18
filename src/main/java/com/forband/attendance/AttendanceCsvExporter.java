@@ -57,8 +57,7 @@ public class AttendanceCsvExporter {
                             .collect(Collectors.toMap(Member::getId, Function.identity()));
             for (Member member : rosterResolver.expectedMembers(event)) {
                 Attendance record = byMember.get(member.getId());
-                String status = record == null ? "缺勤"
-                        : AttendanceStatus.LEAVE.equals(record.getStatus()) ? "请假" : "出勤";
+                String status = record == null ? "缺勤" : statusLabel(record.getStatus());
                 String markedAt = record == null ? "" : record.getMarkedAt().toString();
                 String markedBy = record == null || record.getMarkedBy().equals(member.getId()) ? ""
                         : markers.get(record.getMarkedBy()).getName();
@@ -73,6 +72,23 @@ public class AttendanceCsvExporter {
             }
         }
         return csv.toString();
+    }
+
+    /**
+     * 四态中文名（DECISIONS D33）。**不要有"其它 ⇒ 出勤"的兜底**：未知值宁可原样输出，
+     * 也不能把一条读不懂的记录悄悄算成到场；null/空白按缺勤处理。
+     */
+    private String statusLabel(String status) {
+        if (status == null || status.isBlank()) {
+            return "缺勤";
+        }
+        return switch (status) {
+            case AttendanceStatus.PRESENT -> "出勤";
+            case AttendanceStatus.PARTIAL -> "遗憾离场";
+            case AttendanceStatus.LEAVE -> "请假";
+            case AttendanceStatus.ABSENT -> "缺勤";
+            default -> status;
+        };
     }
 
     private String kindLabel(String kind) {

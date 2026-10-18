@@ -19,60 +19,92 @@
 <body>
 <div id="navbar"></div>
 
-<!-- ① 开新时间点：**建出来就是一条普通演出记录**，之后照常由 管理员/团长/指挥 用演出页的接口维护（docs/17 §17.3） -->
-<div class="cell mb-4">
-  <div class="lab">开一个新时间点</div>
-  <p class="chip">一个时间点 = 一个年份；这一年里可以有多场专场，它们的图会串成一个节点。</p>
-  <div class="row g-2">
-    <div class="col-12 col-md-4"><input id="s-name" class="w-100" maxlength="64" placeholder="专场名（如：2026 仲夏专场）*"></div>
-    <div class="col-6 col-md-2"><input id="s-date" type="date" class="w-100"></div>
-    <div class="col-6 col-md-2"><input id="s-venue" class="w-100" maxlength="64" placeholder="地点（可空）"></div>
-    <div class="col-12 col-md-2"><button id="s-open" class="go go-sm" type="button">开这个时间点</button></div>
+<!-- 2026-10-18 精装：策展面板左侧三列缩略图（第 1 张＝方块封面）、右侧逐张文案；
+     段数≠图数必须**面板内红字**报错且不清空输入；没加图的年份明说「不会出现在时间线上」。 -->
+<form class="adm-card" id="sc-form">
+  <div class="fld ct-sc-name">
+    <label for="s-name">开一个新时间点</label>
+    <input class="inp" id="s-name" maxlength="64" placeholder="专场名（如：2026 仲夏专场）*">
   </div>
+  <div class="ct-sc-form-row">
+    <div class="fld">
+      <label for="s-date">日期</label>
+      <input class="inp" id="s-date" type="date">
+    </div>
+    <div class="fld">
+      <label for="s-venue">地点（可空）</label>
+      <input class="inp" id="s-venue" maxlength="64" placeholder="如 大学生活动中心礼堂">
+    </div>
+    <button class="go" id="s-open" type="submit">开这个时间点</button>
+  </div>
+  <p class="ct-sc-note">一个时间点 = 一个年份；这一年里可以有多场专场，它们的图会串成一个节点。</p>
+</form>
+
+<div class="adm-sec">
+  <h2>专场（会出现在时间线上）</h2>
+  <span class="meta" id="sc-count"></span>
+</div>
+<div class="ct-sc-list" id="showcases"></div>
+<p class="ct-sc-note" id="sc-empty" hidden>还没有专场——用上面那一栏开一个</p>
+
+<div class="adm-sec">
+  <h2>其他演出（可以设为专场）</h2>
+  <span class="meta" id="other-count"></span>
+</div>
+<div class="ct-sc-list" id="others"></div>
+<p class="ct-sc-note">「设为专场」只翻一个标记，不会删演出档案；撤错了还能再设回来。</p>
+
+<div class="adm-sec">
+  <h2>策展</h2>
+  <span class="meta">第 1 张作方块封面</span>
 </div>
 
-<!-- ② 两栏：专场 / 其他演出 -->
-<h2 class="mt-4 mb-3">专场（会出现在时间线上）</h2>
-<div id="showcases"></div>
-<p id="sc-empty" class="chip" hidden>还没有专场——用上面那一栏开一个</p>
-
-<h2 class="mt-4 mb-3">其他演出（可以设为专场）</h2>
-<div id="others"></div>
-<p class="chip">「设为专场」只翻一个标记，**不会删演出档案**；撤错了还能再设回来。</p>
-
-<!-- ③ 某一场专场的策展 -->
-<div class="cell mb-4 mt-4" id="cur-box" hidden>
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <div class="lab mb-0" id="cur-title"></div>
-    <button id="cur-close" class="go go-ghost go-sm" type="button">收起</button>
+<div class="ct-cur" id="cur-box" hidden>
+  <div class="ct-cur-head">
+    <h3 id="cur-title">策展</h3>
+    <button class="go go-ghost go-sm" id="cur-close" type="button">收起</button>
   </div>
+  <p class="ct-cur-sub" id="cur-sub"></p>
   <!-- ⚠️ 没加图的年份必须明确提示，不许静默（docs/17 §17.4） -->
-  <p class="chip warn" id="cur-hint" hidden></p>
-  <div id="cur-photos" class="d-flex flex-wrap gap-2"></div>
-  <p class="chip" id="cur-empty" hidden>这一场还没加图</p>
+  <p class="ct-cur-err" id="cur-hint" role="alert" hidden></p>
 
-  <div class="row g-2 mt-3">
-    <div class="col-12 col-md-5"><input id="cur-file" type="file" accept="image/*" multiple class="w-100"></div>
-    <div class="col-12 col-md-3"><button id="cur-upload" class="go go-sm" type="button">传新图并加入</button></div>
+  <div class="ct-cur-wrap">
+    <div>
+      <div class="ct-cur-thumbs" id="cur-thumbs"></div>
+      <p class="ct-sc-note" id="cur-empty" hidden>这一场还没加图</p>
+    </div>
+    <div class="ct-cur-list" id="cur-list"></div>
   </div>
 
-  <div class="lab mt-4">从这场演出已有的晒图里挑（复用同一张图，不重复占磁盘）</div>
-  <div id="cur-cands" class="d-flex flex-wrap gap-2"></div>
-  <p class="chip" id="cand-empty" hidden>这场演出在「演出详情页」还没有照片</p>
-
-  <div class="lab mt-4">批量粘文案：按**当前顺序**、以空行分段，依次配给第 1、2、3… 张</div>
-  <textarea id="cur-notes" class="w-100" rows="6"
-    placeholder="第一张的文案&#10;&#10;第二张的文案&#10;&#10;第三张的文案"></textarea>
-  <div class="d-flex align-items-center gap-2 mt-2">
-    <button id="cur-apply" class="go go-sm" type="button">按顺序套上去</button>
-    <p class="chip mb-0">段数与图片数不一致会报错，不会错配</p>
+  <div class="ct-cur-tools">
+    <div class="fld">
+      <label for="cur-file">传新图</label>
+      <input class="inp" id="cur-file" type="file" accept="image/*" multiple>
+    </div>
+    <button class="go go-ghost" id="cur-upload" type="button">传新图并加入</button>
   </div>
+
+  <div class="ct-cur-sec">从这场演出已有的晒图里挑（复用同一张图，不重复占磁盘）</div>
+  <div class="ct-cands" id="cur-cands"></div>
+  <p class="ct-sc-note" id="cand-empty" hidden>这场演出在「演出详情页」还没有照片。</p>
+
+  <div class="ct-cur-sec">批量粘文案：按当前顺序、以空行分段，依次配给第 1、2、3… 张</div>
+  <div class="ct-batch">
+    <textarea class="inp" id="cur-notes" rows="5"
+      placeholder="第一张的文案&#10;&#10;第二张的文案&#10;&#10;第三张的文案"></textarea>
+    <div class="ct-batch-foot">
+      <button class="go go-sm" id="cur-apply" type="button">按顺序套上去</button>
+      <p class="ct-batch-note">段数与图片数不一致会报错，不会错配。</p>
+    </div>
+  </div>
+  <p class="ct-cur-err" id="cur-err" role="alert" hidden></p>
 </div>
 
 <script>
 'use strict';
 
 let cur = null;           // 正在策展的那一场专场（整条 ConcertView：id / name / date）
+let curSel = null;        // 当前点选的图（只影响高亮，不改数据）
 let curPhotos = [];       // 它当前策展的图（按顺序）—— 上移/下移、批量套文案都以此为准
 let thumbs = [];          // 本轮建过的 blob URL，重画前要 revoke（否则内存越用越多）
 
@@ -81,25 +113,28 @@ function revokeThumbs() {
   thumbs = [];
 }
 
-/** 缩略图（走带 Bearer 的 blob 口子；裸 <img src="/api/files/…"> 永远 401）。 */
-async function thumbOf(fileId, cls) {
-  const box = document.createElement('div');
-  box.className = cls;
+/** 取图（走带 Bearer 的 blob 口子；裸 <img src="/api/files/…"> 永远 401）。取不到就返回空串。 */
+async function fileUrlOf(fileId) {
   try {
     const url = await BAND.fileBlobUrl(fileId);
     thumbs.push(url);
-    box.style.backgroundImage = `url(${url})`;
-  } catch (e) { /* 取不到就留空底色 */ }
-  return box;
+    return url;
+  } catch (e) {
+    return '';
+  }
 }
 
 async function load() {
   const me = await BAND.renderNav('admin-showcase.html');
   if (!me) return;
   const d = await BAND.must('/api/concerts?size=100');
-  renderRow(document.getElementById('showcases'), d.list.filter((c) => c.isShowcase), true);
-  renderRow(document.getElementById('others'), d.list.filter((c) => !c.isShowcase), false);
-  document.getElementById('sc-empty').hidden = d.list.some((c) => c.isShowcase);
+  const shows = d.list.filter((c) => c.isShowcase);
+  const others = d.list.filter((c) => !c.isShowcase);
+  renderRow(document.getElementById('showcases'), shows, true);
+  renderRow(document.getElementById('others'), others, false);
+  document.getElementById('sc-count').textContent = `${shows.length} 场`;
+  document.getElementById('other-count').textContent = `${others.length} 场`;
+  document.getElementById('sc-empty').hidden = shows.length > 0;
   if (cur) openCuration(d.list.find((c) => c.id === cur.id) || cur);
 }
 
@@ -107,23 +142,32 @@ function renderRow(host, list, isShowcaseList) {
   host.innerHTML = '';
   for (const c of list) {
     const el = document.createElement('div');
-    el.className = 'cell mb-2 d-flex justify-content-between align-items-center';
+    el.className = 'ct-sc-row';
     const tx = document.createElement('div');
-    tx.textContent = `${c.name} · ${c.date}${c.venue ? ' · ' + c.venue : ''}`;
+    tx.className = 'ct-sc-t';
+    const name = document.createElement('b');
+    name.textContent = c.name;
+    const sub = document.createElement('span');
+    sub.textContent = `${c.date}${c.venue ? ' · ' + c.venue : ''}`;
+    tx.append(name, sub);
     const acts = document.createElement('div');
+    acts.className = 'ct-sc-act';
     if (isShowcaseList) {
       const curate = document.createElement('button');
-      curate.className = 'go go-sm me-1';
+      curate.className = 'go go-sm';
+      curate.type = 'button';
       curate.textContent = '策展';
       curate.addEventListener('click', () => openCuration(c));
       const off = document.createElement('button');
       off.className = 'go go-ghost go-sm';
+      off.type = 'button';
       off.textContent = '取消专场';
       off.addEventListener('click', () => toggle(c, false));
       acts.append(curate, off);
     } else {
       const on = document.createElement('button');
       on.className = 'go go-ghost go-sm';
+      on.type = 'button';
       on.textContent = '设为专场';
       on.addEventListener('click', () => toggle(c, true));
       acts.append(on);
@@ -147,11 +191,11 @@ async function toggle(c, isShowcase) {
 
 async function openCuration(c) {
   cur = c;
-  const box = document.getElementById('cur-box');
-  box.hidden = false;
+  document.getElementById('cur-box').hidden = false;
   document.getElementById('cur-title').textContent = `策展：${c.name}`;
+  hideCurErr();
   await loadCuration();
-  box.scrollIntoView({ block: 'start' });
+  document.getElementById('cur-box').scrollIntoView({ block: 'start' });
 }
 
 /**
@@ -165,36 +209,86 @@ async function loadCuration() {
     BAND.must(`/api/admin/showcase/${cur.id}/candidates`),
   ]);
   curPhotos = yearPhotos.filter((p) => p.concertId === cur.id);
+  // 选中的那张还在就留着，否则落到第一张（没有图就清空）
+  if (!curPhotos.some((p) => p.photoId === curSel)) {
+    curSel = curPhotos.length ? curPhotos[0].photoId : null;
+  }
+  document.getElementById('cur-sub').textContent =
+    `${cur.date}${cur.venue ? ' · ' + cur.venue : ''} · 共 ${curPhotos.length} 张`
+    + (curPhotos.length ? ' · 第 1 张作方块封面' : '');
   await renderPhotos(curPhotos);
   await renderCandidates(cands);
   await renderYearHint(curPhotos.length);
   document.getElementById('cur-empty').hidden = curPhotos.length > 0;
 }
 
+/** 只改高亮、不重画：重画会给每张图重新建 blob URL，得不偿失。 */
+function selectPhoto(photoId) {
+  curSel = photoId;
+  document.querySelectorAll('#cur-thumbs .ct-cur-th').forEach((b) => {
+    b.classList.toggle('on', Number(b.dataset.photo) === photoId);
+  });
+  document.querySelectorAll('#cur-list .ct-cur-item').forEach((item) => {
+    item.classList.toggle('on', Number(item.dataset.photo) === photoId);
+  });
+}
+
 async function renderPhotos(list) {
-  const host = document.getElementById('cur-photos');
-  host.innerHTML = '';
+  const thHost = document.getElementById('cur-thumbs');
+  thHost.innerHTML = '';
+  const listHost = document.getElementById('cur-list');
+  listHost.innerHTML = '';
+
   for (let i = 0; i < list.length; i++) {
     const p = list[i];
-    const card = document.createElement('div');
-    card.className = 'cell';           // 方块封面 = 顺序里第一张（另有"第 1 张"角标，不另设封面字段）
-    card.append(await thumbOf(p.fileId, 'sc-thumb'));
+    const on = p.photoId === curSel;
+
+    // 左：缩略图（角标是顺序号，第 1 张再加「封面」）
+    const th = document.createElement('button');
+    th.type = 'button';
+    th.className = 'ct-cur-th' + (on ? ' on' : '');
+    th.dataset.photo = p.photoId;
+    th.setAttribute('aria-label', `第 ${i + 1} 张`);
+    const url = await fileUrlOf(p.fileId);
+    if (url) th.style.backgroundImage = `url(${url})`;
+    const no = document.createElement('span');
+    no.className = 'ct-no';
+    no.textContent = String(i + 1);
+    th.appendChild(no);
+    if (i === 0) {
+      const cov = document.createElement('span');
+      cov.className = 'ct-cov';
+      cov.textContent = '封面';
+      th.appendChild(cov);
+    }
+    th.addEventListener('click', () => selectPhoto(p.photoId));
+    thHost.appendChild(th);
+
+    // 右：这一张的文案 + 排序动作
+    const item = document.createElement('div');
+    item.className = 'ct-cur-item' + (on ? ' on' : '');
+    item.dataset.photo = p.photoId;
+    const idx = document.createElement('span');
+    idx.className = 'ct-cur-no';
+    idx.textContent = String(i + 1);
+    const main = document.createElement('div');
     const cap = document.createElement('div');
-    cap.className = 'chip mt-1';
+    cap.className = 'ct-cur-cap';
     cap.textContent = i === 0 ? '第 1 张（方块封面）' : `第 ${i + 1} 张`;
     const note = document.createElement('textarea');
-    note.className = 'w-100 mt-1';
+    note.className = 'inp';
     note.rows = 2;
     note.maxLength = 2000;
     note.placeholder = '这一张的策展文案（可空）';
     note.value = p.note || '';
+    note.setAttribute('aria-label', `第 ${i + 1} 张的策展文案`);
     note.addEventListener('change', async () => {
       await BAND.must(`/api/admin/showcase/${id()}/photos/${p.photoId}`,
         { method: 'PUT', body: { note: note.value } });
       BAND.toast('文案已保存', 'success');
     });
     const acts = document.createElement('div');
-    acts.className = 'd-flex gap-1 mt-1';
+    acts.className = 'ct-cur-acts';
     const up = mk('上移', i === 0, () => movePhoto(i, i - 1));
     const down = mk('下移', i === list.length - 1, () => movePhoto(i, i + 1));
     const del = mk('移出专页', false, async () => {
@@ -207,14 +301,20 @@ async function renderPhotos(list) {
       loadCuration();
     });
     acts.append(up, down, del);
-    card.append(cap, note, acts);
-    host.appendChild(card);
+    main.append(cap, note, acts);
+    item.append(idx, main);
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('textarea,button')) return;
+      selectPhoto(p.photoId);
+    });
+    listHost.appendChild(item);
   }
 }
 
 function mk(label, disabled, onClick) {
   const b = document.createElement('button');
   b.className = 'go go-ghost go-sm';
+  b.type = 'button';
   b.textContent = label;
   b.disabled = disabled;
   if (!disabled) b.addEventListener('click', onClick);
@@ -240,17 +340,21 @@ async function renderCandidates(list) {
   document.getElementById('cand-empty').hidden = list.length > 0;
   for (const c of list) {
     const card = document.createElement('div');
-    card.className = 'cell';
-    card.append(await thumbOf(c.fileId, 'sc-thumb'));
+    card.className = 'ct-cand';
+    const mini = document.createElement('div');
+    mini.className = 'mini';
+    const url = await fileUrlOf(c.fileId);
+    if (url) mini.style.backgroundImage = `url(${url})`;
     const add = document.createElement('button');
-    add.className = 'go go-sm mt-1';
+    add.className = 'go go-ghost';
+    add.type = 'button';
     add.textContent = '加入专页';
     add.addEventListener('click', async () => {
       await BAND.must(`/api/admin/showcase/${id()}/photos`, { method: 'POST', body: { fileId: c.fileId } });
       BAND.toast('已加入', 'success');
       loadCuration();
     });
-    card.appendChild(add);
+    card.append(mini, add);
     host.appendChild(card);
   }
 }
@@ -270,9 +374,22 @@ async function renderYearHint(photoCount) {
     : `${year} 年还没有别的专场加图（这一场加图之后就会出现）。`;
 }
 
-// ---------- 三个写操作 ----------
+function showCurErr(msg) {
+  const el = document.getElementById('cur-err');
+  el.textContent = msg;
+  el.hidden = false;
+}
 
-document.getElementById('s-open').addEventListener('click', async () => {
+function hideCurErr() {
+  const el = document.getElementById('cur-err');
+  el.textContent = '';
+  el.hidden = true;
+}
+
+// ---------- 四个写操作 ----------
+
+document.getElementById('sc-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const name = document.getElementById('s-name').value.trim();
   const date = document.getElementById('s-date').value;
   const venue = document.getElementById('s-venue').value.trim() || null;
@@ -308,10 +425,12 @@ document.getElementById('cur-apply').addEventListener('click', async () => {
   // 以**空行**分段（段内的换行留给文案自己）
   const segs = raw.split(/\r?\n\s*\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0);
   if (segs.length !== curPhotos.length) {
-    // ⚠️ 宁可报错：错配了没人会发现（docs/17 §17.5）
-    BAND.toast(`分了 ${segs.length} 段、这一场有 ${curPhotos.length} 张图——对不上，先改好再来`);
+    // ⚠️ 宁可报错：错配了没人会发现（docs/17 §17.5）。
+    // 报错留在面板内、**不清空输入**——改一改再点一次就好。
+    showCurErr(`分了 ${segs.length} 段、这一场有 ${curPhotos.length} 张图——对不上，先改好再来。`);
     return;
   }
+  hideCurErr();
   for (let i = 0; i < curPhotos.length; i++) {
     await BAND.must(`/api/admin/showcase/${id()}/photos/${curPhotos[i].photoId}`,
       { method: 'PUT', body: { note: segs[i] } });
@@ -323,6 +442,7 @@ document.getElementById('cur-apply').addEventListener('click', async () => {
 document.getElementById('cur-close').addEventListener('click', () => {
   document.getElementById('cur-box').hidden = true;
   cur = null;
+  curSel = null;
   revokeThumbs();
 });
 

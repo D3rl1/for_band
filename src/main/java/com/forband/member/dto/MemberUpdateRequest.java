@@ -10,7 +10,7 @@ public record MemberUpdateRequest(
         String role,
         String status,
         String studentNo,
-        String instrument,
+        @Size(max = 32) String instrument,
         String phone,
         String note,
         LocalDate honoraryUntil,
@@ -25,5 +25,7 @@ public record MemberUpdateRequest(
         LocalDate birthday,
         // ⚠️ 清空声部必须带这个标记（docs/03 §3.4 边界②）：`sectionId` 为 null 在本接口一律当"未提供"
         // （`updateById` 忽略 null 字段），只发 `sectionId: null` 会被静默忽略 ⇒ 界面上"选无声部"点了没反应。
-        Boolean clearSection) {
+        Boolean clearSection,
+        // 同理：清空乐器只能走显式标记（#217）；不带 instrument 与"清空"必须区分开。
+        Boolean clearInstrument) {
 }

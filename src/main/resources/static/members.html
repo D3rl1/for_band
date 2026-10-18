@@ -19,87 +19,202 @@
 <body>
 <div id="navbar"></div>
 
-<div class="d-flex gap-2 mb-3 filters">
-  <select id="section" class="w-auto"></select>
-  <select id="status" class="w-auto">
-    <option value="">全部状态</option>
-    <option value="ACTIVE">在团</option>
-    <option value="PAUSED">休团</option>
-    <option value="LEFT">退团</option>
-    <option value="GRADUATED">毕业</option>
-  </select>
+<div class="mb-filters">
+  <span class="mb-sel" id="sec-wrap">
+    <select id="section" aria-label="按声部筛选"></select>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+  </span>
+  <span class="mb-sel" id="status-wrap">
+    <select id="status" aria-label="按状态筛选">
+      <option value="">全部状态</option>
+      <option value="ACTIVE">在团</option>
+      <option value="PAUSED">休团</option>
+      <option value="LEFT">退团</option>
+      <option value="GRADUATED">毕业</option>
+    </select>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+  </span>
+  <button class="mb-reset" id="mb-reset" type="button">清空筛选</button>
+  <span class="mb-fine">名册信息由管理员维护</span>
 </div>
-<!-- `t2` = 手机端走样张的**两行式**（`docs/14` §14.6.4 八，`#105`）；桌面那 7 列一个字没动 -->
-<table class="tb t2" id="members-table">
-  <thead><tr><th>姓名</th><th>声部</th><th>乐器</th><th>角色</th><th>状态</th><th>账号</th><th>手机号</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
+
+<div id="mb-body"></div>
+
+<div class="mb-empty" id="mb-empty">
+  <h3>没有符合条件的人</h3>
+  <p>换个声部或状态看看；名册不支持搜索。</p>
+  <button class="go go-ghost go-sm" id="mb-empty-reset" type="button">清空筛选</button>
+</div>
 
 <script>
-async function load() {
-  const me = await BAND.renderNav('members.html');
-  if (!me) return;
-  const sections = await BAND.must('/api/sections');
-  const sel = document.getElementById('section');
-  BAND.fillSelect(sel, sections.map((s) => ({ value: s.id, label: s.name })), '全部声部');
-  sel.addEventListener('change', load);
-  document.getElementById('status').addEventListener('change', load);
+'use strict';
 
-  const params = new URLSearchParams({ size: 100 });
-  if (sel.value) params.set('sectionId', sel.value);
-  if (document.getElementById('status').value) params.set('status', document.getElementById('status').value);
-  const d = await BAND.must('/api/members?' + params);
-  const tbody = document.getElementById('rows');
-  tbody.innerHTML = '';
-  // ⭐ 荣誉团员**另起一节**（`docs/03` §3.4：「与 `09-历届成员.md` 的概念对齐」）。
-  // 后端已保证荣誉团员**连成一块排在最后** ⇒ 这里只要在**第一条**前面插一行小节标题。
-  let sectDone = false;
-  for (const m of d.list) {
-    if (m.role === 'HONORARY' && !sectDone) {
-      sectDone = true;
-      const h = document.createElement('tr');
-      h.className = 'sec-h';          // ⚠️ `shapeRows()` 会跳过它（手机端别把它当一张数据卡）
-      h.innerHTML = '<td colspan="7">历届成员</td>';
-      tbody.appendChild(h);
-    }
-    const tr = document.createElement('tr');
-    // 手机端两行式（`docs/14` §14.6.4 八，`#105`）的四类钩子：
-    //   `.t-head` = 头像 + 姓名（左上）· `.t-meta` = 声部·乐器·角色（左下，**新加的第 8 格**）·
-    //   `.t-st` 状态 / `.t-ph` 手机号（右侧上下两行）· `.t-acc` 账号（**手机上不显示**）·
-    //   `.t-solo` = 声部 / 乐器 / 角色（手机端藏起来，它们的内容已并进 `.t-meta`）。
-    // ⚠️ 第 8 格**追加在行末**（靠 `grid-area` 摆位），这样下面那些 `children[i]` 一个都不用改；
-    //    桌面上 `.t-meta` 是 `display:none`，多出来这一格看不见。
-    tr.innerHTML = '<td class="t-head"></td><td class="t-solo"></td><td class="t-solo"></td>'
-      + '<td class="t-solo"></td><td class="t-st"><span class="chip"></span></td>'
-      + '<td class="t-acc"></td><td class="t-ph"></td><td class="t-meta"></td>';
-    // 姓名格：头像 + 姓名（docs/14 §14.6.4「名单里的头像」的统一姿势；走 paintAvatar 唯一入口）
-    // ⚠️ 整块包成链接进"别人的主页"（docs/14 §14.6.4：**姓名与头像都可点**）——
-    // 别只把名字包起来：头像是大家最顺手点的位置
-    const nameWrap = document.createElement('a');
-    nameWrap.className = 'av-name';
-    nameWrap.href = '/member-detail.html?id=' + m.id;
-    const avSlot = document.createElement('span');
-    avSlot.className = 'av-sm';
-    BAND.paintAvatar(avSlot, m);
-    nameWrap.append(avSlot, document.createTextNode(m.name));
-    tr.children[0].appendChild(nameWrap);
-    tr.children[1].textContent = m.sectionName || '';
-    tr.children[2].textContent = m.instrument || '';
-    tr.children[3].textContent = BAND.roleLabel(m.role);
-    // 第 8 格 = 左下那行「声部 · 乐器 · 角色」（**手机端才有**；空的那几段不参与拼接，
-    // 免得出现"胡琴声部 · · 团员"这种空档）
-    tr.children[7].textContent =
-      [m.sectionName, m.instrument, BAND.roleLabel(m.role)].filter(Boolean).join(' · ');
-    const chip = tr.querySelector('.chip');
-    chip.textContent = BAND.statusLabel(m.status);
-    if (m.status !== 'ACTIVE') chip.classList.add('warn'); // 休团/退团/毕业才用朱砂（§14.6.2 铁律 2）
-    tr.children[5].textContent = m.account || '';
-    tr.children[6].textContent = m.phone || '';
-    tbody.appendChild(tr);
+const el = (id) => document.getElementById(id);
+
+let me = null;
+let sections = [];
+let counts = { roster: 0, past: 0 };
+let headSub = null;
+
+/**
+ * 一行一人的人物卡：姓名可点、整张卡可点（docs/14 §14.6.4：**姓名与头像都可点**）。
+ * 账号 / 手机号是名册既有信息，卡片化后不能丢（手机号为空显示「—」）。
+ */
+function personCard(m) {
+  const a = document.createElement('a');
+  a.className = 'mb-person' + (m.role === 'HONORARY' ? ' old' : '');
+  a.href = '/member-detail.html?id=' + encodeURIComponent(m.id);
+  a.setAttribute('aria-label', '查看 ' + m.name + ' 的名片');
+
+  const av = document.createElement('span');
+  av.className = 'mb-av';
+  av.setAttribute('aria-hidden', 'true');
+  BAND.paintAvatar(av, m);
+
+  const idWrap = document.createElement('span');
+  idWrap.className = 'mb-id';
+  const name = document.createElement('span');
+  name.className = 'mb-name';
+  name.textContent = m.name;
+  const line = document.createElement('span');
+  line.className = 'mb-line';
+  line.textContent = [m.sectionName, m.instrument, BAND.roleLabel(m.role)].filter(Boolean).join(' · ');
+  const contact = document.createElement('span');
+  contact.className = 'mb-contact';
+  contact.textContent = [(m.account ? '@' + m.account : '—'), (m.phone || '—')].join(' · ');
+  idWrap.append(name, line, contact);
+
+  const right = document.createElement('span');
+  right.className = 'mb-right';
+  if (me && String(m.id) === String(me.id)) {
+    const you = document.createElement('span');
+    you.className = 'mb-you';
+    you.textContent = '你';
+    right.appendChild(you);
   }
-  BAND.alive(document.getElementById('members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  const st = document.createElement('span');
+  st.className = 'mb-st' + (m.status === 'ACTIVE' ? ' ok' : '');
+  st.textContent = BAND.statusLabel(m.status);
+  const chev = document.createElement('span');
+  chev.className = 'mb-chev';
+  chev.setAttribute('aria-hidden', 'true');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 5l7 7-7 7"/></svg>';
+  right.append(st, chev);
+
+  a.append(av, idWrap, right);
+  return a;
 }
-load();
+
+function sectionBlock(title, list, isOld) {
+  const wrap = document.createElement('section');
+  wrap.className = 'mb-sec';
+
+  const h = document.createElement('div');
+  h.className = 'mb-sec-h';
+  const n = document.createElement('span');
+  n.className = 'mb-sec-n';
+  n.textContent = title;
+  const c = document.createElement('span');
+  c.className = 'mb-sec-c';
+  c.textContent = list.length + ' 人';
+  h.append(n, c);
+  if (isOld) {
+    const note = document.createElement('span');
+    note.className = 'mb-sec-note';
+    note.textContent = '已毕业 / 离开，名录留档';
+    h.appendChild(note);
+  }
+  wrap.appendChild(h);
+
+  if (isOld) {
+    const line = document.createElement('p');
+    line.className = 'mb-note';
+    line.textContent = '他们不再计入在册人数；点开仍能看到名片与参演场次。';
+    wrap.appendChild(line);
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'mb-grid';
+  for (const m of list) grid.appendChild(personCard(m));
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function render(list, filtered) {
+  const body = el('mb-body');
+  body.innerHTML = '';
+
+  // 按声部顺序分节；荣誉团员**另起一节**（`docs/03` §3.4：与「历届成员」概念对齐）
+  const groups = new Map();
+  for (const s of sections) groups.set(s.name, []);
+  const old = [];
+  for (const m of list) {
+    if (m.role === 'HONORARY') { old.push(m); continue; }
+    const key = m.sectionName || '未分声部';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  for (const [name, arr] of groups) {
+    if (arr.length) body.appendChild(sectionBlock(name, arr, false));
+  }
+  if (old.length) body.appendChild(sectionBlock('历届成员', old, true));
+
+  el('mb-empty').classList.toggle('show', list.length === 0);
+
+  if (headSub) {
+    headSub.textContent = (filtered ? '筛出 ' + list.length + ' 人 · ' : '')
+      + '在册 ' + counts.roster + ' 人 · 历届 ' + counts.past + ' 人';
+  }
+  el('sec-wrap').classList.toggle('on', !!el('section').value);
+  el('status-wrap').classList.toggle('on', !!el('status').value);
+  el('mb-reset').classList.toggle('show', filtered);
+}
+
+async function load() {
+  const sectionId = el('section').value;
+  const status = el('status').value;
+  const params = new URLSearchParams({ size: '100' });
+  if (sectionId) params.set('sectionId', sectionId);
+  if (status) params.set('status', status);
+  const d = await BAND.must('/api/members?' + params);
+  const list = d.list || [];
+  // 无筛选时这份列表就是全量 ⇒ 顺手数「在册 / 历届」（筛选后只看筛出数，不重算总数）
+  if (!sectionId && !status) {
+    counts.roster = list.filter((m) => m.role !== 'HONORARY').length;
+    counts.past = list.filter((m) => m.role === 'HONORARY').length;
+  }
+  render(list, !!(sectionId || status));
+}
+
+function resetFilters() {
+  el('section').value = '';
+  el('status').value = '';
+  load();
+}
+
+async function init() {
+  me = await BAND.renderNav('members.html');
+  if (!me) return;
+
+  const h1 = document.querySelector('.head-l h1');
+  if (h1) {
+    headSub = document.createElement('p');
+    headSub.className = 'mb-sub';
+    h1.after(headSub);
+  }
+
+  sections = await BAND.must('/api/sections');
+  BAND.fillSelect(el('section'), sections.map((s) => ({ value: s.id, label: s.name })), '全部声部');
+
+  el('section').addEventListener('change', load);
+  el('status').addEventListener('change', load);
+  el('mb-reset').addEventListener('click', resetFilters);
+  el('mb-empty-reset').addEventListener('click', resetFilters);
+
+  await load();
+}
+
+init();
 </script>
 </body>
 </html>

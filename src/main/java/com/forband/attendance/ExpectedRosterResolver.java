@@ -24,8 +24,8 @@ import java.util.Objects;
 @Component
 public class ExpectedRosterResolver {
 
-    /** 「应到却没签」——⚠️ **不是 `attendance` 表里的值**（表里只有 `PRESENT` / `LEAVE`），
-     *  是这一列自己跟"应到名单"合起来判出来的。 */
+    /** 「应到却没签」——⚠️ **通常不是 `attendance` 表里的值**：没记录时由这里跟"应到名单"推导。
+     *  表里也允许存在 ABSENT（管理员人工改判已有记录，DECISIONS D33），此时直接采用行里的值。 */
     static final String ABSENT = "ABSENT";
 
     private final MemberMapper memberMapper;
@@ -75,7 +75,7 @@ public class ExpectedRosterResolver {
         return member.getLeftAt() == null || !member.getLeftAt().isBefore(date);
     }
 
-    /** 我在这场是什么状态：有行就用行里的（出勤 / 请假），没行再判"我该不该到"（该到 = 缺勤）。 */
+    /** 我在这场是什么状态：有行就用行里的（四态之一），没行再判"我该不该到"（该到 = 缺勤）。 */
     public String mineAt(Event event, Member me, String recordStatus) {
         if (recordStatus != null) {
             return recordStatus;

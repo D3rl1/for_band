@@ -295,12 +295,71 @@ const BAND = {
   },
 
   /**
+   * 把全页唯一的 `AudioContext` 弄到 **`running`**。节拍器「开始」在用户手势里调它。
+   * <p>
+   * ⚠️ **必须在手势里同步建上下文、再 await `resume()`**：iOS / 鸿蒙上上下文可能一出生就是
+   * `suspended`，而"建了就算数"是错的 —— 得等 resume 真的有结果、再核一次 state。
+   * ⚠️ 失败原因写进 `_audioIssue`，由 `audioIssueText()` 翻成人话。**别把异常吞掉**：
+   * 吞掉的结果就是"按钮点了没反应"（鸿蒙百度浏览器实测：上下文永远 suspended、时钟不走、无提示）。
+   * @returns {Promise<AudioContext|null>} running 的上下文；拿不到就 `null`
+   */
+  async ensureAudio() {
+    if (!this._ac) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        this._audioIssue = { kind: 'no-ctor' };
+        return null;
+      }
+      try {
+        this._ac = new Ctx();
+      } catch (e) {
+        this._audioIssue = { kind: 'ctor', name: e && e.name, message: e && e.message };
+        return null;
+      }
+    }
+    const ac = this._ac;
+    if (ac.state !== 'running') {
+      try {
+        await ac.resume();
+      } catch (e) {
+        this._audioIssue = { kind: 'resume', name: e && e.name, message: e && e.message };
+      }
+    }
+    if (ac.state !== 'running') {
+      this._audioIssue = this._audioIssue || { kind: 'suspended' };
+      return null;
+    }
+    this._audioIssue = null;
+    return ac;
+  },
+
+  /** `ensureAudio()` 失败原因的中文提示（含百度浏览器的站点声音设置路径）。 */
+  audioIssueText() {
+    const i = this._audioIssue || { kind: 'suspended' };
+    if (i.kind === 'no-ctor') {
+      return '这个浏览器不支持网页音频（Web Audio），节拍器响不了。请换用手机自带浏览器或 Chrome 打开这一页。';
+    }
+    if (i.kind === 'ctor') {
+      return '音频初始化失败（' + (i.name || '未知错误') + '）。请换用手机自带浏览器或 Chrome 再试。';
+    }
+    if (i.kind === 'tick') {
+      return '音频节点创建失败（' + (i.name || '未知错误') + '）。请换用手机自带浏览器或 Chrome 再试。';
+    }
+    if (i.kind === 'resume' && i.name && i.name !== 'NotAllowedError') {
+      return '音频没能启动（' + i.name + '）。请换用手机自带浏览器或 Chrome 再试。';
+    }
+    return '浏览器没有允许网页发声（音频被挂起）。百度浏览器：点地址栏左侧锁图标 → 网站设置 → 声音 → 允许，刷新后再点「开始」；也可换用手机自带浏览器。';
+  },
+
+  /**
    * 节拍器的一声（练习录音页）：**用户主动发起、持续可控的声音** —— `docs/14` §14.6.6 那张表
    * 把它和"确认类声音"分开的正是这一点，也是**第四条留痕**讲的"拍点指示不算 idle 动画"的同一条界线。
    * <p>
    * ⚠️ **不受 `band_sound` 约束**（**显式例外**，不是漏写）：一个开了却不出声的节拍器，看起来就是坏的。
    * ⚠️ **复用唯一的 `BAND._ac`** —— 全页只允许一个 `AudioContext`，这里绝不 `new` 第二个。
    * ⚠️ 包络与 `chime()` 同一路子：**指数衰减**（线性到 0 会爆音）。**重拍高且响、弱拍低**。
+   * ⚠️ **保持同步**：离线探针直接把 `_ac` 换成 `OfflineAudioContext` 调这里。正常起拍前会先过
+   *    `ensureAudio()`；这里的 resume 只是兜底，且必须接住 rejection（否则控制台多一条未处理异常）。
    * @param {boolean} accent 是不是每小节的第 1 拍
    * @param {number} [when] 排在音频时钟的哪个时刻（lookahead 调度用）；不传＝马上
    * @returns {number|null} 实际排出去的时刻（秒）；拿不到音频就 `null`
@@ -308,10 +367,22 @@ const BAND = {
   tick(accent, when) {
     try {
       if (!this._ac) {
-        this._ac = new (window.AudioContext || window.webkitAudioContext)();
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) {
+          this._audioIssue = { kind: 'no-ctor' };
+          return null;
+        }
+        try {
+          this._ac = new Ctx();
+        } catch (e) {
+          this._audioIssue = { kind: 'ctor', name: e && e.name, message: e && e.message };
+          return null;
+        }
       }
       const ac = this._ac;
-      if (ac.state === 'suspended') ac.resume();
+      if (ac.state === 'suspended') {
+        Promise.resolve(ac.resume()).catch(() => {});
+      }
       const t = Math.max(when || 0, ac.currentTime);
       const osc = ac.createOscillator();
       const gain = ac.createGain();
@@ -321,11 +392,16 @@ const BAND = {
       gain.gain.setValueAtTime(0.0001, t);
       gain.gain.exponentialRampToValueAtTime(accent ? 0.34 : 0.17, t + 0.004);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-      osc.connect(gain).connect(ac.destination);
+      // ⚠️ 别写成 `osc.connect(gain).connect(ac.destination)`：少数内核的 `connect()` 返回值靠不住
+      osc.connect(gain);
+      gain.connect(ac.destination);
       osc.start(t);
       osc.stop(t + 0.08);
       return t;
-    } catch (e) { return null; }
+    } catch (e) {
+      this._audioIssue = { kind: 'tick', name: e && e.name, message: e && e.message };
+      return null;
+    }
   },
 
   /** 签到成功的"确认"声：现场合成，单 AudioContext，指数衰减（§14.6.6）。 */
@@ -336,7 +412,7 @@ const BAND = {
         this._ac = new (window.AudioContext || window.webkitAudioContext)();
       }
       const ac = this._ac;
-      if (ac.state === 'suspended') ac.resume();
+      if (ac.state === 'suspended') Promise.resolve(ac.resume()).catch(() => {});
       const t0 = ac.currentTime;
       [[880, 0], [1318.5, 0.09]].forEach(([freq, dt]) => {
         const osc = ac.createOscillator();
@@ -346,7 +422,8 @@ const BAND = {
         gain.gain.setValueAtTime(0.0001, t0 + dt);
         gain.gain.exponentialRampToValueAtTime(0.2, t0 + dt + 0.012);
         gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.5);
-        osc.connect(gain).connect(ac.destination);
+        osc.connect(gain);
+        gain.connect(ac.destination);
         osc.start(t0 + dt);
         osc.stop(t0 + dt + 0.55);
       });

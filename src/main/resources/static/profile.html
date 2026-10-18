@@ -19,69 +19,128 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="p-id">
-    <span class="p-av" id="big-av"></span>
-    <div class="p-who">
-      <div class="p-name" id="big-name"></div>
-      <div class="p-tags" id="big-tags"></div>
+<article class="pf-card" id="pf-card">
+  <div class="pf-av" id="big-av"></div>
+  <div class="pf-id">
+    <div class="pf-name" id="big-name"></div>
+    <!-- 身份行与个人栏浮层**共用同一个函数**（docs/14 §14.6.4：两处同源，别各写一份） -->
+    <div class="pf-tags" id="big-tags"></div>
+    <!-- ⭐ 「参演过 N 场专场」（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）：
+         ⚠️ 与 `member-detail.html`（**别人的**主页）**共用同一块**（同一个 `mountShowcaseCount`）。
+         ⚠️ 只放这一个数（出勤率之类有可见性口径的别搬过来）。
+         ⚠️ **0 也照常显示 `0`**：「一场没参演过」是事实，与"0/0 无意义"不是一回事。 -->
+    <div class="pf-show">参演过 <b id="showcase-n">—</b> 场专场</div>
+    <p class="pf-intro" id="big-intro"></p>
+    <div class="pf-facts">
+      <div class="pf-fact"><div class="k">生 日</div><div class="v" id="big-birthday">—</div></div>
+      <div class="pf-fact"><div class="k">入 团</div><div class="v" id="big-joined">—</div></div>
+      <div class="pf-fact"><div class="k">联系方式</div><div class="v" id="big-contact">—</div></div>
+    </div>
+    <!-- ⚠️ 只读说明行**必须有**：这就是"不能改名"的落地方式，免得用户以为页面坏了（docs/14 §14.6.4） -->
+    <p class="pf-rd">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
+    <!-- 荣誉团员整页只读（docs/02 §2.3）：编辑入口整块隐藏，这句是给他们看的解释 -->
+    <p class="pf-honor" id="honorary-note" hidden>荣誉团员为只读身份，头像与个人资料由管理员维护</p>
+    <div class="pf-foot" id="edit-entry">
+      <button id="edit-btn" class="go go-ghost go-sm" type="button">编辑名片</button>
     </div>
   </div>
-  <!-- ⭐ 「参演过 N 场专场」（`docs/14` §14.6.4「个人页」第 6 条，`交接单 #117`）：
-       ⚠️ 与 `member-detail.html`（**别人的**主页）**共用同一块**（同一个 `mountShowcaseCount`）。
-       ⚠️ 它是**别人也能看的** ⇒ **只放这一个数**（出勤率之类有可见性口径的别搬过来）。
-       ⚠️ **0 也照常显示 `0`**：「一场没参演过」是**事实**，与"0/0 无意义"不是一回事。 -->
-  <p class="p-count mt-2">参演过 <b id="showcase-n">—</b> 场专场</p>
-  <!-- ⚠️ 只读说明行**必须有**：这就是"不能改名"的落地方式，免得用户以为页面坏了（docs/14 §14.6.4） -->
-  <p class="chip mb-0">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
-  <!-- 荣誉团员整页只读（docs/02 §2.3）：下面两个可编辑的格子对他们是隐藏的，这句是给他们看的解释 -->
-  <p class="chip mb-0 mt-2" id="honorary-note" hidden>荣誉团员为只读身份，头像与个人资料由管理员维护</p>
-</div>
+</article>
 
-<div class="cell mb-4" id="cell-avatar">
-  <div class="lab">头像</div>
-  <div id="av-grid" class="av-grid"></div>
-</div>
-
-<div class="cell mb-4" id="cell-edit">
-  <div class="lab">简介 · 联系方式 · 生日</div>
-  <div class="row g-2">
-    <div class="col-12 col-md-8">
-      <input id="f-intro" class="w-100" maxlength="100" placeholder="个人简介 / 签名（≤100 字）">
-    </div>
-    <div class="col-12 col-md-4">
-      <input id="f-birthday" type="date" class="w-100">
-      <!-- 本人知情（docs/14 §14.6.4）：这条会被公开，先让人知道再让他填 -->
-      <p class="chip mb-0 mt-2">填了生日，全团会在那天看到你的生日通告</p>
-    </div>
-    <div class="col-12">
-      <input id="f-contact" class="w-100" maxlength="128" placeholder="联系方式（自由填写，如 微信 xxx / QQ xxx）">
-    </div>
-    <div class="col-12 d-flex gap-2 align-items-center mt-1">
-      <button id="save" class="go go-sm" type="button">保存</button>
-      <button id="clear-bd" class="go go-ghost go-sm" type="button">清空生日</button>
-      <p id="saved" class="chip mb-0" hidden>已保存</p>
-    </div>
+<section class="pf-edit" id="pf-edit" hidden>
+  <div class="pf-edit-h">
+    <h2>编辑名片</h2>
+    <span class="fine">只提交动过的项；没保存就关掉等于没改</span>
   </div>
-</div>
+
+  <div class="pf-field">
+    <div class="pf-label"><span class="l">头像</span><span class="c" id="av-name">不用头像</span></div>
+    <div id="av-grid" class="av-grid"></div>
+    <p class="av-hint">头像由管理员上传到共享清单，这里只能选</p>
+  </div>
+
+  <div class="pf-field">
+    <div class="pf-label"><span class="l">简介</span><span class="c"><span id="intro-count">0</span>/100</span></div>
+    <textarea id="f-intro" class="pf-in" maxlength="100" placeholder="个人简介 / 签名（≤100 字）"></textarea>
+  </div>
+
+  <div class="pf-field">
+    <div class="pf-label"><span class="l">联系方式</span><span class="c"><span id="contact-count">0</span>/128</span></div>
+    <input id="f-contact" class="pf-in" maxlength="128" placeholder="联系方式（自由填写，如 微信 xxx / QQ xxx）">
+  </div>
+
+  <div class="pf-field">
+    <div class="pf-label"><span class="l">生日</span><span class="c" id="bd-state"></span></div>
+    <div class="pf-row">
+      <input id="f-birthday" type="date" class="pf-in">
+      <button id="clear-bd" class="pf-link" type="button">清空</button>
+      <button id="undo-bd" class="pf-link" type="button" hidden>撤销清空</button>
+    </div>
+    <!-- 本人知情（docs/14 §14.6.4）：这条会被公开，先让人知道再让他填 -->
+    <p class="pf-bd-note" id="bd-note">填了生日，全团会在那天看到你的生日通告；公开处只显示月-日。</p>
+  </div>
+
+  <div class="pf-acts">
+    <button id="edit-cancel" class="go go-ghost go-sm" type="button">取消</button>
+    <button id="save" class="go go-sm" type="button">保存</button>
+  </div>
+</section>
 
 <script>
 'use strict';
 
 let me = null;      // /api/auth/me 的响应
 let profile = null; // GET /api/me/profile 的响应
-let picked = null;  // 当前选中的头像标识符（null = 不用头像）
+let picked = null;  // 草稿里选中的头像标识符（null = 不用头像）
 
-function renderIdentity() {
-  BAND.paintAvatar(document.getElementById('big-av'), { name: profile.name, avatar: picked });
-  document.getElementById('big-name').textContent = profile.name;
-  // 身份行与个人栏浮层**共用同一个函数**（docs/14 §14.6.4：两处同源，别各写一份）
-  document.getElementById('big-tags').textContent = BAND.identityTags(profile);
+const el = (id) => document.getElementById(id);
+
+/** 生日在公开处只露月-日（docs/14「生日只显示月-日」）。 */
+function monthDay(v) {
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[2] + '-' + m[3] : '';
+}
+
+function renderCard() {
+  BAND.paintAvatar(el('big-av'), { name: profile.name, avatar: profile.avatar });
+  el('big-name').textContent = profile.name;
+  el('big-tags').textContent = BAND.identityTags(profile);
+
+  const intro = el('big-intro');
+  intro.textContent = profile.intro || '还没有简介';
+  intro.classList.toggle('empty', !profile.intro);
+
+  el('big-birthday').textContent = monthDay(profile.birthday) || '未填';
+  el('big-joined').textContent = profile.joinedAt ? String(profile.joinedAt).slice(0, 10) : '—';
+  el('big-contact').textContent = profile.contact || '未填';
+}
+
+/** 把服务端的值灌回编辑面板（打开时、取消时、保存后各灌一次）。 */
+function fillForm() {
+  picked = profile.avatar || null;
+  el('f-intro').value = profile.intro || '';
+  el('f-contact').value = profile.contact || '';
+  el('f-birthday').value = profile.birthday || '';
+  el('bd-state').textContent = profile.birthday ? '已填' : '未填';
+  el('undo-bd').hidden = true;
+  syncCounts();
+  syncAvatarName();
+  renderCard();
+}
+
+function syncCounts() {
+  el('intro-count').textContent = el('f-intro').value.length;
+  el('contact-count').textContent = el('f-contact').value.length;
+}
+
+function syncAvatarName() {
+  const item = [{ id: null, name: '不用头像' }].concat(BAND.avatarList || [])
+    .find((x) => x.id === picked);
+  el('av-name').textContent = item ? item.name : '不用头像';
 }
 
 /** 预置头像网格：清单与素材一起放在 `vendor/avatars/`（**服务端读的是同一份**）。 */
 async function renderGrid() {
-  const host = document.getElementById('av-grid');
+  const host = el('av-grid');
   // 清单由 app.js 统一取并缓存（`renderNav` 已经 await 过一次，这里通常是零成本命中）——
   // 别在本页再 fetch 一份，否则"清单是唯一权威"就变成两处各自解释了
   await BAND.avatars();
@@ -115,65 +174,110 @@ async function renderGrid() {
       });
       cell.classList.add('on');
       cell.setAttribute('aria-pressed', 'true');
-      renderIdentity();
+      syncAvatarName();
+      // 选头像时先在本页名片上预览（保存前的草稿态）
+      BAND.paintAvatar(el('big-av'), { name: profile.name, avatar: picked });
     });
     host.appendChild(cell);
   }
+  syncAvatarName();
+}
+
+/** 草稿与服务端的差异（只提交动过的字段，docs/14 §14.6.4 第 5 条）。 */
+function changedFields() {
+  const intro = el('f-intro').value.trim();
+  const contact = el('f-contact').value.trim();
+  const birthday = el('f-birthday').value || null;
+  const out = [];
+  if ((profile.avatar || null) !== picked) out.push('头像');
+  if ((profile.intro || '') !== intro) out.push('简介');
+  if ((profile.contact || '') !== contact) out.push('联系方式');
+  if ((profile.birthday || null) !== birthday) out.push('生日');
+  return out;
+}
+
+function closeEdit() {
+  el('pf-edit').hidden = true;
 }
 
 async function load() {
   me = await BAND.renderNav('profile.html');
   if (!me) return;
   profile = await BAND.must('/api/me/profile');   // must 已解包，拿到的就是 data
-  picked = profile.avatar || null;
-  document.getElementById('f-intro').value = profile.intro || '';
-  document.getElementById('f-contact').value = profile.contact || '';
-  document.getElementById('f-birthday').value = profile.birthday || '';
-  renderIdentity();
-  await BAND.mountShowcaseCount(document.getElementById('showcase-n'), profile.id);
+  fillForm();
+  await BAND.mountShowcaseCount(el('showcase-n'), profile.id);
   // 荣誉团员只读（docs/02 §2.3）：**整块隐藏**编辑入口，别让他们点进去撞 403。
-  // 用 hidden 而不是删节点——下面 #save / #clear-bd 的监听器是模块顶层绑的，删了会炸。
+  // 用 hidden 而不是删节点——下面 #save 的监听器是模块顶层绑的，删了会炸。
   if (me.role === 'HONORARY') {
-    document.getElementById('cell-avatar').hidden = true;
-    document.getElementById('cell-edit').hidden = true;
-    document.getElementById('honorary-note').hidden = false;
+    el('edit-entry').hidden = true;
+    el('honorary-note').hidden = false;
     return;
   }
   await renderGrid();
 }
 
-/** 保存：**只提交改动过的字段**（docs/14 §14.6.4 第 5 条）。 */
-document.getElementById('save').addEventListener('click', async () => {
-  const body = {};
-  const intro = document.getElementById('f-intro').value.trim();
-  const contact = document.getElementById('f-contact').value.trim();
-  const birthday = document.getElementById('f-birthday').value || null;
-  if ((profile.avatar || null) !== picked) body.avatar = picked;
-  if ((profile.intro || '') !== intro) body.intro = intro;
-  if ((profile.contact || '') !== contact) body.contact = contact;
-  if ((profile.birthday || null) !== birthday && birthday) body.birthday = birthday;
-  if (!Object.keys(body).length) {
-    BAND.toast('没有改动', 'success');
-    return;
-  }
-  profile = await BAND.must('/api/me/profile', { method: 'PUT', body });
-  picked = profile.avatar || null;
-  renderIdentity();
+el('edit-btn').addEventListener('click', async () => {
+  fillForm();
   await renderGrid();
-  const saved = document.getElementById('saved');
-  saved.hidden = false;
-  setTimeout(() => { saved.hidden = true; }, 2000);
+  el('pf-edit').hidden = false;
+  el('pf-edit').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
-// 生日清空：null 已经表示"这次不改"，所以清空要走显式开关
-document.getElementById('clear-bd').addEventListener('click', async () => {
-  if (!profile.birthday) {
+el('edit-cancel').addEventListener('click', async () => {
+  const changed = changedFields();
+  if (changed.length) {
+    const ok = await BAND.confirm({
+      title: '放弃这次修改？',
+      body: '还有 ' + changed.length + ' 项没保存，关掉就没了。',
+      ok: '放弃',
+    });
+    if (!ok) return;
+  }
+  fillForm();
+  await renderGrid();
+  closeEdit();
+});
+
+el('f-intro').addEventListener('input', syncCounts);
+el('f-contact').addEventListener('input', syncCounts);
+
+// 清空只动草稿；真正提交靠保存时的 `clearBirthday`（null 表示"这次不改"）
+el('clear-bd').addEventListener('click', () => {
+  if (!el('f-birthday').value) {
     BAND.toast('本来就没填生日', 'success');
     return;
   }
-  profile = await BAND.must('/api/me/profile', { method: 'PUT', body: { clearBirthday: true } });
-  document.getElementById('f-birthday').value = '';
-  BAND.toast('已清空生日', 'success');
+  el('f-birthday').value = '';
+  el('bd-state').textContent = '待清空';
+  el('undo-bd').hidden = false;
+});
+
+el('undo-bd').addEventListener('click', () => {
+  el('f-birthday').value = profile.birthday || '';
+  el('bd-state').textContent = profile.birthday ? '已填' : '未填';
+  el('undo-bd').hidden = true;
+});
+
+el('save').addEventListener('click', async () => {
+  const changed = changedFields();
+  if (!changed.length) {
+    BAND.toast('没有改动', 'success');
+    return;
+  }
+  const body = {};
+  if (changed.includes('头像')) body.avatar = picked;
+  if (changed.includes('简介')) body.intro = el('f-intro').value.trim();
+  if (changed.includes('联系方式')) body.contact = el('f-contact').value.trim();
+  if (changed.includes('生日')) {
+    const birthday = el('f-birthday').value || null;
+    // 生日清空：null 已经表示"这次不改"，所以清空要走显式开关
+    if (birthday) body.birthday = birthday;
+    else body.clearBirthday = true;
+  }
+  profile = await BAND.must('/api/me/profile', { method: 'PUT', body });
+  fillForm();
+  await renderGrid();
+  BAND.toast('已保存 ' + changed.length + ' 项改动：' + changed.join('、'), 'success');
 });
 
 load();

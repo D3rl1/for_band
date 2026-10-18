@@ -19,45 +19,76 @@
 <body>
 <div id="navbar"></div>
 
-<div class="cell mb-4">
-  <div class="lab">新建账号</div>
-  <form id="create-form" class="row g-2">
-    <div class="col-6 col-md-2"><input id="c-name" class="w-100" placeholder="姓名*" required></div>
-    <div class="col-6 col-md-2"><input id="c-account" class="w-100" placeholder="账号*" required></div>
-    <div class="col-6 col-md-2"><select id="c-section" class="w-100"></select></div>
-    <div class="col-6 col-md-2">
-      <select id="c-role" class="w-100">
+<!-- 2026-10-18 精装：区块标题 → 表单卡 → 筛选行 → 一行一人表格。三块顺序固定。 -->
+<div class="adm-sec">
+  <h2>新建账号</h2>
+  <span class="meta">初始密码只显示一次，创建后立即发给本人</span>
+</div>
+
+<div class="adm-card">
+  <form id="create-form" class="form-grid">
+    <div class="fld">
+      <label for="c-name">姓名</label>
+      <input id="c-name" class="inp" placeholder="必填" required>
+    </div>
+    <div class="fld">
+      <label for="c-account">账号</label>
+      <input id="c-account" class="inp" placeholder="必填" required>
+    </div>
+    <div class="fld">
+      <label for="c-section">声部</label>
+      <select id="c-section" class="inp"></select>
+    </div>
+    <div class="fld">
+      <label for="c-role">角色</label>
+      <select id="c-role" class="inp">
         <option value="MEMBER">团员</option>
         <option value="SECTION_LEADER">声部长</option>
         <option value="CONDUCTOR">指挥</option>
         <option value="LEADER">团长</option>
       </select>
     </div>
-    <div class="col-6 col-md-2"><input id="c-instrument" class="w-100" placeholder="乐器"></div>
-    <div class="col-6 col-md-2"><input id="c-phone" class="w-100" placeholder="手机号"></div>
-    <!-- 入团日期（docs/03 §3.4 上线迁移）：默认当天，可改成更早。它门控考勤，别乱填 -->
-    <div class="col-6 col-md-2">
-      <label class="chip mb-0" for="c-joined">入团日期</label>
-      <input type="date" id="c-joined" class="w-100">
+    <div class="fld">
+      <label for="c-instrument">乐器</label>
+      <input id="c-instrument" class="inp" placeholder="选填">
     </div>
-    <div class="col-12"><button class="go go-sm" type="submit">创建并生成初始密码</button></div>
+    <div class="fld">
+      <label for="c-phone">手机号</label>
+      <input id="c-phone" class="inp" placeholder="选填">
+    </div>
+    <!-- 入团日期（docs/03 §3.4 上线迁移）：默认当天，可改成更早。它门控考勤，别乱填 -->
+    <div class="fld span2">
+      <label for="c-joined">入团日期</label>
+      <input type="date" id="c-joined" class="inp">
+    </div>
+    <div class="fld span2 form-actions">
+      <button class="go adm-submit" type="submit">创建并生成初始密码</button>
+    </div>
   </form>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <h2 class="mb-0">成员列表</h2>
-  <div class="d-flex gap-2">
-    <!-- 「批量」开关（docs/14 §14.6.4 八·b，2026-09-30 #105）：`.bulk-toggle` 在桌面端不显示，
-         手机段才让出来（勾选列与底部操作条同样只在手机段的 CSS 里）。 -->
-    <button id="bulk-btn" class="go go-ghost go-sm bulk-toggle" type="button" aria-pressed="false">批量</button>
-    <button id="export-btn" class="go go-ghost go-sm">导出账号表 CSV</button>
-  </div>
+<div class="adm-sec">
+  <h2>成员</h2>
+  <span class="meta" id="m-count">入团日期就地可改</span>
 </div>
-<!-- `t2` = 手机端走样张的**两行式**（docs/14 §14.6.4 八，`#105`）；桌面那 8 列一个字没动 -->
-<table class="tb t2" id="admin-members-table">
-  <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
+
+<div class="adm-filters">
+  <div class="search">
+    <input id="m-search" class="inp" type="search" placeholder="搜索姓名 / 账号 / 声部 / 乐器" aria-label="搜索成员">
+  </div>
+  <!-- 「批量」开关（docs/14 §14.6.4 八·b，2026-09-30 #105）：`.bulk-toggle` 在桌面端不显示，
+       手机段才让出来（勾选列与底部操作条同样只在手机段的 CSS 里）。 -->
+  <button id="bulk-btn" class="go go-ghost go-sm bulk-toggle" type="button" aria-pressed="false">批量</button>
+  <button id="export-btn" class="go go-ghost go-sm" type="button">导出账号表 CSV</button>
+</div>
+
+<div class="table-card">
+  <!-- `t2` = 手机端走样张的**两行式**（docs/14 §14.6.4 八，`#105`）；桌面那 8 列一个字没动 -->
+  <table class="tb t2 adm-mb" id="admin-members-table">
+    <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
 <!-- 批量操作条（八·b）：`.tb.picking` 时才出现，`position: sticky` 贴底 -->
 <div class="bulkbar" id="bulkbar">
   <span id="bulk-count">已选 0 人</span>
@@ -68,7 +99,7 @@
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-body text-center">
-        <p id="pw-text" class="big my-2"></p>
+        <p id="pw-text" class="adm-pw"></p>
         <p class="chip">初始密码只显示这一次，请立即发给本人</p>
       </div>
       <div class="modal-footer py-1"><button class="go go-sm" data-bs-dismiss="modal">我已保存</button></div>
@@ -82,7 +113,7 @@
       <div class="modal-body">
         <p id="hon-title" class="big my-2"></p>
         <p class="chip">登录有效期，必填（默认毕业后 2 年，可改；过期后无法登录）</p>
-        <input type="date" id="hon-until" class="w-100" required>
+        <input type="date" id="hon-until" class="inp w-100" required>
       </div>
       <div class="modal-footer py-1">
         <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
@@ -98,11 +129,13 @@
       <div class="modal-body">
         <p id="edit-title" class="big my-2"></p>
         <label class="chip mb-1" for="edit-role">角色</label>
-        <select id="edit-role" class="w-100 mb-2"></select>
+        <select id="edit-role" class="inp w-100 mb-2"></select>
         <label class="chip mb-1" for="edit-section">声部</label>
-        <select id="edit-section" class="w-100 mb-2"></select>
+        <select id="edit-section" class="inp w-100 mb-2"></select>
         <label class="chip mb-1" for="edit-status">状态</label>
-        <select id="edit-status" class="w-100"></select>
+        <select id="edit-status" class="inp w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-instrument">乐器</label>
+        <input id="edit-instrument" class="inp w-100" maxlength="32" placeholder="选填">
         <p class="chip mt-2">改状态为非「在团」会立即吊销他的登录态。</p>
       </div>
       <div class="modal-footer py-1">
@@ -142,24 +175,39 @@ async function loadRows() {
     tr.innerHTML = '<td class="t-head"></td><td class="t-solo"></td><td class="t-solo"></td>'
       + '<td class="t-st"><span class="chip"></span></td><td class="t-acc"></td><td class="t-act2"></td>'
       + '<td class="t-date"></td><td class="act"></td><td class="t-meta"></td><td class="t-pick"></td>';
-    // 头像 + 姓名（`docs/14` §14.6.4「名单里的头像」：凡显示人的地方都加头像，走 `paintAvatar` 唯一入口）
+    // 头像 + 姓名 + 乐器（`docs/14` §14.6.4「名单里的头像」：走 `paintAvatar` 唯一入口）
     const nameWrap = document.createElement('span');
     nameWrap.className = 'av-name';
     const avSlot = document.createElement('span');
     avSlot.className = 'av-sm';
     BAND.paintAvatar(avSlot, m);
-    nameWrap.append(avSlot, document.createTextNode(m.name));
+    const who = document.createElement('span');
+    who.className = 'adm-who';
+    const nameB = document.createElement('b');
+    nameB.textContent = m.name;
+    who.appendChild(nameB);
+    if (m.instrument) {
+      const inst = document.createElement('small');
+      inst.textContent = m.instrument;
+      who.appendChild(inst);
+    }
+    nameWrap.append(avSlot, who);
     tr.children[0].appendChild(nameWrap);
     tr.children[1].textContent = m.sectionName || '';
     tr.children[2].textContent =
       BAND.roleLabel(m.role) + (m.role === 'HONORARY' && m.honoraryUntil ? ` · 至 ${m.honoraryUntil}` : '');
     const chip = tr.querySelector('.chip');
     chip.textContent = BAND.statusLabel(m.status);
-    if (m.status !== 'ACTIVE') chip.classList.add('warn');
+    // 红只留给异常：在团＝浅松绿底、荣誉团员＝松绿描边，其余中性灰（样张里也一样）
+    if (m.role === 'HONORARY') chip.classList.add('honor');
+    else if (m.status === 'ACTIVE') chip.classList.add('on');
     tr.children[4].textContent = m.account || '';
     tr.children[5].textContent = m.activated ? '已激活' : '未激活';
     tr.children[8].textContent =
       [m.sectionName, tr.children[2].textContent].filter(Boolean).join(' · ');   // 左下那行（手机端）
+    // 搜索用的整行索引（姓名/账号/声部/角色/乐器），由 `applyMemberFilter` 过滤
+    tr.dataset.search = [m.name, m.account, m.sectionName, tr.children[2].textContent, m.instrument]
+      .filter(Boolean).join(' ').toLowerCase();
     // 勾选框（批量选择，`docs/14` §14.6.4 八·b）：**默认就有这一格，只是手机段在非 `.picking` 时藏起来**
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -188,11 +236,11 @@ async function loadRows() {
     const action = tr.children[7];
     // 编辑（docs/03 §3.4 + docs/14 §14.5.1，#79）：角色 / 声部 / 状态。换届、毕业/退团都走它
     const editBtn = document.createElement('button');
-    editBtn.className = 'go go-ghost go-sm me-1';
+    editBtn.className = 'go go-ghost go-sm';
     editBtn.textContent = '编辑';
     editBtn.addEventListener('click', () => openEditModal(m));
     const resetBtn = document.createElement('button');
-    resetBtn.className = 'go go-ghost go-sm me-1';
+    resetBtn.className = 'go go-ghost go-sm';
     resetBtn.textContent = '重置密码';
     resetBtn.addEventListener('click', async () => {
       if (!await BAND.confirm({ title: `确定重置 ${m.name} 的密码？`, body: '原密码与登录态立即失效。' })) return;
@@ -200,7 +248,7 @@ async function loadRows() {
       showPassword(pw);
     });
     const kickBtn = document.createElement('button');
-    kickBtn.className = 'go go-ghost go-sm me-1';
+    kickBtn.className = 'go go-ghost go-sm';
     kickBtn.textContent = '踢下线';
     kickBtn.addEventListener('click', async () => {
       if (!await BAND.confirm({ title: `确定把 ${m.name} 踢下线？`, body: '其全部登录态立即失效，但账号状态不变、可重新登录。' })) return;
@@ -233,13 +281,25 @@ async function loadRows() {
       renewBtn.className = 'go go-ghost go-sm';
       renewBtn.textContent = '续期';
       renewBtn.addEventListener('click', () => openHonModal(m, m.honoraryUntil || plusTwoYears(m.leftAt)));
-      action.append(renewBtn);
+      action.appendChild(renewBtn);
     }
     tbody.appendChild(tr);
   }
+  document.getElementById('m-count').textContent =
+    `共 ${d.list.length} 人 · 入团日期就地可改`;
+  applyMemberFilter();                   // 重新加载后保留搜索词，别让过滤结果突然全回来
   BAND.alive(document.getElementById('admin-members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
   updateBulkBar();                       // 重渲染后勾选没了 ⇒ 底部那条的「已选 N 人」跟着归零
 }
+
+function applyMemberFilter() {
+  const q = document.getElementById('m-search').value.trim().toLowerCase();
+  document.querySelectorAll('#admin-members-table tbody tr').forEach((tr) => {
+    tr.hidden = !!q && !(tr.dataset.search || '').includes(q);
+  });
+}
+
+document.getElementById('m-search').addEventListener('input', applyMemberFilter);
 
 function showPassword(pw) {
   document.getElementById('pw-text').textContent = pw;
@@ -300,6 +360,7 @@ function openEditModal(m) {
   stSel.innerHTML = EDIT_STATUS_OPTIONS
     .map((v) => `<option value="${v}">${BAND.statusLabel(v)}</option>`).join('');
   stSel.value = m.status;
+  document.getElementById('edit-instrument').value = m.instrument || '';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('edit-modal')).show();
 }
 
@@ -323,6 +384,12 @@ document.getElementById('edit-save').addEventListener('click', async () => {
           body: '他会被立即踢下线、不能再登录。',
         })) return;
     body.status = status;
+  }
+  const rawInstrument = document.getElementById('edit-instrument').value.trim();
+  if (rawInstrument !== (m.instrument || '')) {
+    // 清空乐器必须带显式标记（#217）：不发 instrument 跟后端"未提供"分不开
+    if (rawInstrument === '') body.clearInstrument = true;
+    else body.instrument = rawInstrument;
   }
   if (!Object.keys(body).length) {
     bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
