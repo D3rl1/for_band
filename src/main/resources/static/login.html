@@ -2,8 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>登录 · 山水民族管弦乐团</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
@@ -16,10 +24,16 @@
    ============================================================ */
 body { margin: 0; background: var(--shell); }
 
-.frame { padding: 22px; }
+.frame {
+  padding:
+    calc(22px + env(safe-area-inset-top, 0px))
+    calc(22px + env(safe-area-inset-right, 0px))
+    calc(22px + env(safe-area-inset-bottom, 0px))
+    calc(22px + env(safe-area-inset-left, 0px));
+}
 .panel {
   display: grid; grid-template-columns: 1fr 1fr;
-  min-height: calc(100vh - 44px);
+  min-height: calc(100vh - 44px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   border: 1.5px solid var(--edge); border-radius: 32px;
   overflow: hidden;
 }
@@ -115,8 +129,17 @@ body { margin: 0; background: var(--shell); }
 
 /* ---------- 窄屏：竖排，表单在上、插画在下收窄 ---------- */
 @media (max-width: 720px) {
-  .frame { padding: 10px; }
-  .panel { grid-template-columns: 1fr; border-radius: 20px; min-height: calc(100vh - 20px); }
+  .frame {
+    padding:
+      calc(10px + env(safe-area-inset-top, 0px))
+      calc(10px + env(safe-area-inset-right, 0px))
+      calc(10px + env(safe-area-inset-bottom, 0px))
+      calc(10px + env(safe-area-inset-left, 0px));
+  }
+  .panel {
+    grid-template-columns: 1fr; border-radius: 20px;
+    min-height: calc(100vh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
   .auth-left { padding: 30px 20px 22px; }
   .auth-h1 { font-size: 26px; margin: 16px 0 6px; }
   .auth-sub { margin-bottom: 20px; }

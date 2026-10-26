@@ -50,6 +50,16 @@ application-prod.yml
 # 建表脚本必须进仓库（表结构以 docs/13 为唯一权威）
 !sql/schema.sql
 
+# ---- Android 壳（android/）----
+# 源码与脚本入库；构建产物、签名钥匙、发布出的安装包不入库。
+android/build/
+android/dist/
+android/keys/
+*.p12
+*.jks
+src/main/resources/static/app/*.apk
+src/main/resources/static/app/version.json
+
 # ---- 操作系统 ----
 Thumbs.db
 Desktop.ini

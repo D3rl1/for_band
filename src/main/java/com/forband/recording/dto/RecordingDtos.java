@@ -16,7 +16,7 @@ public final class RecordingDtos {
      * ⚠️ **刻意没有 `memberId` / `sectionId` 字段**——归属一律取登录身份（`SECURITY.md` A2 的 IDOR 防线）。
      */
     public record CreateRequest(Long fileId, Long pieceId, @Size(max = 64) String title,
-                                Integer durationSec) {
+                                Integer durationSec, Long assignmentId) {
     }
 
     /** 点评：双向（声部长留言、团员追问），**能看见这条录音就能说话**（docs/08 §8.4）。 */
@@ -29,6 +29,7 @@ public final class RecordingDtos {
 
     /** 列表行：**不含磁盘名**；听声音走 `GET /api/files/{fileId}` 的鉴权口。 */
     public record RecordingRow(long id, long memberId, String memberName, String sectionName,
+                               Long assignmentId, String assignmentTitle,
                                Long pieceId, String pieceTitle, String title, long fileId,
                                Integer durationSec, Long sizeBytes, LocalDateTime uploadedAt,
                                int commentCount) {

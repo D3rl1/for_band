@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">山水乐团</string>
+    <string name="pick_file">选择文件</string>
+    <string name="ssl_error">无法安全连接到乐团网站，请检查网络后重试。</string>
+    <string name="no_browser">没有可用的浏览器打开这个链接。</string>
+    <string name="mic_volume_zero">媒体音量为 0，节拍器会听不见。请先调高媒体音量。</string>
+    <string name="update_title">发现新版本 %1$s</string>
+    <string name="update_message">%1$s\n\n下载后请手动安装覆盖，数据会保留。</string>
+    <string name="update_now">去下载</string>
+    <string name="update_later">稍后</string>
+</resources>

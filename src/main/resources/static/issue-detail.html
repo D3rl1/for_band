@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>问题详情 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div id="detail" class="is-dwrap"></div>
+<p id="empty" class="ev-empty"></p>
+
+<script>
+'use strict';
+
+const STATUS = {
+  PENDING: ['待处理', 'pending'],
+  PROCESSING: ['处理中', 'processing'],
+  FIXED: ['已修复', 'fixed'],
+  REJECTED: ['不处理', 'rejected'],
+};
+
+const detailHost = document.getElementById('detail');
+const empty = document.getElementById('empty');
+
+let me = null;
+let issueId = 0;
+let data = null;
+let reacted = false;
+let reactionCount = 0;
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function statusLabel(status) {
+  return (STATUS[status] || [status])[0];
+}
+
+function statusBadge(status) {
+  const meta = STATUS[status] || [status, ''];
+  return el('span', 'is-st is-st-' + meta[1], meta[0]);
+}
+
+function fact(label, value) {
+  const row = el('div', 'is-fact');
+  row.append(el('span', 'is-fact-k', label), el('b', 'is-fact-v', value));
+  return row;
+}
+
+function showEmpty(text) {
+  detailHost.textContent = '';
+  empty.classList.add('show');
+  empty.textContent = text;
+}
+
+/** 正文 / 回帖 / 设备 / 理由一律纯文本（SECURITY.md C3）。 */
+function renderHeader() {
+  const head = el('section', 'is-dhead');
+
+  const back = el('a', 'is-back', '← 问题讨论');
+  back.href = '/issues.html';
+
+  const titleRow = el('div', 'is-dtitle');
+  titleRow.append(el('h2', 'is-dh', data.title), statusBadge(data.status));
+
+  const meta = el('p', 'is-meta',
+    (data.authorName || '（已离团）') + ' · ' + BAND.stamp(data.createdAt)
+    + (data.editedAt ? ' · 已编辑' : ''));
+
+  head.append(back, titleRow, meta);
+  return head;
+}
+
+function renderFacts() {
+  const facts = el('div', 'is-facts');
+  facts.append(fact('运行环境', data.deviceInfo || '未填写'));
+  if (data.pagePath) facts.append(fact('页面', data.pagePath));
+  if (data.statusChangedByName) {
+    facts.append(fact('状态由',
+      data.statusChangedByName + ' · ' + BAND.stamp(data.statusChangedAt)));
+  }
+  return facts;
+}
+
+function renderIssueEdit() {
+  const wrap = el('section', 'is-form-wrap is-hidden');
+  const form = el('form', 'is-form');
+
+  const h = el('div', 'is-form-h');
+  h.append(el('b', '', '编辑问题'), el('span', 'is-form-note', '编辑不会把帖子顶到最上面'));
+  form.appendChild(h);
+
+  const title = el('input', 'inp');
+  title.maxLength = 50;
+  title.required = true;
+  title.value = data.title;
+  const content = el('textarea', 'inp');
+  content.rows = 5;
+  content.maxLength = 2000;
+  content.required = true;
+  content.value = data.content;
+  const device = el('input', 'inp');
+  device.maxLength = 100;
+  device.required = true;
+  device.value = data.deviceInfo || '';
+
+  [
+    ['标题', title], ['正文', content], ['运行环境', device],
+  ].forEach(([labelText, control]) => {
+    form.append(el('label', 'is-label', labelText), control);
+  });
+
+  const acts = el('div', 'is-form-act');
+  const cancel = el('button', 'go go-ghost go-sm', '取消');
+  cancel.type = 'button';
+  const save = el('button', 'go go-sm', '保存');
+  save.type = 'submit';
+  acts.append(cancel, save);
+  form.appendChild(acts);
+
+  cancel.addEventListener('click', () => wrap.classList.add('is-hidden'));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const t = title.value.trim();
+    const c = content.value.trim();
+    const d = device.value.trim();
+    if (!t || !c || !d) {
+      BAND.toast('标题、正文、运行环境都不能为空');
+      return;
+    }
+    try {
+      await BAND.must('/api/issues/' + issueId, {
+        method: 'PUT',
+        body: { title: t, content: c, deviceInfo: d },
+      });
+    } catch (err) {
+      return;
+    }
+    BAND.toast('已保存', 'success');
+    wrap.classList.add('is-hidden');
+    load();
+  });
+
+  wrap.appendChild(form);
+  return wrap;
+}
+
+function renderReaction() {
+  const acts = el('div', 'is-acts');
+
+  if (me.role !== 'HONORARY' && me.id !== data.authorId) {
+    const btn = el('button', 'go go-ghost go-sm');
+    btn.type = 'button';
+    const paint = () => {
+      btn.textContent = (reacted ? '✓ 我也遇到' : '我也遇到') + ' · ' + reactionCount;
+    };
+    paint();
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const r = await BAND.must('/api/issues/' + issueId + '/reaction',
+          { method: reacted ? 'DELETE' : 'POST' });
+        reacted = r.reactedByMe;
+        reactionCount = r.reactionCount;
+        paint();
+      } catch (err) {
+        /* toast 已弹 */
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    acts.appendChild(btn);
+  } else {
+    acts.appendChild(el('span', 'is-react-n', '我也遇到 · ' + reactionCount));
+  }
+
+  if (data.canEdit) {
+    const edit = el('button', 'go go-ghost go-sm', '编辑问题');
+    edit.type = 'button';
+    edit.addEventListener('click', () => {
+      detailHost.querySelector('.is-form-wrap').classList.remove('is-hidden');
+      detailHost.querySelector('.is-form-wrap input').focus();
+    });
+    acts.appendChild(edit);
+  }
+
+  return acts;
+}
+
+function attachCommentEdit(row, body, c) {
+  const btn = el('button', 'is-link', '编辑');
+  btn.type = 'button';
+  btn.addEventListener('click', () => {
+    const ta = el('textarea', 'inp is-cmt-edit');
+    ta.rows = 4;
+    ta.maxLength = 1000;
+    ta.value = c.content;
+    const acts = el('div', 'is-form-act');
+    const cancel = el('button', 'go go-ghost go-sm', '取消');
+    cancel.type = 'button';
+    const save = el('button', 'go go-sm', '保存');
+    save.type = 'button';
+    acts.append(cancel, save);
+
+    body.classList.add('is-hidden');
+    btn.classList.add('is-hidden');
+    row.append(ta, acts);
+
+    cancel.addEventListener('click', () => {
+      ta.remove();
+      acts.remove();
+      body.classList.remove('is-hidden');
+      btn.classList.remove('is-hidden');
+    });
+    save.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) {
+        BAND.toast('回帖不能为空');
+        return;
+      }
+      try {
+        await BAND.must('/api/issues/' + issueId + '/comments/' + c.id, {
+          method: 'PUT',
+          body: { content: text },
+        });
+      } catch (err) {
+        return;
+      }
+      BAND.toast('已保存', 'success');
+      load();
+    });
+  });
+  return btn;
+}
+
+function commentRow(c) {
+  const row = el('div', 'is-cmt' + (c.kind === 'SYSTEM' ? ' is-cmt-sys' : ''));
+
+  const head = el('div', 'is-cmt-h');
+  head.append(el('b', 'is-cmt-w', c.kind === 'SYSTEM' ? '系统' : (c.memberName || '（已离团）')));
+  head.append(el('span', 'is-meta',
+    BAND.stamp(c.createdAt) + (c.editedAt ? ' · 已编辑' : '')));
+  row.appendChild(head);
+
+  if (c.oldStatus || c.newStatus) {
+    row.appendChild(el('p', 'is-cmt-flow',
+      statusLabel(c.oldStatus) + ' → ' + statusLabel(c.newStatus)));
+  }
+
+  const body = el('p', 'is-cmt-b', c.content);
+  row.appendChild(body);
+
+  if (c.kind !== 'SYSTEM' && c.canEdit) {
+    const tools = el('div', 'is-cmt-tools');
+    tools.appendChild(attachCommentEdit(row, body, c));
+    row.appendChild(tools);
+  }
+  return row;
+}
+
+function renderReplies() {
+  const section = el('section', 'is-replies');
+  section.appendChild(el('h3', 'is-sec-h', '回帖 · ' + data.commentCount));
+
+  const list = el('div', 'is-cmt-list');
+  if (!data.comments.length) {
+    list.appendChild(el('p', 'is-hint', '还没有回帖，来说两句吧。'));
+  }
+  for (const c of data.comments) list.appendChild(commentRow(c));
+  section.appendChild(list);
+
+  if (me.role === 'HONORARY') {
+    section.appendChild(el('p', 'is-hint', '荣誉团员只能查看，不能回帖。'));
+    return section;
+  }
+
+  const form = el('form', 'is-form is-reply-form');
+  const ta = el('textarea', 'inp');
+  ta.rows = 4;
+  ta.maxLength = 1000;
+  ta.placeholder = '写回帖…（纯文本，1 ~ 1000 字）';
+  ta.required = true;
+  const acts = el('div', 'is-form-act');
+  const send = el('button', 'go go-sm', '回帖');
+  send.type = 'submit';
+  acts.appendChild(send);
+  form.append(ta, acts);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = ta.value.trim();
+    if (!text) {
+      BAND.toast('回帖不能为空');
+      return;
+    }
+    try {
+      await BAND.must('/api/issues/' + issueId + '/comments', {
+        method: 'POST',
+        body: { content: text },
+      });
+    } catch (err) {
+      return;
+    }
+    ta.value = '';
+    load();
+  });
+
+  section.appendChild(form);
+  return section;
+}
+
+/** 改状态只给管理员（docs/15 §15.4）；团长、声部长都不渲染这块。 */
+function renderStatusPanel() {
+  const section = el('section', 'is-status-panel');
+  section.appendChild(el('h3', 'is-sec-h', '改状态'));
+
+  const form = el('form', 'is-form');
+  const select = el('select', 'inp');
+  BAND.fillSelect(select, Object.keys(STATUS).map((key) => ({
+    value: key, label: STATUS[key][0],
+  })));
+  select.value = data.status;
+
+  const reason = el('textarea', 'inp');
+  reason.rows = 2;
+  reason.maxLength = 255;
+  reason.placeholder = '说明（纯文本）。「不处理」必须填，1 ~ 255 字。';
+
+  form.append(el('label', 'is-label', '新状态'), select,
+    el('label', 'is-label', '说明'), reason);
+
+  const acts = el('div', 'is-form-act');
+  const save = el('button', 'go go-sm', '保存状态');
+  save.type = 'submit';
+  acts.appendChild(save);
+  form.appendChild(acts);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const next = select.value;
+    const text = reason.value.trim();
+    if (next === data.status) {
+      BAND.toast('状态没有变化', 'success');
+      return;
+    }
+    if (next === 'REJECTED' && !text) {
+      BAND.toast('「不处理」必须写说明');
+      return;
+    }
+    try {
+      await BAND.must('/api/issues/' + issueId + '/status', {
+        method: 'PUT',
+        body: { status: next, reason: text || null },
+      });
+    } catch (err) {
+      return;
+    }
+    BAND.toast('状态已更新', 'success');
+    load();
+  });
+
+  section.appendChild(form);
+  return section;
+}
+
+function render() {
+  detailHost.textContent = '';
+  empty.classList.remove('show');
+  document.title = data.title + ' · 问题讨论 · 乐团管理系统';
+
+  detailHost.appendChild(renderHeader());
+  detailHost.appendChild(renderFacts());
+
+  const body = el('p', 'is-body', data.content);
+  detailHost.appendChild(body);
+
+  if (data.canEdit) detailHost.appendChild(renderIssueEdit());
+  detailHost.appendChild(renderReaction());
+
+  detailHost.appendChild(renderReplies());
+  if (me.role === 'ADMIN') detailHost.appendChild(renderStatusPanel());
+}
+
+async function load() {
+  me = await BAND.renderNav('issues.html');
+  if (!me) return;
+
+  BAND.issueActivity().then((latest) => BAND.markIssueSeen(latest));
+
+  const raw = new URLSearchParams(location.search).get('id');
+  issueId = Number(raw);
+  if (!raw || !Number.isInteger(issueId) || issueId <= 0) {
+    showEmpty('问题不存在。');
+    return;
+  }
+
+  try {
+    data = await BAND.must('/api/issues/' + issueId);
+  } catch (err) {
+    showEmpty('问题不存在，或它已被删除。');
+    return;
+  }
+  reacted = data.reactedByMe;
+  reactionCount = data.reactionCount;
+  render();
+}
+
+load();
+</script>
+</body>
+</html>

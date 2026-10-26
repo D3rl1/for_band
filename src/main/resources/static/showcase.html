@@ -2,8 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>我们的专场 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
 <!-- ⚠️ **先铺黑底**（docs/14 §14.6.4）：入场编排是拆两页的，A 段在 concerts.html 上把黑幕合拢、
     黑透之后才换纸到这一页 —— 首页首帧若不是黑的，换纸那一下就会**闪一下白**，整段就散了。
      写在 `<link>` 之前，保证第一帧就生效。 -->
@@ -103,7 +111,10 @@ setTimeout(function () {
 <!-- 专注单图（点轮播里的一张 → 放大 + 文案全文；**退出回到刚才那张**） -->
 <div class="sc-focus" id="sc-focus">
   <button class="sc-cls" id="sc-focus-close" type="button">关闭</button>
-  <div class="sc-big" id="sc-big"></div>
+  <button class="sc-zoomreset" id="sc-zoomreset" type="button" hidden title="还原到原始大小">1:1</button>
+  <div class="sc-view" id="sc-view">
+    <img class="sc-big" id="sc-big" alt="专场照片" draggable="false">
+  </div>
   <div class="sc-note"><div class="sc-who">策展文案</div><div id="sc-note-tx"></div></div>
 </div>
 
@@ -153,40 +164,71 @@ function buildStops(nodes) {
       openYear(n.year, rect);
     });
   }
+  cacheBgGeometry();          // 节点刚建完，趁布局已定把背景判据缓存好
 }
 
 /** 浮现（定档 A · 上浮，docs/17 §17.6）：初始 opacity:0 + translateY(26px)，进视口回原位。
     `rootMargin` 下边收 12% —— 不收的话"刚沾到屏幕下缘"就算进来，滚动时会看到它半露着开始动。 */
+let revealIO = null;
 function reveal() {
+  if (revealIO) { revealIO.disconnect(); revealIO = null; }
   const stops = [...els.tl.querySelectorAll('.sc-stop')];
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
     stops.forEach((s) => s.classList.add('in'));      // 降级：不做浮现，但节点一样都在
     return;
   }
-  const io = new IntersectionObserver((es) => {
+  revealIO = new IntersectionObserver((es) => {
     es.forEach((e) => { if (e.isIntersecting) e.target.classList.add('in'); });
   }, { rootMargin: '0px 0px -12% 0px' });
-  stops.forEach((s) => io.observe(s));
+  stops.forEach((s) => revealIO.observe(s));
 }
 
 /** 背景换图（docs/17 §17.4）：判据 = **节点中心越过视口中线**，取"最后一个已越过的"；
-    页面刚打开时取第一个。交叉淡入 = 让另一层来淡入、旧层淡出（不是硬切）。 */
-const bgState = { top: 0, shown: null };
+    页面刚打开时取第一个。交叉淡入 = 让另一层来淡入、旧层淡出（不是硬切）。
+    ⚠️ 手机末节点下方还有 16vh 尾距 + 寄语 + 回归链接 ⇒ **触底时必须强制最后一张**，
+    否则最后一个节点的中心永远越不过中线，最后一张背景永远不出现。
+    ⚠️ 节点中心只在构建 / resize / 字体就绪时算一次并缓存，滚动帧里**零次**
+    `getBoundingClientRect()` —— 原来每帧对每个节点量一次，是手机端"粘滞"的主因。 */
+const bgState = { top: 0, shown: null, idx: -1 };
+const bgGeom = { centers: [] };
+let bgSeq = 0;
+
+function cacheBgGeometry() {
+  const y = window.scrollY;
+  bgGeom.centers = [...els.tl.querySelectorAll('.sc-stop')].map((s) => {
+    const r = s.getBoundingClientRect();
+    return r.top + y + r.height / 2;      // 文档坐标：与当前滚动位置无关
+  });
+}
+
 function syncBg() {
   const stops = [...els.tl.querySelectorAll('.sc-stop')];
   if (!stops.length) return;
-  const mid = window.innerHeight / 2;
-  let cur = stops[0];
-  for (const s of stops) {
-    const r = s.getBoundingClientRect();
-    if (r.top + r.height / 2 <= mid) cur = s;
+  if (bgGeom.centers.length !== stops.length) cacheBgGeometry();
+  const y = window.scrollY;
+  const vh = window.innerHeight;
+  const max = document.documentElement.scrollHeight - vh;
+  const atBottom = y + vh >= max - 1;
+  const mid = y + vh / 2;
+  let idx = 0;
+  for (let i = 0; i < bgGeom.centers.length; i++) {
+    if (bgGeom.centers[i] <= mid) idx = i;
   }
+  if (atBottom) idx = stops.length - 1;   // 触底兜底：最后一张一定出现
+  // 4px 滞后：中线正好压在两个节点交界时别来回闪（触底是硬判据，不参与滞后）
+  if (!atBottom && bgState.idx >= 0 && idx !== bgState.idx
+      && Math.abs(mid - bgGeom.centers[idx]) < 4) idx = bgState.idx;
+  const cur = stops[idx];
   const year = cur.dataset.year;
-  if (year === bgState.shown) return;
-  bgState.shown = year;
-  const next = 1 - bgState.top;
   const fileId = Number(cur.querySelector('.sc-stop-img').dataset.fileId);
+  const key = year + ':' + fileId;        // 同一年换了封面也要换背景
+  if (key === bgState.shown) { bgState.idx = idx; return; }
+  bgState.shown = key;
+  bgState.idx = idx;
+  const next = 1 - bgState.top;
+  const seq = ++bgSeq;
   photoUrl(fileId).then((u) => {
+    if (seq !== bgSeq) return;            // 快速滚动：旧请求后到不许盖新图
     const layer = els.layers[next];
     // ⚠️ 改完要**逼一帧**再淡入，否则浏览器把"设图 + 加 class"合成一步、过渡根本不跑
     if (u) layer.style.backgroundImage = 'url(' + u + ')';
@@ -202,8 +244,19 @@ function onScroll() {
   if (bgRaf) return;
   bgRaf = requestAnimationFrame(() => { bgRaf = null; syncBg(); });
 }
+let recacheTimer = 0;
+function recacheBg() {
+  clearTimeout(recacheTimer);
+  recacheTimer = setTimeout(() => { cacheBgGeometry(); syncBg(); }, 150);
+}
 window.addEventListener('scroll', onScroll, { passive: true });
-window.addEventListener('resize', onScroll);
+window.addEventListener('resize', recacheBg);
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => { cacheBgGeometry(); syncBg(); });
+}
+if (window.ResizeObserver) {
+  new ResizeObserver(() => recacheBg()).observe(els.tl);
+}
 
 /* ---------- 入场编排 B 段（docs/14 §14.6.4；形态的真值 = design-samples/showcase-mock.html）
    ⚠️ 这是全项目**唯一**允许的"长转场"（约 6s，远超 §14.6.6 的 300–500ms）——那边开了
@@ -368,7 +421,9 @@ const stage = document.getElementById('sc-stage');
 const bandwrap = document.getElementById('sc-bandwrap');
 const strip = document.getElementById('sc-strip');
 const focus = document.getElementById('sc-focus');
+const view = document.getElementById('sc-view');
 const big = document.getElementById('sc-big');
+const resetBtn = document.getElementById('sc-zoomreset');
 const noteTx = document.getElementById('sc-note-tx');
 const COPIES = 3;
 let cards = [];
@@ -376,6 +431,11 @@ let curPhotos = [];
 let N = 0, step = 422, cycle = 0, centerOffset = 0;
 let pos = 0, shown = 0, dragging = false, lastX = 0, crRaf = null;
 let lastIndex = 0, downItem = null, moved = 0, openCoverFrom = null, closeTimer = null;
+let focusSeq = 0;
+let zoom = 1, panX = 0, panY = 0;
+let pinch = null, focusDrag = null;
+let lastTap = { t: 0, x: 0, y: 0 };
+const pointers = new Map();
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -539,16 +599,68 @@ function endDrag() {
 strip.addEventListener('pointerup', endDrag);
 strip.addEventListener('pointercancel', endDrag);
 
-/* ---------- 专注单图 ---------- */
+/* ---------- 专注单图 + 放大 ----------
+   大图用 <img> 的自然比例（contain）显示；缩放只改图片 transform，不改布局。
+   1x 时 view 是 touch-action:pan-y（专注层还能纵向滚），放大后切 none 交给拖动。 */
+function applyFocus() {
+  const on = zoom > 1.001;
+  big.style.transform = on || panX || panY
+    ? 'translate3d(' + panX.toFixed(2) + 'px,' + panY.toFixed(2) + 'px,0) scale(' + zoom.toFixed(4) + ')'
+    : '';
+  view.classList.toggle('zoomed', on);
+  resetBtn.hidden = !on;
+}
+
+function clampFocusPan() {
+  const vw = view.clientWidth, vh = view.clientHeight;
+  const bw = big.clientWidth, bh = big.clientHeight;
+  const mx = Math.max(0, (bw * zoom - vw) / 2);
+  const my = Math.max(0, (bh * zoom - vh) / 2);
+  panX = Math.max(-mx, Math.min(mx, panX));
+  panY = Math.max(-my, Math.min(my, panY));
+}
+
+/** 以 (fx, fy)（相对 view 左上角）为焦点缩到 next；T1 = f - k*(f - T0)。 */
+function zoomFocusAt(fx, fy, next) {
+  const nz = Math.max(1, Math.min(6, next));
+  if (Math.abs(nz - zoom) < 1e-4) { clampFocusPan(); applyFocus(); return; }
+  const px = fx - view.clientWidth / 2;
+  const py = fy - view.clientHeight / 2;
+  const k = nz / zoom;
+  panX = px - (px - panX) * k;
+  panY = py - (py - panY) * k;
+  zoom = nz;
+  clampFocusPan();
+  applyFocus();
+}
+
+function resetFocusZoom() {
+  zoom = 1; panX = 0; panY = 0;
+  pinch = null; focusDrag = null; pointers.clear();
+  lastTap = { t: 0, x: 0, y: 0 };
+  applyFocus();
+}
+
 function openFocus(i) {
   lastIndex = i;
   const p = curPhotos[i];
-  photoUrl(p.fileId).then((u) => { if (u) big.style.backgroundImage = 'url(' + u + ')'; });
+  const seq = ++focusSeq;
   noteTx.textContent = p.note || '（这张没有配文案）';
+  big.alt = p.note ? p.note.slice(0, 40) : '专场照片';
+  big.classList.remove('ready');
+  big.removeAttribute('src');
+  resetFocusZoom();
   focus.classList.add('open');
   setScrollLock('focus', true);             // ⚠️ 同上：这一层也盖满了屏（#93 ②）
+  photoUrl(p.fileId).then((u) => {
+    if (seq !== focusSeq || !u) return;
+    big.src = u;
+    if (big.complete && big.naturalWidth) big.classList.add('ready');
+  });
 }
 function closeFocus() {
+  focusSeq++;
+  resetFocusZoom();
   focus.classList.remove('open');
   setScrollLock('focus', false);            // 关一层只解一把锁：轮播那层若还开着，页面仍然锁着
   // ⚠️ 退出回到**刚才那张**（不是第一张）：把唯一状态对齐到刚点开的索引
@@ -556,6 +668,116 @@ function closeFocus() {
   shown = pos;
   render();
 }
+
+big.addEventListener('load', () => {
+  if (!big.getAttribute('src')) return;
+  big.classList.add('ready');
+  clampFocusPan();
+  applyFocus();
+});
+big.addEventListener('error', () => big.classList.remove('ready'));
+
+view.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  try { view.setPointerCapture(e.pointerId); } catch (e2) { /* 忽略 */ }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) {
+    focusDrag = {
+      id: e.pointerId, sx: e.clientX, sy: e.clientY,
+      px: panX, py: panY, moved: false, t: performance.now(),
+    };
+    if (zoom > 1.001) view.classList.add('grabbing');
+  } else if (pointers.size === 2) {
+    focusDrag = null;
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      r: view.getBoundingClientRect(),
+      d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      z0: zoom,
+      mx0: (a.x + b.x) / 2, my0: (a.y + b.y) / 2,
+      px: panX, py: panY,
+    };
+    view.classList.add('grabbing');
+  }
+});
+
+window.addEventListener('pointermove', (e) => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  p.x = e.clientX; p.y = e.clientY;
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const next = Math.max(1, Math.min(6, pinch.z0 * d / pinch.d0));
+    const fx = pinch.mx0 - (pinch.r.left + pinch.r.width / 2);
+    const fy = pinch.my0 - (pinch.r.top + pinch.r.height / 2);
+    const k = next / pinch.z0;
+    panX = fx - (fx - pinch.px) * k + (mx - pinch.mx0);
+    panY = fy - (fy - pinch.py) * k + (my - pinch.my0);
+    zoom = next;
+    clampFocusPan(); applyFocus();
+    e.preventDefault();
+    return;
+  }
+  if (!focusDrag || focusDrag.id !== e.pointerId) return;
+  const dx = e.clientX - focusDrag.sx;
+  const dy = e.clientY - focusDrag.sy;
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) focusDrag.moved = true;
+  if (zoom > 1.001) {
+    panX = focusDrag.px + dx;
+    panY = focusDrag.py + dy;
+    clampFocusPan(); applyFocus();
+    e.preventDefault();
+  }
+}, { passive: false });
+
+function endFocusPointer(e, cancelled) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  const now = performance.now();
+  const hadPinch = !!pinch;
+  if (pointers.size === 0) {
+    pinch = null;
+    view.classList.remove('grabbing');
+    if (!cancelled && !hadPinch && focusDrag && focusDrag.id === e.pointerId
+        && !focusDrag.moved && now - focusDrag.t < 320) {
+      if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 32) {
+        lastTap = { t: 0, x: 0, y: 0 };
+        if (zoom > 1.001) {
+          resetFocusZoom();
+        } else {
+          const r = view.getBoundingClientRect();
+          const fit = r.height / Math.max(1, big.clientHeight) * .85;
+          zoomFocusAt(e.clientX - r.left, e.clientY - r.top, Math.min(6, Math.max(2.5, fit)));
+        }
+      } else {
+        lastTap = { t: now, x: e.clientX, y: e.clientY };
+      }
+    }
+    focusDrag = null;
+  } else if (pointers.size === 1) {
+    pinch = null;
+    const [id, p] = [...pointers.entries()][0];
+    focusDrag = { id, sx: p.x, sy: p.y, px: panX, py: panY, moved: true, t: now };
+  }
+}
+window.addEventListener('pointerup', (e) => endFocusPointer(e, false));
+window.addEventListener('pointercancel', (e) => endFocusPointer(e, true));
+
+view.addEventListener('wheel', (e) => {
+  if (!focus.classList.contains('open')) return;
+  e.preventDefault();
+  const r = view.getBoundingClientRect();
+  zoomFocusAt(e.clientX - r.left, e.clientY - r.top, zoom * Math.exp(-e.deltaY * .0015));
+}, { passive: false });
+
+resetBtn.addEventListener('click', resetFocusZoom);
+window.addEventListener('resize', () => {
+  if (!focus.classList.contains('open')) return;
+  clampFocusPan();
+  applyFocus();
+});
 
 document.getElementById('sc-stage-close').addEventListener('click', closeStage);
 document.getElementById('sc-focus-close').addEventListener('click', closeFocus);
@@ -566,7 +788,42 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('resize', measureStep);
 
-async function load() {
+/* ---------- 进入 / 切回：静默更新 ---------- */
+let booted = false;
+let timelineSig = '';
+let refreshBusy = false;
+
+async function refreshTimeline() {
+  if (!booted || refreshBusy || document.visibilityState !== 'visible') return;
+  refreshBusy = true;
+  try {
+    const nodes = await BAND.must('/api/showcase/timeline');
+    const sig = JSON.stringify(nodes);
+    if (sig === timelineSig) return;
+    timelineSig = sig;
+    els.tl.querySelectorAll('.sc-stop').forEach((n) => n.remove());
+    els.empty.hidden = nodes.length > 0;
+    if (!nodes.length) {
+      els.layers.forEach((l) => l.classList.remove('on'));
+      els.bg.dataset.year = '';
+      bgState.shown = null;
+      bgState.idx = -1;
+      bgGeom.centers = [];
+      return;
+    }
+    buildStops(nodes);       // 内部会重算背景坐标
+    reveal();
+    syncBg();
+  } catch (e) {
+    // 静默：切回时网络抖动不该打断看照片；下一次切回再试
+  } finally {
+    refreshBusy = false;
+  }
+}
+
+// ⚠️ 不能叫 load：顶层函数声明会挂到 window，band-shell.js 的 refresher() 会把
+//    window.load 当成刷新器 ⇒ 这一页会意外出现下拉刷新。本页明确不要手动刷新。
+async function bootShowcase() {
   const me = await BAND.renderNav('showcase.html');
   // 全屏浮层挂到 `body` 上（照 `announce()` 的先例）：不参与正文流，层级也不必跟侧栏那条纠缠。
   // ⚠️ 必须**等 `renderNav` 之后**再搬：它里面的 `mountSkeleton` 会把 `#navbar` 之后的节点整体搬进 `.main`，
@@ -574,15 +831,21 @@ async function load() {
   document.body.append(stage, focus);
   if (!me) { finishIntro(); return; }        // 401 已在 api() 里跳登录；这里只保证黑幕不留下
   const nodes = await BAND.must('/api/showcase/timeline');
+  timelineSig = JSON.stringify(nodes);
   runIntro();                                // 编排与取数**并行**：黑幕揭开时页面已经就位
   els.empty.hidden = nodes.length > 0;
-  if (!nodes.length) return;
-  buildStops(nodes);
-  reveal();
-  syncBg();
+  if (nodes.length) {
+    buildStops(nodes);
+    reveal();
+    syncBg();
+  }
+  booted = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshTimeline();
+  });
 }
 
-load();
+bootShowcase();
 </script>
 </body>
 </html>

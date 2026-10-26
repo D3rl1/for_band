@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  * **可见性一律走 {@link RecordingVisibility}**（列表在查询层收口、详情与点评再判一次、
  * 文件流由 {@link RecordingFileAccessRule} 复用同一条）——这是本模块唯一的权限来源。
  * <p>
- * 时长上限 3 分钟（暂定 T5）**只能在前端拦**：服务端不解析音频（不引库、不转码），
+ * 时长上限 8 分钟（T5；**只计真正录进去的时间，暂停不计**）**只能在前端拦**：服务端不解析音频（不引库、不转码），
  * 所以这里只校验格式（文件接口按文件头嗅探）与大小。想真拦住得在服务端解析音频，本期不做。
  */
 @Service
@@ -48,11 +48,13 @@ public class RecordingService {
     private final MemberMapper memberMapper;
     private final SectionMapper sectionMapper;
     private final PermissionService permissionService;
+    private final RecordingAssignmentService assignmentService;
 
     public RecordingService(RecordingMapper recordingMapper, RecordingCommentMapper commentMapper,
                             RecordingVisibility visibility, FileService fileService,
                             PieceMapper pieceMapper, MemberMapper memberMapper,
-                            SectionMapper sectionMapper, PermissionService permissionService) {
+                            SectionMapper sectionMapper, PermissionService permissionService,
+                            RecordingAssignmentService assignmentService) {
         this.recordingMapper = recordingMapper;
         this.commentMapper = commentMapper;
         this.visibility = visibility;
@@ -61,6 +63,7 @@ public class RecordingService {
         this.memberMapper = memberMapper;
         this.sectionMapper = sectionMapper;
         this.permissionService = permissionService;
+        this.assignmentService = assignmentService;
     }
 
     /**
@@ -101,19 +104,28 @@ public class RecordingService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "缺少 fileId（先调 POST /api/files）");
         }
         StoredFile file = fileService.require(request.fileId());
-        if (request.pieceId() != null && pieceMapper.selectById(request.pieceId()) == null) {
+        Long assignmentId = null;
+        Long pieceId = request.pieceId();
+        if (request.assignmentId() != null) {
+            // 关联作业时曲目以作业为准（作业无曲目 = 基本功，就写 null），客户端传的 pieceId 忽略
+            RecordingAssignment assignment =
+                    assignmentService.requireUsableAssignment(request.assignmentId(), uploader);
+            assignmentId = assignment.getId();
+            pieceId = assignment.getPieceId();
+        } else if (pieceId != null && pieceMapper.selectById(pieceId) == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "曲目不存在");
         }
         Recording row = new Recording();
         // ⚠️ 归属只认登录身份：客户端传什么都不看（DTO 里压根没有 memberId/sectionId 两个字段）
         row.setMemberId(uploader.memberId());
         row.setSectionId(uploader.sectionId());   // 冗余列；指挥/团长没有声部 → 为空
-        row.setPieceId(request.pieceId());
+        row.setAssignmentId(assignmentId);
+        row.setPieceId(pieceId);
         row.setTitle(request.title());
         row.setFileId(file.getId());
         row.setDurationSec(request.durationSec());
         row.setSizeBytes(file.getSizeBytes());
-        row.setUploadedAt(LocalDateTime.now());
+        row.setUploadedAt(LocalDateTime.now(RecordingAssignmentService.ZONE));
         recordingMapper.insert(row);
         return toRow(row);
     }
@@ -180,11 +192,13 @@ public class RecordingService {
         com.forband.piece.Piece piece = row.getPieceId() == null ? null
                 : pieceMapper.selectById(row.getPieceId());
         String pieceTitle = piece == null ? null : piece.getTitle();
+        String assignmentTitle = assignmentService.titleOf(row.getAssignmentId());
         Long comments = commentMapper.selectCount(new LambdaQueryWrapper<RecordingComment>()
                 .eq(RecordingComment::getRecordingId, row.getId()));
         return new RecordingRow(row.getId(), row.getMemberId(),
                 member == null ? null : member.getName(),
                 section == null ? null : section.getName(),
+                row.getAssignmentId(), assignmentTitle,
                 row.getPieceId(), pieceTitle, row.getTitle(), row.getFileId(),
                 row.getDurationSec(), row.getSizeBytes(), row.getUploadedAt(),
                 comments == null ? 0 : comments.intValue());

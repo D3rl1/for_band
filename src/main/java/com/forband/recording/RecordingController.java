@@ -2,10 +2,17 @@ package com.forband.recording;
 
 import com.forband.auth.CurrentUser;
 import com.forband.auth.RequireRole;
+import com.forband.auth.Role;
 import com.forband.common.ApiResponse;
 import com.forband.common.PageResult;
 import com.forband.log.OpAction;
 import com.forband.log.OpLog;
+import com.forband.recording.dto.RecordingAssignmentDtos.AssignmentView;
+import com.forband.recording.dto.RecordingAssignmentDtos.CreateAssignmentRequest;
+import com.forband.recording.dto.RecordingAssignmentDtos.CurrentAssignmentView;
+import com.forband.recording.dto.RecordingAssignmentDtos.ManageView;
+import com.forband.recording.dto.RecordingAssignmentDtos.UpdateAssignmentRequest;
+import com.forband.recording.dto.RecordingAssignmentDtos.WeekView;
 import com.forband.recording.dto.RecordingDtos.CommentRequest;
 import com.forband.recording.dto.RecordingDtos.CommentView;
 import com.forband.recording.dto.RecordingDtos.CreateRequest;
@@ -16,10 +23,13 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 练习录音（docs/08 §8.3）。可见性（团员仅自己 / 声部长本声部 / 指挥·团长·管理员全部）**全部在服务层收口**，
@@ -32,9 +42,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class RecordingController {
 
     private final RecordingService recordingService;
+    private final RecordingAssignmentService assignmentService;
 
-    public RecordingController(RecordingService recordingService) {
+    public RecordingController(RecordingService recordingService,
+                               RecordingAssignmentService assignmentService) {
         this.recordingService = recordingService;
+        this.assignmentService = assignmentService;
     }
 
     /** `?memberId=&sectionId=&pieceId=` 只是**筛选**，缩不了权限（服务层还会再套可见性白名单）。 */
@@ -47,6 +60,54 @@ public class RecordingController {
             @RequestParam(defaultValue = "20") int size,
             CurrentUser viewer) {
         return ApiResponse.ok(recordingService.page(memberId, sectionId, pieceId, page, size, viewer));
+    }
+
+    /** 录音管理视图（docs/08 §8.3）：声部长在服务层被强制收窄到本声部。 */
+    @GetMapping("/manage")
+    @RequireRole({Role.ADMIN, Role.LEADER, Role.CONDUCTOR, Role.SECTION_LEADER})
+    public ApiResponse<ManageView> manage(@RequestParam(required = false) String weekStart,
+                                          CurrentUser viewer) {
+        return ApiResponse.ok(assignmentService.manage(weekStart, viewer));
+    }
+
+    /** 历史周列表：`before` 缺省本周一（严格早于它），`limit` 缺省 12（夹 1–52）。 */
+    @GetMapping("/manage/weeks")
+    @RequireRole({Role.ADMIN, Role.LEADER, Role.CONDUCTOR, Role.SECTION_LEADER})
+    public ApiResponse<List<WeekView>> weeks(@RequestParam(required = false) String before,
+                                             @RequestParam(required = false) Integer limit,
+                                             CurrentUser viewer) {
+        return ApiResponse.ok(assignmentService.weeks(before, limit, viewer));
+    }
+
+    /** 上传表单用：本人当前声部**本周**的作业（任何登录角色都能拿，没有声部就返回空）。 */
+    @GetMapping("/assignments/current")
+    public ApiResponse<List<CurrentAssignmentView>> currentAssignments(CurrentUser user) {
+        return ApiResponse.ok(assignmentService.currentAssignments(user));
+    }
+
+    /** 布置本周作业；声部长只能布置本声部（服务层判，藏按钮不算权限）。 */
+    @PostMapping("/assignments")
+    @RequireRole({Role.ADMIN, Role.LEADER, Role.CONDUCTOR, Role.SECTION_LEADER})
+    public ApiResponse<AssignmentView> createAssignment(
+            @RequestBody @Valid CreateAssignmentRequest request, CurrentUser user) {
+        return ApiResponse.ok(assignmentService.create(request, user));
+    }
+
+    /** 修改本周作业：已有提交时只许改标题。 */
+    @PutMapping("/assignments/{id}")
+    @RequireRole({Role.ADMIN, Role.LEADER, Role.CONDUCTOR, Role.SECTION_LEADER})
+    public ApiResponse<AssignmentView> updateAssignment(@PathVariable long id,
+                                                        @RequestBody @Valid UpdateAssignmentRequest request,
+                                                        CurrentUser user) {
+        return ApiResponse.ok(assignmentService.update(id, request, user));
+    }
+
+    /** 删除本周作业：已有任意录音关联时拒绝，并说明已有几人提交。 */
+    @DeleteMapping("/assignments/{id}")
+    @RequireRole({Role.ADMIN, Role.LEADER, Role.CONDUCTOR, Role.SECTION_LEADER})
+    public ApiResponse<Void> deleteAssignment(@PathVariable long id, CurrentUser user) {
+        assignmentService.delete(id, user);
+        return ApiResponse.ok();
     }
 
     @GetMapping("/{id}")

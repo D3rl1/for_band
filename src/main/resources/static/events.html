@@ -2,8 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>活动 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
@@ -143,13 +151,15 @@ function todayStr() {
 }
 function isToday(dateStr) { return dateStr === todayStr(); }
 
-/* 本周 / 下周 / 稍后 / 更早 —— 以今天所在一周（周一起）为「本周」 */
+/* 本周 / 下周 / 稍后 / 更早 —— 以今天所在一周（周一起）为「本周」。
+   ⚠️ 顺序是「近期优先」：本周 → 下周 → 稍后 → 更早（历史压底），不要改回按时间正序。
+   「更早」组内部由近到远（`desc`），越早的活动越靠下。 */
 function groupOf(dateStr) {
   const t = new Date(todayStr() + 'T12:00');
   const d = new Date(dateStr + 'T12:00');
   const mon = new Date(t); mon.setDate(t.getDate() - ((t.getDay() + 6) % 7));
   const diff = Math.round((d - mon) / 86400000);
-  if (diff < 0) return { key: 'past', label: '更早', order: 0 };
+  if (diff < 0) return { key: 'past', label: '更早', order: 4, desc: true };
   if (diff < 7) return { key: 'this', label: '本周', order: 1 };
   if (diff < 14) return { key: 'next', label: '下周', order: 2 };
   return { key: 'later', label: '稍后', order: 3 };
@@ -271,6 +281,7 @@ function renderList(list) {
   const ordered = Object.values(groups).sort((a, b) => a.meta.order - b.meta.order);
 
   for (const g of ordered) {
+    if (g.meta.desc) g.items.reverse();   // 「更早」：全局正序已按时间排过，反转即由近到远
     const sec = document.createElement('section');
     sec.className = 'ev-group';
     sec.innerHTML = `<div class="g-h"><span class="t">${g.meta.label}</span><i class="ln"></i><span class="c">${g.items.length} 场</span></div>`;

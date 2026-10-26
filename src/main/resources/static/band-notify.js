@@ -16,6 +16,46 @@ Object.assign(BAND, {
   },
 
   /**
+   * 「问题讨论」的板级最新动态（docs/15 §15.11）：`GET /api/issues/activity` 的 `latestUpdatedAt`。
+   * **一次页面生命周期只拉一次**（`renderNav` 会跑两遍、红点与页面已读都要问同一件事）。
+   */
+  issueActivity() {
+    if (!this._issueActivity) {
+      this._issueActivity = this.api('/api/issues/activity')
+        .then((envelope) => (envelope.code === 0 && envelope.data
+          ? envelope.data.latestUpdatedAt : null))
+        .catch(() => null);
+    }
+    return this._issueActivity;
+  },
+
+  /** 本机读到的「问题讨论」最新动态（设备级，同 `band_seen_release`）。 */
+  seenIssueActivity() {
+    try {
+      return localStorage.getItem('band_seen_issue_activity') || '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  /** 有没有未读：服务器值更新，或本机从没记过（首次使用也算一次未读）。 */
+  issueUnread() {
+    return this.issueActivity().then((latest) => {
+      if (!latest) return false;
+      const seen = this.seenIssueActivity();
+      return !seen || String(latest) > seen;
+    });
+  },
+
+  /** 打开 `issues.html` / `issue-detail.html` 后把当前值写回本机，并立刻熄灭导航红点。 */
+  markIssueSeen(latest) {
+    if (!latest) return;
+    try { localStorage.setItem('band_seen_issue_activity', String(latest)); } catch (e) { /* 忽略 */ }
+    const dot = document.querySelector('.rail .menu a[href="/issues.html"] .ndot');
+    if (dot) dot.hidden = true;
+  },
+
+  /**
    * 生日通告"今天弹过没"（docs/14 §14.6.4「生日通告」）：**设备级、记的是日期**，
    * 值与今天相等就不再弹。代价与公告同一口径：清浏览器数据 / 换设备会再弹一次（已知、可接受）。
    */
@@ -76,7 +116,8 @@ Object.assign(BAND, {
 
   /**
    * 右上角操作区（`docs/14` §14.6.4「右上角操作区（铃铛 + 信封）」）：
-   * **铃铛**（原「反馈 + 更新」两个汉字入口**合并成一个**，点开小面板两项）+ **信封**（上任声部长的留言）。
+   * **铃铛**（原「反馈 + 更新」两个汉字入口**合并成一个**；#227 起点开只剩「更新公告」一项）+
+   * **信封**（上任声部长的留言）。
    * ⚠️ 2026-09-30（`交接单 #118`）用户原话：「**其它两个合并在一起呗，放个单色铃铛**，
    * 然后声部长留言就放信封图标」。**这不是把已有的挪个位置，是把两个入口收成一个。**
    * ⚠️ **都不带文字**（用户原话「单独摆个字在这也不好看」）⇒ **`aria-label` 是它们唯一的可读名**，
@@ -98,7 +139,7 @@ Object.assign(BAND, {
     bell.setAttribute('aria-expanded', 'false');
     bell.innerHTML = '<span class="hact-ic" aria-hidden="true">' + this.iconSvg('bell') + '</span>'
       + '<span class="hact-dot" hidden></span>';
-    bell.addEventListener('click', () => this.openHeadPanel(bell, me));
+    bell.addEventListener('click', () => this.openHeadPanel(bell));
     host.appendChild(bell);
     if (me.everSectionLeader) {
       // ⭐ **条件渲染**（`docs/03` §3.5）：只有**历任与现任声部长**看得到信封——
@@ -148,14 +189,11 @@ Object.assign(BAND, {
     });
   },
 
-  /** 铃铛点开的小面板（`docs/14` §14.6.4）：两项，**按角色条件渲染**——
-   *  「更新公告」（进 `updates.html`，未读时这一行带小红点）+「提反馈」（开反馈浮层）。
-   *  ⚠️ **荣誉团员只渲染第一行**（提反馈是"动作"、不是只读 ⇒ 防腐条款不给，`docs/02` §2.3）；
-   *  仍保留"点开面板"这一个交互，不为此另开分支。
-   *  ⚠️ **层级沿用「个人栏」那一档（遮罩 490 / 面板 500）**，不新造一档；
-   *  「提反馈」开的 bootstrap modal 默认 1055，天然在其上。
-   *  关闭：点任意处 / `Esc`（与反馈浮层、个人栏同一条规矩：**绝不能不让人关**）；再点铃铛 = 收起。 */
-  openHeadPanel(bell, me) {
+  /** 铃铛点开的小面板（`docs/14` §14.6.4）：**只剩「更新公告」一项**（#227 起）。
+   *  提问题改走主导航「问题讨论」，红点在导航项上、不在铃铛里。
+   *  ⚠️ **层级沿用「个人栏」那一档（遮罩 490 / 面板 500）**，不新造一档。
+   *  关闭：点任意处 / `Esc`（与个人栏同一条规矩：**绝不能不让人关**）；再点铃铛 = 收起。 */
+  openHeadPanel(bell) {
     if (this.closeHeadPanel()) {
       return;                                  // 已经开着 ⇒ 这一下是"收起"
     }
@@ -170,14 +208,6 @@ Object.assign(BAND, {
     up.href = '/updates.html';
     up.innerHTML = '<span>更新公告</span><span class="hpanel-dot" hidden></span>';
     panel.appendChild(up);
-    if (me.role !== 'HONORARY') {
-      const fb = document.createElement('button');
-      fb.type = 'button';
-      fb.className = 'hpanel-row';
-      fb.textContent = '提反馈';
-      fb.addEventListener('click', () => { this.closeHeadPanel(); this.openFeedback(); });
-      panel.appendChild(fb);
-    }
     document.body.append(back, panel);
     bell.setAttribute('aria-expanded', 'true');
     const rowDot = panel.querySelector('.hpanel-dot');
@@ -370,51 +400,6 @@ Object.assign(BAND, {
       }
     });
     return box;
-  },
-
-  /** 反馈浮层（docs/15 §15.4）：多行文本框 + 提交。**页面路径由前端自动带**，设备由服务端取。 */
-  openFeedback() {
-    let el = document.getElementById('feedback-modal');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'feedback-modal';
-      el.className = 'modal fade';
-      el.tabIndex = -1;
-      el.innerHTML = `<div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-body">
-            <p class="big my-2">反馈</p>
-            <p class="chip">遇到 bug 或者哪里别扭，直接写在这里。</p>
-            <textarea class="w-100" id="fb-text" rows="5" maxlength="1000"
-                      placeholder="比如：在活动详情页点了签到没反应"></textarea>
-          </div>
-          <div class="modal-footer py-1">
-            <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
-            <button class="go go-sm" id="fb-send">提交</button>
-          </div>
-        </div></div>`;
-      document.body.appendChild(el);
-      el.querySelector('#fb-send').addEventListener('click', async () => {
-        const box = el.querySelector('#fb-text');
-        const content = box.value.trim();
-        if (!content) {
-          this.toast('正文不能为空');
-          return;
-        }
-        try {
-          await this.must('/api/feedback', {
-            method: 'POST',
-            body: { content, pagePath: location.pathname + location.search },
-          });
-        } catch (err) {
-          return;   // 失败：toast 已弹，浮层留着让人改（别把写好的内容弄丢）
-        }
-        box.value = '';
-        bootstrap.Modal.getInstance(el).hide();
-        this.toast('已收到，谢谢', 'success');
-      });
-    }
-    bootstrap.Modal.getOrCreateInstance(el).show();
   },
 
   /**

@@ -39,7 +39,9 @@ Object.assign(BAND, {
     // 个人资料仅非荣誉可见（荣誉团员在浮层里本就没有"编辑资料"，免得点进去撞 403）。
     { view: '日常', group: '我的',      href: 'profile.html',       title: '个人资料', icon: 'circle-user-round', roles: NAV_ROLES.member },
     { view: '日常', group: '我的',      href: 'sessions.html',      title: '登录设备', icon: 'laptop',            roles: NAV_ROLES.all },
+    { view: '日常', group: '我的',      href: 'issues.html',        title: '问题讨论', icon: 'messages-square',   roles: NAV_ROLES.all },
     { view: '日常', group: '我的',      href: 'updates.html',       title: '更新日志', icon: 'newspaper',         roles: NAV_ROLES.all },
+    { view: '日常', group: '我的',      href: 'install.html',       title: '安装到手机', icon: 'smartphone',      roles: NAV_ROLES.all },
     // 「工具」：节拍器本轮只占位。占位页 = 一句"建设中"。
     { view: '日常', group: '工具',      href: 'metronome.html',     title: '节拍器',  icon: 'metronome',         roles: NAV_ROLES.all },
     { view: '日常', group: '工具',      href: 'tuner.html',         title: '调音器',  icon: 'audio-waveform',    roles: NAV_ROLES.all },
@@ -53,7 +55,7 @@ Object.assign(BAND, {
     { view: '管理', group: '团员管理',   href: 'admin-members.html',  title: '团员编辑', icon: 'user-cog',        roles: NAV_ROLES.admin },
     { view: '管理', group: '考勤与请假', href: 'approve-leave.html',  title: '请假审批', icon: 'clipboard-check', roles: NAV_ROLES.approver },
     { view: '管理', group: '考勤与请假', href: 'stats.html',          title: '考勤统计', icon: 'chart-column',    roles: NAV_ROLES.staff },
-    { view: '管理', group: '系统管理',   href: 'admin-feedback.html', title: '反馈管理', icon: 'inbox',           roles: NAV_ROLES.admin },
+    { view: '管理', group: '系统管理',   href: 'admin-feedback.html', title: '历史反馈', icon: 'inbox',           roles: NAV_ROLES.admin },
     { view: '管理', group: '系统管理',   href: 'admin-notes.html',    title: '更新公告', icon: 'megaphone',       roles: NAV_ROLES.admin },
     { view: '管理', group: '系统管理',   href: 'logs.html',           title: '操作日志', icon: 'scroll-text',     roles: NAV_ROLES.lead },
   ],
@@ -87,6 +89,7 @@ Object.assign(BAND, {
     'laptop': '<path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z" /><path d="M20.054 15.987H3.946" />',
     'mail': '<path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /><rect x="2" y="4" width="20" height="16" rx="2" />',
     'megaphone': '<path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" /><path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" /><path d="M8 6v8" />',
+    'messages-square': '<path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1" />',
     'metronome': '<path d="M12 11.4V9.1" /><path d="m12 17 6.59-6.59" /><path d="m15.05 5.7-.218-.691a3 3 0 0 0-5.663 0L4.418 19.695A1 1 0 0 0 5.37 21h13.253a1 1 0 0 0 .951-1.31L18.45 16.2" /><circle cx="20" cy="9" r="2" />',
     'mic': '<path d="M12 19v3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><rect x="9" y="2" width="6" height="13" rx="3" />',
     'music': '<path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />',
@@ -112,6 +115,22 @@ Object.assign(BAND, {
       + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
   },
 
+  /** 「问题讨论」导航项的板级未读点（docs/15 §15.11）。
+      只认 `issues.html` 那一行的 `.ndot`；在问题两页上直接熄灭（页面自己会写已读）。
+      ⚠️ `renderNav` 的两条路径都要调用——复用分支漏了就会"回页面红点不更新"。 */
+  refreshIssueDot() {
+    const dot = document.querySelector('.rail .menu a[href="/issues.html"] .ndot');
+    if (!dot || typeof this.issueUnread !== 'function') return;
+    const here = location.pathname;
+    if (here === '/issues.html' || here === '/issue-detail.html') {
+      dot.hidden = true;
+      return;
+    }
+    this.issueUnread()
+      .then((unread) => { dot.hidden = !unread; })
+      .catch(() => { dot.hidden = true; });
+  },
+
   /** 各折叠组的开关状态（键 = **组名**，如 `'系统管理'`；不再用下标，否则切视图会错位）。
       ⚠️ **真值只在这里**：DOM 上那个 `.open` 类只是它的投影（`mountDrawer` 的委托监听器写回来）。
       从没手动动过 ⇒ 该键不存在。 */
@@ -130,6 +149,7 @@ Object.assign(BAND, {
     'piece-detail.html': '曲谱详情',
     'concert-detail.html': '演出详情',
     'member-detail.html': '团员主页',
+    'issue-detail.html': '问题详情',
   },
 
   /**
@@ -283,7 +303,8 @@ Object.assign(BAND, {
     const allowed = this.menu.filter((it) => it.view === view && it.roles.includes(me.role));
     const link = (it) =>
       `<a href="/${it.href}"${it.href === active ? ' class="on"' : ''}>` +
-      `<span class="ic" aria-hidden="true">${this.iconSvg(it.icon)}</span><span class="tx">${it.title}</span></a>`;
+      `<span class="ic" aria-hidden="true">${this.iconSvg(it.icon)}` +
+      `<span class="ndot" data-dot hidden></span></span><span class="tx">${it.title}</span></a>`;
     const groups = this.menuGroups[view] || [];
     return groups.map((name, gi) => {
       const items = allowed.filter((it) => it.group === name);
@@ -500,6 +521,121 @@ Object.assign(BAND, {
       grp.classList.toggle('open', open);
       h.setAttribute('aria-expanded', String(open));
     });
+    this.mountDrawerSwipe(layout, setOpen);
+  },
+
+  /** 手机端右滑唤出抽屉（2026-10-23；专场页不接管 —— 那一页有自己的横向手势）。
+      ⚠️ 用 touch 事件而不是 `pointerdown + window.pointermove`：只有确认横向意图后才
+      `preventDefault`，竖向滚动 / 下拉刷新照旧；`stopPropagation` 防止下拉刷新同时推 `.mbody`。
+      ⚠️ 起点避开最左 28px：那里归系统返回手势（网页拦不住）。 */
+  mountDrawerSwipe(layout, setOpen) {
+    if (document.body.classList.contains('page-showcase')) return;
+    const rail = layout.querySelector('.railwrap');
+    const scrim = layout.querySelector('.scrim');
+    if (!rail || !scrim) return;
+    const root = document.documentElement;
+    const EDGE = 28, LOCK = 12, RATIO = 1.4, DIST = .35, VEL = .45;
+    let start = null, lock = '';
+
+    const blocked = (el) => !!(el && el.closest && el.closest(
+      'input, textarea, select, button, a, audio, video, [contenteditable],'
+      + '.railwrap, .scrim, .ann, .fview, .letter, .wel, .profile, .profile-backdrop,'
+      + '.hpanel, .hpanel-back, .pwa-bar, #toast-host, .toast-host, .modal, .modal-backdrop'
+    ));
+
+    const inHScroll = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const ox = getComputedStyle(n).overflowX;
+        if ((ox === 'auto' || ox === 'scroll') && n.scrollWidth > n.clientWidth + 2) return true;
+      }
+      return false;
+    };
+
+    /** 松手收尾：先把跟手位置刷成过渡起点，再撤掉内联值交回 CSS（不残留内联，头像/遮罩照常能开合）。 */
+    const settle = (open, p, openW) => {
+      const k = Math.max(0, Math.min(1, p));
+      rail.style.transition = 'none';
+      scrim.style.transition = 'none';
+      rail.style.transform = 'translateX(' + (-openW + k * openW).toFixed(1) + 'px)';
+      scrim.style.opacity = String(k);
+      void rail.offsetWidth;
+      root.classList.remove('drawer-dragging');
+      rail.style.transition = '';
+      scrim.style.transition = '';
+      setOpen(open);
+      rail.style.transform = '';
+      scrim.style.opacity = '';
+    };
+
+    const onStart = (e) => {
+      if (e.touches.length !== 1) {
+        if (start) {
+          const s = start;
+          start = null; lock = '';
+          settle(false, typeof s.p === 'number' ? s.p : 0, s.openW);
+        }
+        return;
+      }
+      if (!this.isMobile() || root.classList.contains('drawer-open')) return;
+      const t = e.touches[0];
+      if (t.clientX < EDGE || blocked(e.target) || inHScroll(e.target)) return;
+      start = {
+        x: t.clientX, y: t.clientY, t: performance.now(),
+        openW: rail.offsetWidth || 300,
+        reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      };
+      lock = '';
+    };
+
+    const onMove = (e) => {
+      if (!start) return;
+      if (e.touches.length !== 1) {
+        const s = start;
+        start = null; lock = '';
+        settle(false, typeof s.p === 'number' ? s.p : 0, s.openW);
+        return;
+      }
+      const t = e.touches[0];
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (!lock) {
+        if (Math.abs(dx) < LOCK && Math.abs(dy) < LOCK) return;
+        if (dx <= 0 || Math.abs(dx) < Math.abs(dy) * RATIO) {
+          start = null; lock = '';
+          return;
+        }
+        lock = 'h';
+        root.classList.add('drawer-dragging');
+        rail.style.transition = 'none';
+        scrim.style.transition = 'none';
+      }
+      e.preventDefault();               // 确认横向后，这一下归我们
+      e.stopPropagation();              // 别让下拉刷新同时推 `.mbody`
+      if (start.reduced) return;
+      const p = Math.max(0, Math.min(1, dx / start.openW));
+      start.p = p;
+      rail.style.transform = 'translateX(' + (-start.openW + p * start.openW).toFixed(1) + 'px)';
+      scrim.style.opacity = String(p);
+    };
+
+    const onEnd = (e, cancelled) => {
+      if (!start) return;
+      const s = start;
+      const t = e.changedTouches && e.changedTouches[0];
+      const dx = t ? t.clientX - s.x : 0;
+      const dt = Math.max(1, performance.now() - s.t);
+      const wasH = lock === 'h';
+      const p = typeof s.p === 'number' ? s.p : Math.max(0, Math.min(1, dx / s.openW));
+      const open = !cancelled && (dx >= s.openW * DIST || dx / dt >= VEL);
+      start = null; lock = '';
+      if (!wasH) { root.classList.remove('drawer-dragging'); return; }
+      settle(open, p, s.openW);
+    };
+
+    document.body.addEventListener('touchstart', onStart, { passive: true });
+    document.body.addEventListener('touchmove', onMove, { passive: false });
+    document.body.addEventListener('touchend', (e) => onEnd(e, false), { passive: true });
+    document.body.addEventListener('touchcancel', (e) => onEnd(e, true), { passive: true });
   },
 
   /** 手机端的「一行一人」卡片行（`docs/14` §14.6.4 八）：把 `thead th` 的文字抄进每格的
@@ -706,6 +842,7 @@ Object.assign(BAND, {
       if (!me) return null;
       this._bd = bds || [];
       this.paintNav(this.skeleton, me, active);
+      this.refreshIssueDot();
       return me;
     }
     const skeleton = this.mountSkeleton(active);       // ① 同步：布局一次到位
@@ -725,6 +862,7 @@ Object.assign(BAND, {
     // 否则那几十~几百毫秒没监听，指针甩到正文会卡在展开态（详见它的方法注释）。
     this.refreshReleaseDot();
     this.refreshSectionNoteDot();   // 信封上的未读点（有"我刚上任、还没读过"的那条才亮）
+    this.refreshIssueDot();         // 「问题讨论」导航项的板级未读点（docs/15 §15.11）
     // ⚠️ **三者顺序写死**（docs/15 §15.5）：欢迎过渡 → 更新公告 → **关掉公告才加载 oneko**。
     // 猫的 z-index 是最大整数，不等公告关掉就会从公告上跑过去（当年"从欢迎黑幕上跑过去"是同款坑）。
     // fromLogin **必须在 playWelcome 之前读**——它一进去就把 band_welcome 标记删了。

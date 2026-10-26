@@ -336,19 +336,44 @@ const BAND = {
   /** `ensureAudio()` 失败原因的中文提示（含百度浏览器的站点声音设置路径）。 */
   audioIssueText() {
     const i = this._audioIssue || { kind: 'suspended' };
+    if (i.kind === 'compat') {
+      return '兼容模式没能播放点击音（' + (i.name || '被浏览器拦下') + '）。请再点一次「开始」；仍不行请检查媒体音量、静音和蓝牙耳机。';
+    }
+    const huaweiNext = this.isHarmonyNext();
+    if (huaweiNext) {
+      if (i.kind === 'no-ctor') {
+        return '鸿蒙 NEXT 的浏览器不支持网页音频（Web Audio）。请点「改用兼容模式」继续。';
+      }
+      if (i.kind === 'ctor' || i.kind === 'tick') {
+        const what = i.kind === 'ctor' ? '音频初始化失败' : '音频节点创建失败';
+        return '鸿蒙 NEXT ' + what + '（' + (i.name || '未知错误') + '）。请点「改用兼容模式」再试。';
+      }
+      if (i.kind === 'resume' && i.name && i.name !== 'NotAllowedError') {
+        return '鸿蒙 NEXT 音频没能启动（' + i.name + '）。请点「改用兼容模式」再试；也可检查媒体音量、蓝牙和站点声音权限。';
+      }
+      return '鸿蒙 NEXT 的浏览器没有启动网页音频（被挂起）。请点「改用兼容模式」继续；也可检查媒体音量、蓝牙和站点声音权限。';
+    }
+    // 官方 App 没有地址栏和站点声音权限，浏览器那套出路在里面不存在
+    const inApp = /ForBandApp\//i.test(navigator.userAgent);
     if (i.kind === 'no-ctor') {
-      return '这个浏览器不支持网页音频（Web Audio），节拍器响不了。请换用手机自带浏览器或 Chrome 打开这一页。';
+      return inApp
+        ? '系统 WebView 不支持网页音频（Web Audio），节拍器响不了。请改用「选择本机文件」上传；也可更新系统的「Android System WebView」后重启 App。'
+        : '这个浏览器不支持网页音频（Web Audio），节拍器响不了。请换用手机自带浏览器或 Chrome 打开这一页。';
     }
-    if (i.kind === 'ctor') {
-      return '音频初始化失败（' + (i.name || '未知错误') + '）。请换用手机自带浏览器或 Chrome 再试。';
-    }
-    if (i.kind === 'tick') {
-      return '音频节点创建失败（' + (i.name || '未知错误') + '）。请换用手机自带浏览器或 Chrome 再试。';
+    if (i.kind === 'ctor' || i.kind === 'tick') {
+      const what = i.kind === 'ctor' ? '音频初始化失败' : '音频节点创建失败';
+      return inApp
+        ? what + '（' + (i.name || '未知错误') + '）。请退出 App 重进再试；仍不行请更新系统 WebView。'
+        : what + '（' + (i.name || '未知错误') + '）。请换用手机自带浏览器或 Chrome 再试。';
     }
     if (i.kind === 'resume' && i.name && i.name !== 'NotAllowedError') {
-      return '音频没能启动（' + i.name + '）。请换用手机自带浏览器或 Chrome 再试。';
+      return inApp
+        ? '音频没能启动（' + i.name + '）。请检查媒体音量，退出 App 重进后再点「开始」。'
+        : '音频没能启动（' + i.name + '）。请换用手机自带浏览器或 Chrome 再试。';
     }
-    return '浏览器没有允许网页发声（音频被挂起）。百度浏览器：点地址栏左侧锁图标 → 网站设置 → 声音 → 允许，刷新后再点「开始」；也可换用手机自带浏览器。';
+    return inApp
+      ? 'App 没能启动音频（被系统挂起）。请先调高媒体音量，退出 App 重进后再点「开始」。'
+      : '浏览器没有允许网页发声（音频被挂起）。百度浏览器：点地址栏左侧锁图标 → 网站设置 → 声音 → 允许，刷新后再点「开始」；也可换用手机自带浏览器。';
   },
 
   /**
@@ -390,7 +415,7 @@ const BAND = {
       osc.frequency.value = accent ? 1600 : 1000;
       // 起手先给一个极小值再指数爬到峰值：`exponentialRamp` 不接受 0，且这样不会有"咔"的起音
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(accent ? 0.34 : 0.17, t + 0.004);
+      gain.gain.exponentialRampToValueAtTime(accent ? 0.90 : 0.45, t + 0.004);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
       // ⚠️ 别写成 `osc.connect(gain).connect(ac.destination)`：少数内核的 `connect()` 返回值靠不住
       osc.connect(gain);
@@ -400,6 +425,69 @@ const BAND = {
       return t;
     } catch (e) {
       this._audioIssue = { kind: 'tick', name: e && e.name, message: e && e.message };
+      return null;
+    }
+  },
+
+  /** 鸿蒙 NEXT（纯血）：UA 里通常有 OpenHarmony / ArkWeb。别只匹配 HarmonyOS——4.x 也能正常用 Web Audio。 */
+  isHarmonyNext() {
+    return /OpenHarmony|ArkWeb/i.test(navigator.userAgent || '');
+  },
+
+  /** 节拍器音频模式：用户手动选择优先；没选过时，鸿蒙 NEXT 默认 compat，其余平台默认 webaudio。 */
+  metroAudioMode() {
+    try {
+      const m = localStorage.getItem('band_metro_audio_mode');
+      if (m === 'compat' || m === 'webaudio') return m;
+    } catch (e) { /* 隐私模式 */ }
+    return this.isHarmonyNext() ? 'compat' : 'webaudio';
+  },
+
+  setMetroAudioMode(mode) {
+    if (mode !== 'compat' && mode !== 'webaudio') return;
+    try { localStorage.setItem('band_metro_audio_mode', mode); } catch (e) { /* 隐私模式 */ }
+  },
+
+  /** 兼容模式音池：预加载两组短 WAV；轮换元素，避免上一声还在响时被 currentTime=0 截断。 */
+  warmClickPool() {
+    if (this._clickPool) return this._clickPool;
+    const make = (url) => Array.from({ length: 4 }, () => {
+      const a = new Audio(url);
+      a.preload = 'auto';
+      a.volume = 1;
+      return a;
+    });
+    this._clickPool = {
+      accent: make('/sounds/metro-accent.wav'),
+      weak: make('/sounds/metro-weak.wav'),
+      idx: { accent: 0, weak: 0 },
+    };
+    return this._clickPool;
+  },
+
+  /**
+   * 兼容模式的一声：用 `<audio>` 播预生成 WAV，绕开“Web Audio 在跑但不出声”的宿主。
+   * ⚠️ 第一次调用必须发生在「开始」按钮的手势里；之后的定时调用依赖这次解锁。
+   * @param {boolean} accent 是不是重拍
+   * @returns {number|null} 伪时间（秒）；拿不到就 null
+   */
+  tickCompat(accent) {
+    try {
+      const pool = this.warmClickPool();
+      const key = accent ? 'accent' : 'weak';
+      const list = pool[key];
+      const el = list[pool.idx[key] % list.length];
+      pool.idx[key] = (pool.idx[key] + 1) % list.length;
+      try { el.currentTime = 0; } catch (e) { /* 首次还没元数据，play() 会从头开始 */ }
+      const p = el.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch((e) => {
+          this._audioIssue = { kind: 'compat', name: e && e.name, message: e && e.message };
+        });
+      }
+      return performance.now() / 1000;
+    } catch (e) {
+      this._audioIssue = { kind: 'compat', name: e && e.name, message: e && e.message };
       return null;
     }
   },
@@ -429,3 +517,162 @@ const BAND = {
       });
     } catch (e) { /* 音频不可用即静默：印章与文字是视觉等价物 */ }
   }};
+
+/* ============================================================
+   PWA 外壳（docs/19 / #219）：SW 注册、更新提示、离线提示。
+   ⚠️ 只在这里注册一次（band-core.js 被除 index.html 外的所有根页面引用）。
+   ⚠️ 更新提示必须用户点「刷新」才生效：install 不 skipWaiting，这里也绝不自动 reload。
+   ⚠️ 提示条追加到 body 末尾（不放 .mbody）：否则会被手机端下拉刷新的 transform 拖走。
+   ============================================================ */
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+
+  const state = {
+    registration: null,
+    updateAvailable: false,
+    dismissed: false,
+    offline: navigator.onLine === false,
+    refreshRequested: false,
+    reloaded: false,
+    bar: null,
+  };
+
+  function isControlled() {
+    return !!navigator.serviceWorker.controller;
+  }
+
+  function ensureBar() {
+    if (state.bar) return state.bar;
+    if (!document.body) return null;
+    const bar = document.createElement('div');
+    bar.id = 'pwa-bar';
+    bar.className = 'pwa-bar';
+    bar.hidden = true;
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', '应用提示');
+    bar.setAttribute('aria-live', 'polite');
+    document.body.appendChild(bar);
+    state.bar = bar;
+    return bar;
+  }
+
+  function sync() {
+    const bar = ensureBar();
+    if (!bar) return;
+
+    // 更新提示优先；同一时刻只显示一条
+    if (state.updateAvailable && !state.dismissed) {
+      bar.hidden = false;
+      bar.className = 'pwa-bar pwa-bar-update';
+      bar.textContent = '';
+
+      const text = document.createElement('span');
+      text.className = 'pwa-bar-tx';
+      text.textContent = '新版本已就绪';
+
+      const acts = document.createElement('span');
+      acts.className = 'pwa-bar-acts';
+
+      const refresh = document.createElement('button');
+      refresh.type = 'button';
+      refresh.className = 'go go-sm';
+      refresh.textContent = '刷新';
+      refresh.addEventListener('click', requestRefresh);
+
+      const later = document.createElement('button');
+      later.type = 'button';
+      later.className = 'go go-ghost go-sm';
+      later.textContent = '稍后';
+      later.addEventListener('click', () => {
+        state.dismissed = true;
+        sync();
+      });
+
+      acts.append(refresh, later);
+      bar.append(text, acts);
+      return;
+    }
+
+    if (state.offline) {
+      bar.hidden = false;
+      bar.className = 'pwa-bar pwa-bar-offline';
+      bar.textContent = '当前离线 · 数据需联网';
+      return;
+    }
+
+    bar.hidden = true;
+    bar.textContent = '';
+    bar.className = 'pwa-bar';
+  }
+
+  function requestRefresh() {
+    if (state.refreshRequested) return;
+    state.refreshRequested = true;
+    const waiting = state.registration && state.registration.waiting;
+    if (waiting) waiting.postMessage({ type: 'SKIP_WAITING' });
+    // 用户已明确同意刷新：3 秒没等到 controllerchange 也不能卡住
+    setTimeout(() => {
+      if (!state.reloaded) {
+        state.reloaded = true;
+        location.reload();
+      }
+    }, 3000);
+  }
+
+  function showUpdate() {
+    // 首次安装没有 controller：绝不出现「新版本」
+    if (!isControlled()) return;
+    state.updateAvailable = true;
+    sync();
+  }
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // 只有用户点过「刷新」才允许因切换而重载
+    if (!state.refreshRequested || state.reloaded) return;
+    state.reloaded = true;
+    location.reload();
+  });
+
+  function watch(registration) {
+    state.registration = registration;
+
+    if (registration.waiting && isControlled()) showUpdate();
+
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      if (!worker) return;
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && isControlled()) showUpdate();
+      });
+    });
+  }
+
+  function boot() {
+    ensureBar();
+    sync();
+
+    navigator.serviceWorker.register('/service-worker.js', { updateViaCache: 'none' })
+      .then(watch)
+      .catch((e) => console.warn('[PWA] service worker 注册失败', e));
+
+    window.addEventListener('offline', () => {
+      state.offline = true;
+      sync();
+    });
+    window.addEventListener('online', () => {
+      state.offline = false;
+      sync();   // 只隐藏提示条：不自动刷新、不自动重请求数据
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && state.registration) {
+        state.registration.update().catch(() => {});
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
+})();

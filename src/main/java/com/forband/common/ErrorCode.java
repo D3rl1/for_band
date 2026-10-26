@@ -34,7 +34,7 @@ public enum ErrorCode {
 
     FILE_TYPE_UNSUPPORTED(50001, HttpStatus.UNPROCESSABLE_ENTITY, "文件类型不支持"),
     FILE_TOO_LARGE(50002, HttpStatus.UNPROCESSABLE_ENTITY, "文件超过大小限制"),
-    // 备位：录音 3 分钟上限是暂定项 T5，**服务端不解析音频**（docs/08 §8.3），只在前端拦 ⇒ 服务端永不抛它。
+    // 备位：录音 8 分钟上限是 T5 口径（暂停不计），**服务端不解析音频**（docs/08 §8.3），只在前端拦 ⇒ 服务端永不抛它。
     FILE_DURATION_EXCEEDED(50003, HttpStatus.UNPROCESSABLE_ENTITY, "录音时长超出限制");
 
     private final int code;

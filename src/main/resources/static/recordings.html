@@ -2,8 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>录音 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
@@ -51,9 +59,9 @@
   <div class="ev-lhead">
     <div class="sec"><h2>录音墙</h2><span class="sub" id="rc-count"></span></div>
     <div class="rc-head-tools">
-      <div class="ev-filters" id="rc-scope" role="group" aria-label="范围">
-        <button class="fchip" type="button" data-scope="mine" aria-pressed="true">只看我的</button>
-        <button class="fchip" type="button" data-scope="all"  aria-pressed="false">我能听到的全部</button>
+      <div class="ev-filters" id="rc-view" role="group" aria-label="视图">
+        <button class="fchip" type="button" data-view="mine" aria-pressed="true">我的录音</button>
+        <button class="fchip" type="button" data-view="manage" aria-pressed="false" hidden>录音管理</button>
       </div>
       <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="go-record">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
@@ -62,14 +70,59 @@
     </div>
   </div>
 
-  <div class="rc-recs" id="list"></div>
+  <div id="mine-pane">
+    <div class="rc-recs" id="list"></div>
 
-  <div class="ev-empty" id="empty">
-    <span class="ic">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
-    </span>
-    <b>还没有录音</b>
-    <span>手机对着吹一段传上来，让声部长听听</span>
+    <div class="ev-empty" id="empty">
+      <span class="ic">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+      </span>
+      <b>还没有录音</b>
+    </div>
+  </div>
+
+  <!-- ⭐ 录音管理（管理员 / 团长 / 指挥 / 声部长，2026-10-26 #225）：
+       与「我的录音」同页切换；声部长在服务端被强制收窄到本声部。 -->
+  <div id="manage-pane" hidden>
+    <section class="rm-block rm-hero" id="rm-hero" aria-label="本周完成情况"></section>
+
+    <section class="rm-block" id="rm-assign">
+      <div class="rm-block-h">
+        <h3>本周布置</h3>
+        <span class="sub" id="as-sub"></span>
+        <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="as-open"
+                aria-expanded="false" aria-controls="as-panel">布置作业</button>
+      </div>
+      <div class="rm-panel" id="as-panel" hidden>
+        <div class="rm-panel-grid">
+          <div class="rc-f"><label for="as-sec">声部</label><select id="as-sec"></select></div>
+          <div class="rc-f"><label for="as-title">作业名</label>
+            <input id="as-title" maxlength="64" placeholder="如：快板合奏"></div>
+          <div class="rc-f"><label for="as-piece">关联曲目（可选）</label>
+            <select id="as-piece"><option value="">基本功 · 无曲目</option></select></div>
+        </div>
+        <div class="rm-panel-ops">
+          <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="as-save">保存</button>
+          <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="as-cancel">取消</button>
+        </div>
+      </div>
+      <div id="as-body"></div>
+    </section>
+
+    <section class="rm-block" id="rm-miss" hidden>
+      <div class="rm-block-h"><h3>未交名单</h3><span class="sub" id="miss-sub"></span></div>
+      <div id="miss-body"></div>
+    </section>
+
+    <section class="rm-block" id="rm-week">
+      <div class="rm-block-h"><h3>本周录音</h3><span class="sub" id="week-sub"></span></div>
+      <div id="week-sections"></div>
+    </section>
+
+    <section class="rm-block" id="rm-history">
+      <div class="rm-block-h"><h3>以前的周</h3><span class="sub" id="history-sub"></span></div>
+      <div id="weeks"></div>
+    </section>
   </div>
 </section>
 
@@ -87,16 +140,21 @@
 
     <div class="rc-f2">
       <div class="rc-f"><label for="u-title">标题</label><input id="u-title" maxlength="64" placeholder="如：快板那一段"></div>
-      <div class="rc-f"><label for="u-piece">关联曲目（可选）</label><select id="u-piece"><option value="">不关联曲目</option></select></div>
+      <div class="rc-f"><label for="u-assign">关联本周作业（可选）</label>
+        <select id="u-assign" disabled><option value="">不关联本周作业</option></select></div>
     </div>
+    <div class="rc-f"><label for="u-piece">关联曲目（可选）</label><select id="u-piece"><option value="">不关联曲目</option></select></div>
+    <p class="rc-hint rc-hint-tight" id="u-hint" hidden></p>
 
     <!-- ⭐ **两个入口是分开的、各自带文字的控件**（docs/08 §8.4）：**这里曾经是一个裸的
          `<input type="file" accept="audio/*">`** —— 无标签、没人注意得到，点下去还会被系统送去**录音机 App**
          （`audio/*` 是通配，安卓按"谁能产出音频"匹配，录音机正好声明了它；⚠️ **不是 `capture` 的锅**，本仓从没写过）。
          ⚠️ `accept` 必须列**显式扩展名 + 具体 MIME**，不得用 `audio/*`、不得加 `capture`。
-         ⚠️ 那个 input 是**视觉隐藏**的（`visually-hidden`，不是 `display:none`），由下面那个**带 `for` 的 `<label>`**
-         触发 —— 键盘 / 读屏也点得到，且页面上不再有"没人知道的裸控件"。
-         ⚠️ **挑完就直接上传，没有第二个「上传」按钮**：多一跳的代价是"选了没传、却以为传了"。 -->
+         ⚠️ **input 是卡片内的透明覆盖层**（`.rc-file-hit`）：点击命中的就是 input 本身，
+         不依赖 label→input 的间接转发 —— 部分安卓自带浏览器/WebView 不响应那种转发，点了完全没反应。
+         仍然是原生控件、无 JS 模拟点击；键盘 / 读屏靠 `aria-label`。
+         ⚠️ **挑完先进下方试听卡**（docs/08 §8.4）：听一遍确认没问题，再点「上传这条」；
+         全程只有那一个上传入口，不会一选完就静默传走。 -->
     <div class="rc-picks">
       <button class="rc-pick" type="button" id="pick-record">
         <span class="rc-pick-ic">
@@ -104,7 +162,7 @@
         </span>
         <span class="rc-pick-tx">
           <span class="rc-pick-t">页面内录音</span>
-          <span class="rc-pick-s">点一下就开始，最长 3 分钟</span>
+          <span class="rc-pick-s">点一下就开始，最长 8 分钟（暂停不计）</span>
         </span>
       </button>
       <label class="rc-pick" for="u-file">
@@ -115,24 +173,58 @@
           <span class="rc-pick-t">选择本机文件</span>
           <span class="rc-pick-s">mp3 / wav / m4a · 单个不超过 20 MB</span>
         </span>
+        <input id="u-file" type="file" class="rc-file-hit"
+               accept=".m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/x-m4a,audio/wav"
+               aria-label="选择本机文件">
       </label>
-      <input id="u-file" type="file" class="visually-hidden"
-             accept=".m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/x-m4a,audio/wav">
+    </div>
+    <p class="rc-hint" id="rc-pending-hint" hidden>先上传或丢弃这条</p>
+
+    <!-- 桌面快捷方式/WebView 宿主可能拦麦克风、吞文件选择器：网页无法绕过，只能把原因说清、给出可执行出路 -->
+    <p class="rc-env-warn" id="rc-env-warn" hidden>当前可能是手机自带浏览器创建的桌面快捷方式：它可能拦下麦克风，也不支持选本机文件。请到 <a href="/install.html">「安装到手机」</a> 页下载官方 App（推荐），或点「复制网址」到 Chrome 打开。长期使用请删掉这个图标。</p>
+
+    <div class="rc-env-row">
+      <details class="rc-env" id="rc-env">
+        <summary>录音 / 选文件不正常？点这里自查</summary>
+        <div class="rc-env-panel">
+          <dl id="rc-env-list"></dl>
+          <p class="rc-env-note">网页只能读取这些能力，不能代替系统授权，也不能强制宿主弹出文件选择器。</p>
+          <input id="rc-env-url" readonly hidden aria-label="本站网址">
+        </div>
+      </details>
+      <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="rc-copy-url">复制网址</button>
     </div>
 
-    <!-- 页面内录音的演示条 -->
+    <!-- 页面内录音的演示条：暂停只冻结自己的动画，节拍器照常（docs/08 §8.4） -->
     <div class="rc-recdemo" id="recdemo">
       <span class="rc-rd-dot" aria-hidden="true"></span>
       <b class="rc-rd-time" id="rd-time">0:00</b>
       <span class="rc-rd-wave" id="rd-wave" aria-hidden="true"></span>
-      <span class="rc-rd-note">正在录…</span>
+      <span class="rc-rd-note" id="rd-note" role="status" aria-live="polite">正在录…</span>
+      <button class="rc-btn rc-btn-line rc-btn-sm rc-pause" type="button" id="rd-pause" aria-pressed="false">暂停</button>
       <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="rd-stop">停止</button>
     </div>
 
-    <!-- 选文件 / 录完的回执条（**没有第二个上传按钮** —— 挑完即传） -->
-    <div class="rc-updone" id="updone">
-      <span class="nm" id="up-nm"></span>
-      <span class="sz" id="up-sz"></span>
+    <!-- 试听卡：录完 / 选完本机文件先进这里，确认没问题再上传（本页唯一上传入口） -->
+    <div class="rc-review" id="rc-review">
+      <div class="rc-review-h">
+        <button class="rc-play rc-play-sm" id="rv-play" type="button" aria-label="试听这条录音" aria-pressed="false"></button>
+        <span class="rc-review-id"><b id="rv-name"></b><span id="rv-src"></span></span>
+      </div>
+      <div class="rc-track">
+        <div class="rc-seek">
+          <span class="rc-bar"><i class="rc-fill" id="rv-fill"></i></span>
+          <input class="rc-range" id="rv-range" type="range" min="0" max="0" step="0.01" value="0" aria-label="试听进度" disabled>
+        </div>
+        <span class="rc-time" id="rv-time">0:00</span>
+      </div>
+      <div class="rc-review-ops">
+        <button class="rc-btn rc-btn-primary rc-btn-sm" id="rv-up" type="button">上传这条</button>
+        <button class="rc-btn rc-btn-line rc-btn-sm" id="rv-again" type="button">重录</button>
+        <button class="rc-btn rc-btn-line rc-btn-sm" id="rv-drop" type="button">丢弃</button>
+      </div>
+      <p class="rc-hint">不传就丢掉，不会保存</p>
+      <audio class="rc-audio" id="rv-audio" preload="metadata"></audio>
     </div>
   </div>
 
@@ -173,7 +265,7 @@
         </select>
       </label>
     </div>
-    <p class="mt-tip" id="m-hint">⚠️ 外放会把节拍声一起录进去，<b>戴耳机（建议有线）才两头兼顾</b>；录音中<b>请勿切走应用</b>。点圆弧上的圆点 → 设 / 取消那一拍的重音；更大的点是重拍，响起来颜色也不一样。</p>
+    <p class="mt-tip" id="m-hint">录音中<b>请勿切走应用</b>。点圆弧上的圆点 → 设 / 取消那一拍的重音；更大的点是重拍，响起来颜色也不一样。</p>
   </div>
 </section>
 
@@ -183,17 +275,41 @@
 const byId = (id) => document.getElementById(id);
 const qsa = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
-const MAX_SECONDS = 180;   // 时长上限 3 分钟（T5 暂定）：**只能在前端拦**，服务端不解析音频
+// 时长上限 8 分钟（#226）：**只计真正录进去的时间**（暂停不计）；服务端不解析音频，拦不住（T5 既有口径）
+const MAX_SECONDS = 480;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;   // 本机文件仍只受体积限制，不受 8 分钟约束
+const FILE_EXTS = ['m4a', 'mp3', 'wav'];
+const AUDIO_CACHE_MAX = 6;                 // 列表音频页面内缓存条数（约 48MB 上限）
 
 let me = null;
-let scope = 'mine';        // 默认「只看我的」（与旧版一致）
+let view = null;           // 'mine' | 'manage'（首次按角色定：四角色默认录音管理）
+let inited = false;        // 曲目 / 录音器 / 环境面板只初始化一次
+let pieces = [];           // 上传表单与布置面板共用
+let sections = [];         // 布置面板的声部下拉
+let currentAssignments = [];   // 本人声部本周作业（上传下拉）
+let manageData = null;
+let weeksData = null;
+let weeksLoading = null;
+const openPersons = new Set();   // 人名行展开状态（本周与历史共用一个集合，id 带前缀不会撞）
+const closedSections = new Set();// 本周声部块默认展开，只记「被收起」的
+const openWeeks = new Set();
+const weekManage = new Map();    // weekStart -> ManageView（按周缓存；重开/切视图都不再请求）
 let recorder = null;
 let chunks = [];
 // ⭐ **同一时刻最多一个在播**（docs/08 §8.4，#112）：用户原话「听录音的时候可以同时按多个录音听，这个不好」。
 // ⚠️ **持一个"当前正在播的那个"引用、切换时显式关掉旧的** —— **不要靠 `pause` 事件去推状态**：
 //    快速连点会打断进行中的事件，`pause` 不保证按时到达，状态就卡住了（docs/14 §14.6.6「过渡必须可取消」同族）。
 let playingAudio = null;
+let playingKey = null;     // 正在播的那条 fileId（缓存淘汰时保护它，别把 URL 抽走）
 let wired = false;         // ⚠️ `load()` 会被反复调用 ⇒ 事件绑定只做一次
+
+// 列表音频**按需取流 + 页面内 LRU 缓存**：不上来就为所有卡预取，也不让 `blob:` URL 只增不减。
+// ⚠️ **只在内存**（不落 IndexedDB / Cache Storage）：共用设备换人登录时，磁盘缓存可能让下一个人听到上一个人的录音。
+const audioCache = new Map();   // fileId -> {url} | {promise}；Map 插入顺序即 LRU 顺序
+let cacheReleased = false;      // 页面已在卸载：迟到的取流结果必须立刻 revoke
+
+let pendingTake = null;    // {file, url, seconds, source:'rec'|'file', name} —— 同一时刻只允许一条
+let uploading = false;
 
 const ICON_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.52.85l11-6.8a1 1 0 0 0 0-1.7l-11-6.8A1 1 0 0 0 8 5.2Z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="4" height="14" rx="1.2"/><rect x="13" y="5" width="4" height="14" rx="1.2"/></svg>';
@@ -207,9 +323,152 @@ function fmtClock(sec) {
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
 
+/* ---- 可拖动进度条（列表卡与试听卡共用；docs/08 §8.4 ①） ----
+   ⚠️ 原生 `<input type="range">` 叠在视觉轨上：键盘 / 读屏 / 触摸都交给浏览器，**不自写拖拽**。
+   ⚠️ `input` 只重绘、**不动 `currentTime`**；`change`（松手 / 抬手 / 键盘）才跳一次。
+   ⚠️ `range.max` 只认**有限且 > 0** 的 `audio.duration`；列表里的 `durationSec` 只用来兜底显示文本。 */
+function wireSeekPlayer(audio, opts) {
+  const range = opts.range, fill = opts.fill, time = opts.time;
+  const fallbackSec = () => {
+    const f = typeof opts.fallback === 'function' ? opts.fallback() : opts.fallback;
+    return Number(f) > 0 && isFinite(f) ? Number(f) : 0;
+  };
+  let dragging = false;
+
+  const realDur = () => (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 0;
+
+  const paint = () => {
+    if (dragging) return;              // 手指还按着时 metadata 到达，不得把填充画回 0
+    const d = realDur();
+    const cur = d > 0 ? Math.min(Math.max(audio.currentTime || 0, 0), d) : 0;
+    paintAt(cur, d || fallbackSec(), d > 0);
+  };
+
+  const paintAt = (cur, total, usable) => {
+    range.disabled = !usable;
+    if (usable) {
+      range.max = String(realDur());
+      if (!dragging) range.value = String(cur);
+    } else {
+      range.max = '0';
+      if (!dragging) range.value = '0';
+    }
+    if (fill) fill.style.width = usable && total > 0 ? Math.min(100, cur / total * 100).toFixed(1) + '%' : '0%';
+    time.textContent = fmtClock(cur) + (total > 0 ? ' / ' + fmtClock(total) : '');
+  };
+
+  range.addEventListener('input', () => {
+    dragging = true;
+    const d = realDur();
+    const v = Number(range.value) || 0;
+    if (fill) fill.style.width = d > 0 ? Math.min(100, v / d * 100).toFixed(1) + '%' : '0%';
+    time.textContent = fmtClock(v) + (d > 0 ? ' / ' + fmtClock(d) : '');
+  });
+
+  range.addEventListener('change', () => {
+    dragging = false;
+    const d = realDur();
+    if (d <= 0) { paint(); return; }
+    const v = Math.min(d, Math.max(0, Number(range.value) || 0));
+    // 代际令牌：每次跳转递增；等 metadata 期间又跳了一次，旧回调作废
+    audio.__seekGen = (audio.__seekGen || 0) + 1;
+    const gen = audio.__seekGen;
+    const apply = () => { if (gen === audio.__seekGen) audio.currentTime = v; };
+    if (audio.readyState >= 1) apply();
+    else audio.addEventListener('loadedmetadata', function onMeta() {
+      audio.removeEventListener('loadedmetadata', onMeta);
+      apply();
+    });
+  });
+
+  range.addEventListener('pointercancel', () => { dragging = false; paint(); });
+  audio.addEventListener('loadedmetadata', paint);
+  audio.addEventListener('durationchange', paint);
+  audio.addEventListener('timeupdate', paint);
+
+  return { repaint: paint };
+}
+
+/* ---- 列表音频：按需取流 + 6 条 LRU 缓存（#226 顺带修 blob 泄漏） ---- */
+const cacheKey = (fileId) => String(fileId);
+
+function evictCache(keepKey) {
+  while (audioCache.size > AUDIO_CACHE_MAX) {
+    let victimKey = null;
+    for (const [k, v] of audioCache) {
+      if (k === keepKey) continue;
+      if (k === playingKey && v.url) continue;   // 正在播的那条不许踢
+      victimKey = k;
+      break;
+    }
+    if (victimKey == null) break;
+    const victim = audioCache.get(victimKey);
+    audioCache.delete(victimKey);
+    if (victim.url) URL.revokeObjectURL(victim.url);
+  }
+}
+
+function cachedUrl(fileId) {
+  const k = cacheKey(fileId);
+  const hit = audioCache.get(k);
+  if (hit && hit.url) {
+    audioCache.delete(k);
+    audioCache.set(k, hit);                    // 命中即提到队尾
+    return Promise.resolve(hit.url);
+  }
+  if (hit && hit.promise) return hit.promise;  // 并发点击复用同一个请求
+
+  const entry = {};
+  entry.promise = BAND.fileBlob(fileId).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    // 取流期间页面卸载 / 这条被删：结果不能再用，立刻回收
+    if (cacheReleased || audioCache.get(k) !== entry) {
+      URL.revokeObjectURL(url);
+      throw new Error('cache dropped');
+    }
+    entry.url = url;
+    delete entry.promise;
+    audioCache.set(k, entry);
+    evictCache(k);
+    return url;
+  }).catch((err) => {
+    // 失败不能留在缓存里：否则下一次点击复用同一个已拒绝的 Promise，永远播不出来
+    if (audioCache.get(k) === entry) audioCache.delete(k);
+    throw err;
+  });
+  audioCache.set(k, entry);
+  return entry.promise;
+}
+
+function dropCache(fileId) {
+  const k = cacheKey(fileId);
+  const hit = audioCache.get(k);
+  if (!hit) return;
+  audioCache.delete(k);
+  if (hit.url) URL.revokeObjectURL(hit.url);
+}
+
+function cacheClear() {
+  cacheReleased = true;
+  for (const hit of audioCache.values()) {
+    if (hit.url) URL.revokeObjectURL(hit.url);
+  }
+  audioCache.clear();
+}
+
 /* ============================================================
    屏一 · 录音墙
    ============================================================ */
+const MANAGE_ROLES = ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER'];
+// 声部长没挂声部时后端 `/manage` 会按 30003 拒绝；这里先拦住，别让页面进去吃 403
+const canManage = () => !!me && MANAGE_ROLES.includes(me.role)
+  && !(me.role === 'SECTION_LEADER' && !me.sectionId);
+const isPartState = (s) => s === 'PARTIAL' || s === 'PART';
+
+function stopPlaying() {
+  if (playingAudio) { playingAudio.pause(); playingAudio = null; playingKey = null; }
+}
+
 async function load() {
   me = await BAND.renderNav('recordings.html');
   if (!me) return;
@@ -219,31 +478,71 @@ async function load() {
   byId('upload-box').hidden = honorary;
   byId('go-record').hidden = honorary;
   if (!honorary) {
-    const pieces = await BAND.must('/api/pieces?size=100');
-    BAND.fillSelect(byId('u-piece'),
-      pieces.list.map((p) => ({ value: p.id, label: p.title })), '不关联曲目');
+    initEnvPanel();   // 自己带 once 门；先于网络请求：pieces 拉失败也要能自查
+    if (!pieces.length) {
+      const d = await BAND.must('/api/pieces?size=100');
+      pieces = d.list;
+      BAND.fillSelect(byId('u-piece'),
+        pieces.map((p) => ({ value: p.id, label: p.title })), '不关联曲目');
+    }
     if (!wired) { wired = true; setupRecorder(); }
   }
 
-  const query = scope === 'mine' ? `?memberId=${me.id}&size=50` : '?size=50';
-  const d = await BAND.must('/api/recordings' + query);
-  if (playingAudio) { playingAudio.pause(); playingAudio = null; }   // 旧节点马上要被丢掉，先停声
+  // 视图权限：管理视图只给四角色；其余人永远退回「我的录音」
+  const manageChip = document.querySelector('#rc-view [data-view="manage"]');
+  manageChip.hidden = !canManage();
+  if (view == null) view = canManage() ? 'manage' : 'mine';
+  if (view === 'manage' && !canManage()) view = 'mine';
+  document.body.dataset.rcview = view;
+  qsa('#rc-view .fchip').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.view === view));
+  });
+  byId('mine-pane').hidden = view !== 'mine';
+  byId('manage-pane').hidden = view !== 'manage';
+
+  if (!honorary) await refreshAssignments();
+
+  if (view === 'mine') await loadMine();
+  else await loadManage();
+}
+
+async function loadMine() {
+  const d = await BAND.must(`/api/recordings?memberId=${me.id}&size=50`);
+  stopPlaying();   // 旧节点马上要被丢掉，先停声
+  // ⚠️ 这里**不 revoke** 任何缓存 URL：重画后已听过的卡再点播放应直接命中缓存（#226）
   const host = byId('list');
   host.innerHTML = '';
   byId('empty').classList.toggle('show', d.list.length === 0);
   for (const r of d.list) host.appendChild(card(r));
-  byId('rc-count').textContent = (scope === 'mine' ? '我的 ' : '共 ') + (d.total != null ? d.total : d.list.length) + ' 条';
+  byId('rc-count').textContent = '我的 ' + (d.total != null ? d.total : d.list.length) + ' 条';
   playReveal();
 }
 
-function card(r) {
+async function loadManage() {
+  stopPlaying();
+  byId('rc-count').textContent = '';
+  const d = await BAND.must('/api/recordings/manage');
+  manageData = d;
+  renderManage();
+  ensureWeeks();
+  if (!sections.length) await loadSections();
+  fillAssignSection();
+}
+
+function card(r, opts = {}) {
   const el = document.createElement('article');
-  el.className = 'rc-rec ar';
+  // ⚠️ 只有「我的录音」会调 `playReveal()` 把 `.ar` 翻成 `.in`；管理视图的卡片是嵌在
+  //    `.rm-sec` / `.rm-person` 的错峰动画里的，**再加 `.ar` 就永远停在 opacity:0**（整块看不见）。
+  el.className = 'rc-rec' + (opts.compact ? ' rc-rec-compact' : ' ar');
   el.dataset.id = String(r.id);
 
-  const bits = [r.memberName, r.sectionName, r.pieceTitle,
+  // 紧凑模式（管理视图按人归组）：人名 / 声部 已经在上面的行里，不再重复；
+  // 有作业标签时曲目也已写进标签，避免同一行出现两次。
+  const base = opts.compact ? (opts.tag ? [] : [r.pieceTitle])
+    : [r.memberName, r.sectionName, r.pieceTitle];
+  const bits = base.concat([
     r.durationSec ? Math.round(r.durationSec) + ' 秒' : null,
-    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)].filter(Boolean);
+    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)]).filter(Boolean);
 
   el.innerHTML =
     `<div class="rc-rec-top">
@@ -251,7 +550,14 @@ function card(r) {
        <div class="rc-body">
          <div class="rc-title"><b></b></div>
          <div class="rc-meta"></div>
-         <div class="rc-track"><span class="rc-bar"><i class="rc-fill"></i></span><span class="rc-time">0:00</span></div>
+         <div class="rc-tags"></div>
+         <div class="rc-track">
+           <div class="rc-seek">
+             <span class="rc-bar"><i class="rc-fill"></i></span>
+             <input class="rc-range" type="range" min="0" max="0" step="0.01" value="0" aria-label="播放进度" disabled>
+           </div>
+           <span class="rc-time">0:00</span>
+         </div>
        </div>
        <div class="rc-ops">
          <button class="rc-opt rc-tp" type="button" aria-expanded="false"></button>
@@ -261,16 +567,24 @@ function card(r) {
      <div class="rc-thread" hidden></div>`;
   el.querySelector('.rc-title b').textContent = r.title || '（未命名）';
   el.querySelector('.rc-meta').innerHTML = bits.map(escHtml).join('<span class="sep">·</span>');
+  if (opts.tag) el.querySelector('.rc-tags').innerHTML = opts.tag;
+  else el.querySelector('.rc-tags').remove();
   const tpBtn = el.querySelector('.rc-tp');
   tpBtn.textContent = `点评（${r.commentCount}）`;
   const play = el.querySelector('.rc-play');
   play.innerHTML = ICON_PLAY;
 
-  // 播放：**必须走 blob**（裸 <audio src="/api/files/id"> 不带 Authorization 头，永远 401）
+  // 播放：**必须走 blob**（裸 <audio src="/api/files/id"> 不带 Authorization 头，永远 401）。
+  // ⚠️ #226：**渲染时不取流**；点播放才取，取到的 URL 留在页面内缓存里复用（刷新列表也不重下）。
   const audio = document.createElement('audio');
   audio.className = 'rc-audio';
   audio.preload = 'metadata';
   el.appendChild(audio);
+  const fill = el.querySelector('.rc-fill');
+  const time = el.querySelector('.rc-time');
+  const seek = wireSeekPlayer(audio, { range: el.querySelector('.rc-range'), fill, time, fallback: r.durationSec });
+  const key = cacheKey(r.fileId);
+
   // ⭐ 互斥（#112）：这条一开始播，就把"上一个在播的"**显式**停掉并归零（不靠 `pause` 事件推状态）。
   audio.addEventListener('play', () => {
     if (playingAudio && playingAudio !== audio) {
@@ -278,24 +592,56 @@ function card(r) {
       playingAudio.currentTime = 0;
     }
     playingAudio = audio;
+    playingKey = key;
   });
 
-  // 自绘播放条跟随真 `<audio>` 状态（底层仍是浏览器在解码/放声）
-  const fill = el.querySelector('.rc-fill');
-  const time = el.querySelector('.rc-time');
-  const paint = () => {
-    const dur = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (r.durationSec || 0);
-    time.textContent = fmtClock(audio.currentTime) + (dur ? ' / ' + fmtClock(dur) : '');
-    fill.style.width = dur > 0 ? Math.min(100, (audio.currentTime / dur) * 100).toFixed(1) + '%' : '0%';
-  };
-  audio.addEventListener('loadedmetadata', paint);
-  audio.addEventListener('timeupdate', paint);
-  audio.addEventListener('play',  () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-pressed', 'true'); });
   const toPaused = () => { play.innerHTML = ICON_PLAY; play.setAttribute('aria-pressed', 'false'); };
-  audio.addEventListener('pause', () => { toPaused(); paint(); });
-  audio.addEventListener('ended', () => { toPaused(); audio.currentTime = 0; paint(); });
-  play.addEventListener('click', () => { if (audio.paused) audio.play(); else audio.pause(); });
-  BAND.fileBlobUrl(r.fileId).then((url) => { audio.src = url; }).catch(() => {});
+  audio.addEventListener('play',  () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-pressed', 'true'); });
+  audio.addEventListener('pause', () => { toPaused(); seek.repaint(); });
+  audio.addEventListener('ended', () => {
+    toPaused();
+    audio.currentTime = 0;
+    if (playingKey === key) playingKey = null;
+    seek.repaint();
+  });
+
+  const startPlay = () => {
+    const p = audio.play();
+    if (p && p.catch) p.catch(() => {
+      // 取流已经成功（src 已设好），只是浏览器这次不认手势：提示再点一次，下一次秒开
+      if (el.isConnected) BAND.toast('再点一次播放');
+      seek.repaint();
+    });
+  };
+
+  play.addEventListener('click', async () => {
+    if (!audio.paused) { audio.pause(); return; }
+    if (audio.__loading) return;   // 双击只发一次请求
+    const hit = audioCache.get(key);
+    if (hit && hit.url) {
+      if (audio.src !== hit.url) audio.src = hit.url;
+      startPlay();
+      return;
+    }
+    audio.__loading = true;
+    play.setAttribute('aria-busy', 'true');
+    time.textContent = '载入中…';
+    try {
+      const url = await cachedUrl(r.fileId);
+      if (!el.isConnected) return;
+      audio.src = url;
+      startPlay();
+    } catch (e) {
+      // `BAND.fileBlob` 对 HTTP 失败**已经 toast 过一次**，这里只补网络类失败，别叠两条
+      if (el.isConnected && !/^HTTP /.test((e && e.message) || '')) {
+        BAND.toast('这段录音没载下来，再点一次试试');
+      }
+      seek.repaint();
+    } finally {
+      audio.__loading = false;
+      play.removeAttribute('aria-busy');
+    }
+  });
 
   tpBtn.addEventListener('click', () => toggleThread(r, el, tpBtn));
 
@@ -307,10 +653,559 @@ function card(r) {
   del.addEventListener('click', async () => {
     if (!await BAND.confirm({ title: '删掉这段录音？', body: r.title || '' })) return;
     await BAND.must(`/api/recordings/${r.id}`, { method: 'DELETE' });
+    dropCache(r.fileId);   // 删除即回收这条的 blob URL，别等 LRU 淘汰
     BAND.toast('已删除', 'success');
-    load();
+    if (opts.onChanged) opts.onChanged();
+    else load().catch(() => {});
   });
   return el;
+}
+
+/* ============================================================
+   录音管理视图（#225）：本周概览 / 布置 / 未交 / 本周录音 / 以前的周
+   ============================================================ */
+const CHEV = '<svg class="rm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+
+function weekLabel(start, end) {
+  const md = (s) => {
+    const p = String(s || '').split('-');
+    return p.length === 3 ? Number(p[1]) + ' 月 ' + Number(p[2]) + ' 日' : String(s || '');
+  };
+  return md(start) + ' – ' + md(end);
+}
+
+function sumDur(recs) {
+  const sec = recs.reduce((n, r) => n + (Number(r.durationSec) || 0), 0);
+  return sec > 0 ? fmtClock(sec) : '—';
+}
+
+function stateChip(m) {
+  if (!m.state) return '';
+  const cls = m.state === 'DONE' ? 'done' : isPartState(m.state) ? 'part' : 'miss';
+  const label = m.state === 'DONE' ? '已交' : isPartState(m.state) ? '部分' : '未交';
+  return `<span class="rm-st ${cls}"><i class="dot ${cls}" aria-hidden="true"></i>${label} ${m.doneCount}/${m.totalCount}</span>`;
+}
+
+function manageTag(r, hasAssignments) {
+  if (!hasAssignments) return '';
+  if (r.assignmentId) {
+    return `<span class="rec-tag">${escHtml(r.assignmentTitle || '本周作业')}`
+      + (r.pieceTitle ? ' · ' + escHtml(r.pieceTitle) : '') + '</span>';
+  }
+  return '<span class="rec-tag unlinked">未关联作业 · 不计完成度</span>';
+}
+
+function historyTag(r) {
+  return r.assignmentTitle
+    ? `<span class="rec-tag">${escHtml(r.assignmentTitle)}${r.pieceTitle ? ' · ' + escHtml(r.pieceTitle) : ''}</span>`
+    : '';
+}
+
+function renderHero(d) {
+  const host = byId('rm-hero');
+  const scopeName = me.role === 'SECTION_LEADER' ? '本声部' : '全团';
+  const recs = d.sections.reduce((n, s) => n + s.members.reduce((k, m) => k + m.recordings.length, 0), 0);
+  const label = weekLabel(d.weekStart, d.weekEnd);
+
+  if (!d.assignments.length) {
+    const secN = d.sections.filter((s) => s.members.some((m) => m.recordings.length)).length;
+    host.innerHTML = `
+      <div class="rm-hero-top">
+        <div>
+          <div class="rm-kicker">录音管理 · 本周</div>
+          <div class="rm-week">${escHtml(label)}</div>
+          <div class="rm-scope">${scopeName} · 本周未布置曲目</div>
+        </div>
+      </div>
+      <div class="rm-nostats">本周已收 <b>${recs}</b> 条录音 · <b>${secN}</b> 个声部有录音</div>`;
+    return;
+  }
+
+  const assignedSections = new Set(d.assignments.map((a) => a.sectionId));
+  let expected = 0, done = 0, part = 0, miss = 0;
+  for (const sec of d.sections) {
+    if (!assignedSections.has(sec.sectionId)) continue;
+    for (const m of sec.members) {
+      if (!m.state) continue;
+      expected++;
+      if (m.state === 'DONE') done++;
+      else if (isPartState(m.state)) part++;
+      else miss++;
+    }
+  }
+  const pct = (n) => (expected ? (n / expected * 100).toFixed(1) : 0);
+  host.innerHTML = `
+    <div class="rm-hero-top">
+      <div>
+        <div class="rm-kicker">录音管理 · 本周</div>
+        <div class="rm-week">${escHtml(label)}</div>
+        <div class="rm-scope">${scopeName} · 本周已收 <b>${recs}</b> 条</div>
+      </div>
+      <div class="rm-stats" aria-label="本周完成情况">
+        <div class="stat"><div class="n">${expected}</div><div class="l">应交</div></div>
+        <div class="stat"><div class="n">${miss}</div><div class="l">未交</div></div>
+        <div class="stat"><div class="n">${part}</div><div class="l">部分交</div></div>
+        <div class="stat"><div class="n">${done}</div><div class="l">已交</div></div>
+      </div>
+    </div>
+    <div class="rm-bar" aria-hidden="true">
+      <i class="b-done" style="width:${pct(done)}%"></i>
+      <i class="b-part" style="width:${pct(part)}%"></i>
+      <i class="b-miss" style="width:${pct(miss)}%"></i>
+    </div>
+    <div class="rm-legend">
+      <span><i class="dot done"></i>已交 ${done}</span>
+      <span><i class="dot part"></i>部分交 ${part}</span>
+      <span><i class="dot miss"></i>未交 ${miss}</span>
+    </div>`;
+}
+
+function renderAssignments(d) {
+  const host = byId('as-body');
+  byId('as-sub').textContent = d.assignments.length ? d.assignments.length + ' 条 · 按声部' : '';
+  if (!d.assignments.length) {
+    host.innerHTML = `
+      <div class="as-empty">
+        <div class="grow"><b>本周未布置曲目</b><span>没有作业就不生成未交名单；本周录音照常展示。</span></div>
+        <button class="rc-btn rc-btn-line rc-btn-sm" type="button" data-open-assign>去布置</button>
+      </div>`;
+    return;
+  }
+  const groups = [];
+  const bySec = new Map();
+  for (const a of d.assignments) {
+    let g = bySec.get(a.sectionId);
+    if (!g) { g = { id: a.sectionId, name: a.sectionName || '未分声部', list: [] }; bySec.set(a.sectionId, g); groups.push(g); }
+    g.list.push(a);
+  }
+  host.innerHTML = `<div class="as-grid">${groups.map((g, i) => `
+    <div class="as-sec" style="--rm-d:${i * 55}ms">
+      <span class="as-sec-name">${escHtml(g.name)}</span>
+      <div class="as-chips">
+        ${g.list.map((a) => `
+          <span class="as-chip" data-chip="${a.id}">
+            <span class="as-chip-main"><b>${escHtml(a.title)}</b>
+              <em>${a.pieceTitle ? escHtml(a.pieceTitle) : '基本功 · 无曲目'}</em></span>
+            <span class="as-chip-ops">
+              <button class="as-op" type="button" data-rename="${a.id}">改名</button>
+              <button class="as-op danger" type="button" data-del-as="${a.id}"${a.canDelete ? ''
+                : ` disabled title="已有 ${a.submittedCount} 人提交，不能删除"`}>删除</button>
+            </span>
+          </span>`).join('')}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+function renderMissing(d) {
+  const block = byId('rm-miss');
+  const host = byId('miss-body');
+  if (!d.assignments.length) { block.hidden = true; host.innerHTML = ''; return; }
+  block.hidden = false;
+  const assignedSections = new Set(d.assignments.map((a) => a.sectionId));
+  const groups = [];
+  let missN = 0, partN = 0;
+  for (const sec of d.sections) {
+    if (!assignedSections.has(sec.sectionId)) continue;
+    const rows = sec.members.filter((m) => m.state === 'MISS' || isPartState(m.state));
+    missN += rows.filter((m) => m.state === 'MISS').length;
+    partN += rows.filter((m) => isPartState(m.state)).length;
+    rows.sort((a, b) => (a.state === b.state ? a.memberId - b.memberId : (a.state === 'MISS' ? -1 : 1)));
+    if (rows.length) groups.push({ sec, rows });
+  }
+  byId('miss-sub').textContent = groups.length
+    ? `未交 ${missN} · 部分交 ${partN} · 点人名定位` : '';
+  if (!groups.length) {
+    host.innerHTML = '<div class="all-done"><span class="dot done" aria-hidden="true"></span>本周全员交齐，没漏人。</div>';
+    return;
+  }
+  host.innerHTML = `<div class="miss-grid">${groups.map((g, i) => `
+    <div class="miss-sec" style="--rm-d:${i * 55 + 30}ms">
+      <div class="miss-sec-h"><span>${escHtml(g.sec.sectionName || '未分声部')}</span>
+        <span class="cnt">${g.rows.length}</span></div>
+      <div class="miss-names">
+        ${g.rows.map((m) => `
+          <button class="miss-name" type="button" data-jump="${g.sec.sectionId}:${m.memberId}"
+                  title="定位到 ${escHtml(m.name)} 本周的录音">
+            <i class="dot ${m.state === 'MISS' ? 'miss' : 'part'}" aria-hidden="true"></i>
+            <b>${escHtml(m.name)}</b>
+            <em>${m.state === 'MISS' ? '未交' : '部分'} ${m.doneCount}/${m.totalCount}${m.unlinkedCount ? ' · 未关联 ' + m.unlinkedCount : ''}</em>
+          </button>`).join('')}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/* 声部 → 人 → 录音；本周与历史共用（历史没有状态 chip / 进度条） */
+function buildWeekBlock(sec, opts) {
+  const members = sec.members.filter((m) => m.recordings.length);
+  if (!members.length) return null;
+  const sid = sec.sectionId;
+  const secBodyId = `${opts.prefix}-${sid}`;
+  const recN = members.reduce((n, m) => n + m.recordings.length, 0);
+  const expected = sec.members.filter((m) => m.state);
+  const doneN = expected.filter((m) => m.state === 'DONE').length;
+  // 历史周的声部 id 与本周相同，但折叠状态不能共用（否则本周收起会把历史周也带收）
+  const open = opts.historic || !closedSections.has(String(sid));
+  const pct = expected.length ? Math.round(doneN / expected.length * 100) : 0;
+
+  const block = document.createElement('section');
+  block.className = 'rm-sec';
+  block.style.setProperty('--rm-d', (opts.delay || 0) + 'ms');
+  block.innerHTML = `
+    <button class="rm-sec-toggle" type="button" data-sec-toggle="${sid}"
+            aria-expanded="${open}" aria-controls="${secBodyId}">
+      <span class="rm-sec-name">${escHtml(sec.sectionName || '未分声部')}</span>
+      <span class="rm-sec-meta">${members.length} 人 · ${recN} 条</span>
+      ${opts.historic || !expected.length ? '' : `<span class="rm-sec-bar" aria-hidden="true"><i style="--w:${pct}%"></i></span>
+        <span class="rm-sec-state">${doneN}/${expected.length} 已交</span>`}
+      ${CHEV}
+    </button>
+    <div class="rm-sec-body" id="${secBodyId}" ${open ? '' : 'hidden'}></div>`;
+  const body = block.querySelector('.rm-sec-body');
+
+  members.forEach((m, i) => {
+    const mid = m.memberId;
+    const bodyId = `${opts.personPrefix}-${sid}-${mid}`;
+    const pOpen = openPersons.has(bodyId);
+    const recs = m.recordings.slice().sort((a, b) => b.id - a.id);
+    const person = document.createElement('div');
+    person.className = 'rm-person';
+    person.style.setProperty('--rm-d', (i * 40 + 70) + 'ms');
+    person.innerHTML = `
+      <button class="rm-p-btn" type="button" data-ptoggle="${bodyId}"
+              aria-expanded="${pOpen}" aria-controls="${bodyId}">
+        <span class="rm-av" aria-hidden="true">${escHtml((m.name || '?').slice(0, 1))}</span>
+        <span class="rm-name">${escHtml(m.name || '已离团成员')}</span>
+        ${opts.historic ? '' : stateChip(m)}
+        <span class="rm-p-meta">${recs.length} 条 · ${sumDur(recs)}${m.unlinkedCount && opts.hasAssignments ? ' · 未关联 ' + m.unlinkedCount : ''}</span>
+        ${CHEV}
+      </button>
+      <div class="rm-body" id="${bodyId}" ${pOpen ? '' : 'hidden'}></div>`;
+
+    const list = document.createElement('div');
+    list.className = 'rc-recs rm-recs';
+    for (const r of recs) {
+      list.appendChild(card(r, {
+        compact: true,
+        tag: opts.historic ? historyTag(r) : manageTag(r, opts.hasAssignments),
+        onChanged: opts.onChanged,
+      }));
+    }
+    person.querySelector('.rm-body').appendChild(list);
+    body.appendChild(person);
+  });
+  return block;
+}
+
+function renderWeek(d) {
+  const host = byId('week-sections');
+  host.innerHTML = '';
+  const hasAssignments = d.assignments.length > 0;
+  let blocks = 0, total = 0;
+  for (const sec of d.sections) {
+    const n = sec.members.reduce((k, m) => k + m.recordings.length, 0);
+    if (!n) continue;
+    const el = buildWeekBlock(sec, {
+      prefix: 'wk-sec',
+      personPrefix: 'wk-p',
+      historic: false,
+      hasAssignments,
+      delay: blocks * 55,
+      onChanged: () => { loadManage().catch(() => {}); },
+    });
+    if (el) { host.appendChild(el); blocks++; total += n; }
+  }
+  byId('week-sub').textContent = blocks ? `${blocks} 个声部 · ${total} 条录音` : '';
+  if (!blocks) {
+    host.innerHTML = `
+      <div class="as-empty">
+        <div class="grow"><b>本周还没有录音</b><span>等第一条传上来，这里会按声部和人自动归组。</span></div>
+      </div>`;
+  }
+}
+
+function renderHistory() {
+  const host = byId('weeks');
+  if (!weeksData) {
+    byId('history-sub').textContent = '';
+    host.innerHTML = '<div class="wk-skel"></div><div class="wk-skel"></div>';
+    return;
+  }
+  byId('history-sub').textContent = weeksData.length ? `${weeksData.length} 周` : '';
+  if (!weeksData.length) {
+    host.innerHTML = '<div class="rm-note">以前还没有录音。</div>';
+    return;
+  }
+  host.innerHTML = weeksData.map((w, i) => {
+    const open = openWeeks.has(i);
+    return `
+      <div class="wk" style="--rm-d:${i * 55}ms">
+        <button class="wk-row" type="button" data-week-toggle="${i}"
+                aria-expanded="${open}" aria-controls="wb-${i}">
+          <span class="wk-range">${escHtml(weekLabel(w.weekStart, w.weekEnd))}</span>
+          <span class="wk-count">${w.count} 条 · ${w.sectionCount} 个声部</span>
+          ${CHEV}
+        </button>
+        <div class="wk-body" id="wb-${i}" ${open ? '' : 'hidden'}></div>
+      </div>`;
+  }).join('');
+  weeksData.forEach((w, i) => { if (openWeeks.has(i)) hydrateWeek(i); });
+}
+
+function ensureWeeks() {
+  if (weeksData || weeksLoading) return;
+  weeksLoading = BAND.must('/api/recordings/manage/weeks')
+    .then((list) => { weeksData = Array.isArray(list) ? list : []; weeksLoading = null; renderHistory(); })
+    .catch(() => { weeksLoading = null; });
+}
+
+async function hydrateWeek(i) {
+  const w = weeksData && weeksData[i];
+  const body = byId('wb-' + i);
+  if (!w || !body) return;
+  const key = w.weekStart;
+  let d = weekManage.get(key);
+  if (!d) {
+    body.innerHTML = '<div class="wk-skel"></div><div class="wk-skel"></div><div class="wk-skel"></div>';
+    try {
+      d = await BAND.must('/api/recordings/manage?weekStart=' + encodeURIComponent(key));
+      weekManage.set(key, d);
+    } catch (e) {
+      body.innerHTML = '<div class="rm-note">这一周没载下来，收起重开再试一次。</div>';
+      return;
+    }
+  }
+  // 注意：**不能因为有缓存就提前 return**——切视图会重建整段 DOM，
+  // 早退会留下一个"展开但空白"的周。缓存里有数据就重铺一遍（不再发请求）。
+  body.innerHTML = '';
+  let blocks = 0;
+  for (const sec of d.sections) {
+    const el = buildWeekBlock(sec, {
+      prefix: `hb-${i}-sec`,
+      personPrefix: `hb-${i}-p`,
+      historic: true,
+      hasAssignments: false,
+      delay: blocks * 55,
+      onChanged: () => { weekManage.delete(key); hydrateWeek(i); },
+    });
+    if (el) { body.appendChild(el); blocks++; }
+  }
+  if (!blocks) body.innerHTML = '<div class="rm-note">这一周没有录音。</div>';
+}
+
+function renderManage() {
+  if (!manageData) return;
+  renderHero(manageData);
+  renderAssignments(manageData);
+  renderMissing(manageData);
+  renderWeek(manageData);
+  renderHistory();
+}
+
+function openAssignPanel(open) {
+  byId('as-panel').hidden = !open;
+  byId('as-open').setAttribute('aria-expanded', String(open));
+  if (open) {
+    fillAssignSection();
+    fillAssignPiece();
+    byId('as-title').value = '';
+    byId('as-piece').value = '';
+    byId('as-sec').focus();
+  }
+}
+
+function fillAssignPiece() {
+  const sel = byId('as-piece');
+  if (!sel) return;
+  const keep = sel.value;
+  BAND.fillSelect(sel, pieces.map((p) => ({ value: p.id, label: p.title })), '基本功 · 无曲目');
+  if (keep && pieces.some((p) => String(p.id) === keep)) sel.value = keep;
+}
+
+function fillAssignSection() {
+  const sel = byId('as-sec');
+  if (!sel) return;
+  let list = sections;
+  if (me.role === 'SECTION_LEADER') {
+    list = sections.filter((s) => s.id === me.sectionId);
+    sel.disabled = true;   // 声部长只能给自己声部布置（服务端再判一次）
+  } else {
+    sel.disabled = false;
+  }
+  const keep = sel.value;
+  BAND.fillSelect(sel, list.map((s) => ({ value: s.id, label: s.name })));
+  if (keep && list.some((s) => String(s.id) === keep)) sel.value = keep;
+}
+
+async function loadSections() {
+  try { sections = await BAND.must('/api/sections'); }
+  catch (e) { sections = []; }
+  fillAssignSection();
+}
+
+function findAssignment(id) {
+  return (manageData && manageData.assignments || []).find((a) => String(a.id) === String(id));
+}
+
+async function reloadManage() {
+  try { await loadManage(); } catch (e) { /* BAND.must 已提示 */ }
+}
+
+async function createAssignment() {
+  const sectionId = Number(byId('as-sec').value);
+  const title = byId('as-title').value.trim();
+  const pieceValue = byId('as-piece').value;
+  if (!sectionId) { BAND.toast('先选声部', 'warning'); return; }
+  if (!title) { BAND.toast('作业名不能为空', 'warning'); byId('as-title').focus(); return; }
+  const btn = byId('as-save');
+  btn.disabled = true;
+  try {
+    await BAND.must('/api/recordings/assignments', {
+      method: 'POST',
+      body: { sectionId, title, pieceId: pieceValue ? Number(pieceValue) : null },
+    });
+    BAND.toast('已布置', 'success');
+    openAssignPanel(false);
+    await refreshAssignments();
+    await reloadManage();
+  } catch (e) {
+    /* BAND.must 已提示 */
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteAssignment(a) {
+  if (!a) return;
+  if (!a.canDelete) { BAND.toast(`已有 ${a.submittedCount} 人提交，不能删除`, 'warning'); return; }
+  if (!await BAND.confirm({ title: '删掉这条作业？', body: a.title })) return;
+  try {
+    await BAND.must(`/api/recordings/assignments/${a.id}`, { method: 'DELETE' });
+    BAND.toast('已删除', 'success');
+    await refreshAssignments();
+    await reloadManage();
+  } catch (e) { /* BAND.must 已提示 */ }
+}
+
+function startRename(chip, a) {
+  if (!chip || !a || chip.dataset.editing) return;
+  chip.dataset.editing = '1';
+  chip.innerHTML = `<span class="as-chip-main">
+      <input class="as-rename" maxlength="64" aria-label="作业名" value="${escHtml(a.title)}">
+    </span>
+    <span class="as-chip-ops">
+      <button class="as-op" type="button" data-rename-save>保存</button>
+      <button class="as-op" type="button" data-rename-cancel>取消</button>
+    </span>`;
+  const input = chip.querySelector('input');
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const next = input.value.trim();
+    if (!save || !next || next === a.title) { renderAssignments(manageData); return; }
+    try {
+      await BAND.must(`/api/recordings/assignments/${a.id}`, {
+        method: 'PUT',
+        body: { title: next, pieceId: a.pieceId },
+      });
+      BAND.toast('已改名', 'success');
+      await refreshAssignments();
+      await reloadManage();
+    } catch (e) {
+      renderAssignments(manageData);
+    }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  chip.querySelector('[data-rename-save]').addEventListener('mousedown', (e) => e.preventDefault());
+  chip.querySelector('[data-rename-save]').addEventListener('click', (e) => { e.preventDefault(); finish(true); });
+  chip.querySelector('[data-rename-cancel]').addEventListener('mousedown', (e) => e.preventDefault());
+  chip.querySelector('[data-rename-cancel]').addEventListener('click', (e) => { e.preventDefault(); finish(false); });
+  input.focus();
+  input.select();
+}
+
+function jumpToPerson(sid, mid) {
+  closedSections.delete(String(sid));
+  const bodyId = `wk-p-${sid}-${mid}`;
+  openPersons.add(bodyId);
+  const secBody = byId(`wk-sec-${sid}`);
+  const secBtn = document.querySelector(`[data-sec-toggle="${sid}"]`);
+  if (secBody) secBody.hidden = false;
+  if (secBtn) secBtn.setAttribute('aria-expanded', 'true');
+  const pbody = byId(bodyId);
+  if (pbody) pbody.hidden = false;
+  const row = document.querySelector(`[data-ptoggle="${bodyId}"]`);
+  if (!row) {
+    // 零录音的人不渲染人名行（样张同款）：给个提示，别让点击像"没反应"
+    const sec = (manageData?.sections || []).find((s) => String(s.sectionId) === String(sid));
+    const m = sec && sec.members.find((x) => String(x.memberId) === String(mid));
+    BAND.toast(`${m ? m.name : '这位成员'} 本周还没有上传录音`, 'warning');
+    return;
+  }
+  row.setAttribute('aria-expanded', 'true');
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.focus({ preventScroll: true });
+}
+
+/* —— 上传表单的「关联本周作业」—— */
+async function refreshAssignments() {
+  if (!me || me.role === 'HONORARY') return;
+  try { currentAssignments = await BAND.must('/api/recordings/assignments/current'); }
+  catch (e) { currentAssignments = []; }
+  const sel = byId('u-assign');
+  const hint = byId('u-hint');
+  const keep = sel.value;
+  BAND.fillSelect(sel,
+    currentAssignments.map((a) => ({ value: a.id, label: a.title + (a.pieceTitle ? ' · ' + a.pieceTitle : ' · 基本功') })),
+    '不关联本周作业');
+  if (!me.sectionId) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '你没有所属声部，不参与本周作业。';
+    hint.hidden = false;
+  } else if (!currentAssignments.length) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '本周未布置作业，按普通录音上传即可。';
+    hint.hidden = false;
+  } else {
+    sel.disabled = false;
+    const pick = currentAssignments.find((a) => String(a.id) === keep)
+      || currentAssignments.find((a) => !a.linked);
+    sel.value = pick ? String(pick.id) : '';
+    syncAssignPiece();
+    if (!pick) {
+      hint.textContent = '本周作业都已关联过，可再传一条补充。';
+      hint.hidden = false;
+    }
+  }
+}
+
+function syncAssignPiece() {
+  const sel = byId('u-assign');
+  const pieceSel = byId('u-piece');
+  const hint = byId('u-hint');
+  const a = currentAssignments.find((x) => String(x.id) === sel.value);
+  if (!a) {
+    pieceSel.disabled = false;
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  if (a.pieceId) {
+    pieceSel.value = String(a.pieceId);
+    pieceSel.disabled = true;
+    hint.textContent = '曲目由作业决定：' + (a.pieceTitle || '');
+  } else {
+    pieceSel.value = '';
+    pieceSel.disabled = true;
+    hint.textContent = '这条作业是基本功，不关联曲目。';
+  }
+  hint.hidden = false;
 }
 
 /* ---- 点评线（就地展开，平铺按时间，不做父子嵌套 —— docs/08 §8.4） ---- */
@@ -370,18 +1265,37 @@ function toggleThread(r, el, btn) {
 /* ============================================================
    屏二 · 录音台
    ============================================================ */
-function showUpdone(name, size) {
-  byId('up-nm').textContent = name || '';
-  byId('up-sz').textContent = size || '';
-  byId('updone').classList.toggle('on', !!(name || size));
+/* ---- 录音状态机（docs/08 §8.4 ②）----
+   ⚠️ 秒数**只算真正录进去的时间**：`recordedMs` 是已结算的段，`segStart` 是当前段起点。
+      暂停时把当前段结算进 `recordedMs` 并把 `segStart` 置空 ⇒ 时间自然冻结，不必重排定时器。
+   ⚠️ 200ms ticker **只读不写**（不累加计数，只重画 `liveMs()`），暂停时它照跑也画不出增长。
+   ⚠️ 「录音停」不等于「节拍器停」：这里绝不碰节拍器的任何状态。 */
+let rdTimer = null;
+let recState = 'idle';      // idle | recording | paused | stopping
+let recordedMs = 0;
+let segStart = null;
+let recStream = null;
+let recUsable = true;       // 浏览器支持 audio/mp4 录音
+
+const recNow = () => (segStart == null ? 0 : performance.now() - segStart);
+const liveMs = () => recordedMs + recNow();
+function clockMs(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 
-let rdTimer = null, rdSec = 0;
 function recDemoStart() {
-  rdSec = 0;
-  byId('updone').classList.remove('on');
+  recordedMs = 0;
+  segStart = performance.now();
+  recState = 'recording';
   byId('recdemo').classList.add('on');
+  byId('recdemo').classList.remove('paused');
   byId('rd-time').textContent = '0:00';
+  byId('rd-note').textContent = '正在录…';
+  const pauseBtn = byId('rd-pause');
+  pauseBtn.textContent = '暂停';
+  pauseBtn.setAttribute('aria-pressed', 'false');
+  pauseBtn.disabled = false;
   const wave = byId('rd-wave');
   wave.innerHTML = '';
   for (let i = 0; i < 24; i++) {
@@ -391,93 +1305,508 @@ function recDemoStart() {
     wave.appendChild(b);
   }
   clearInterval(rdTimer);
-  rdTimer = setInterval(() => { rdSec++; byId('rd-time').textContent = fmtClock(rdSec); }, 1000);
+  rdTimer = setInterval(() => {
+    const ms = liveMs();
+    byId('rd-time').textContent = clockMs(ms);
+    if (recState === 'recording' && ms >= MAX_SECONDS * 1000) {
+      BAND.toast('已达 8:00 上限，已自动停止');
+      stopTake();
+    }
+  }, 200);
 }
+
 function recDemoStop() {
   clearInterval(rdTimer); rdTimer = null;
-  byId('recdemo').classList.remove('on');
+  byId('recdemo').classList.remove('on', 'paused');
+  byId('rd-pause').disabled = false;
+}
+
+function setPausedUI(paused) {
+  byId('recdemo').classList.toggle('paused', paused);
+  const btn = byId('rd-pause');
+  btn.textContent = paused ? '继续' : '暂停';
+  btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  byId('rd-note').textContent = paused ? '已暂停 · 节拍器照常' : '正在录…';
+}
+
+/* 暂停能力探测：老浏览器没有 `pause()`、或调了状态没变 ⇒ **只禁用按钮，录音继续、不丢内容**。 */
+function pauseUnsupported() {
+  const btn = byId('rd-pause');
+  btn.disabled = true;
+  btn.textContent = '不支持暂停';
+  BAND.toast('本机浏览器不支持暂停录音，这条只能连续录');
+}
+
+function togglePause() {
+  if (recState === 'recording') {
+    try {
+      if (!recorder || typeof recorder.pause !== 'function') throw new Error('no pause');
+      recorder.pause();
+    } catch (e) {
+      pauseUnsupported();
+      return;
+    }
+    if (recorder.state !== 'paused') { pauseUnsupported(); return; }
+    recordedMs += recNow();
+    segStart = null;
+    recState = 'paused';
+    setPausedUI(true);
+    return;
+  }
+  if (recState === 'paused') {
+    try {
+      recorder.resume();
+    } catch (e) {
+      BAND.toast('继续录音失败，请点「停止」保存这一段');
+      return;
+    }
+    if (recorder.state !== 'recording') {
+      BAND.toast('继续录音失败，请点「停止」保存这一段');
+      return;
+    }
+    segStart = performance.now();
+    recState = 'recording';
+    setPausedUI(false);
+    const note = byId('rd-note');
+    note.textContent = '继续录音…';
+    setTimeout(() => { if (recState === 'recording') note.textContent = '正在录…'; }, 1200);
+  }
+}
+
+function stopStream() {
+  if (recStream) { recStream.getTracks().forEach((t) => t.stop()); recStream = null; }
+}
+
+function stopTake() {
+  if (recState === 'stopping' || recState === 'idle') return;
+  if (!recorder) { recState = 'idle'; stopStream(); recDemoStop(); return; }
+  const wasPaused = recState === 'paused';
+  recState = 'stopping';
+  clearInterval(rdTimer); rdTimer = null;
+  // 暂停中停止：先 resume 再 stop —— 部分浏览器在 paused 态直接 stop 会丢最后一段
+  if (wasPaused) {
+    try { recorder.resume(); } catch (e) { /* 继续不了也要停：停是主诉求 */ }
+  }
+  try {
+    recorder.stop();
+  } catch (e) {
+    recorder = null;
+    recState = 'idle';
+    recordedMs = 0;
+    segStart = null;
+    chunks = [];
+    stopStream();
+    recDemoStop();
+    BAND.toast('这段录音没能保存，请重录一次');
+  }
+}
+
+/* 录音失败的原因分流（docs/08 §8.4 / docs/18 §18.12）：
+   拒绝/占用/没有设备/非安全上下文要分开说——统一一句「拿不到麦克风权限」会让用户不知道去哪儿开。
+   常见名字一律翻成中文并给出**具体设置路径**；未知错误才回落成通用建议，不把英文名丢给用户。 */
+const REC_HINT_DEFAULT = '两条路，自己挑：对着手机现录，或者把本机已经录好的文件传上来。传上来之后声部长可以点评。';
+const REC_FAIL_HINTS = {
+  NotAllowedError: '麦克风被拦下了：点地址栏左侧的站点图标 → 麦克风 → 允许；若已允许，再到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风」打开，然后重新点「页面内录音」。',
+  PermissionDeniedError: '麦克风被拦下了：点地址栏左侧的站点图标 → 麦克风 → 允许；若已允许，再到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风」打开，然后重新点「页面内录音」。',
+  NotReadableError: '系统没把麦克风交给浏览器：到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风 → 仅在使用时允许」，回来重新点「页面内录音」。',
+  TrackStartError: '系统没把麦克风交给浏览器：到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风 → 仅在使用时允许」，回来重新点「页面内录音」。',
+  NotFoundError: '没找到可用的麦克风：确认没有别的 App 占着麦克风，或换一台设备再试。',
+  DevicesNotFoundError: '没找到可用的麦克风：确认没有别的 App 占着麦克风，或换一台设备再试。',
+  SecurityError: '当前地址不是安全连接（https），浏览器禁止录音。请用 https 地址打开本站。',
+  NoMediaDevices: '这个浏览器不支持网页录音：请换 Chrome 打开本站，或改用「选择本机文件」上传。',
+};
+const REC_FAIL_FALLBACK = '麦克风没启动成功：请换 Chrome 或手机自带浏览器再试，或改用「选择本机文件」上传。';
+
+/* 桌面快捷方式 / WebView 环境自检（只做推断，不断言）：
+   - 自带浏览器建的快捷方式多半是受限 WebView：可能拦掉 getUserMedia，也可能根本没实现文件选择器；
+   - 国产内核的 UA 不一定带 `wv` 标记，所以面板**始终可见**，不能只靠自动判断。
+   - 网页不能替宿主授权、也不能强制它弹选择器 ⇒ 这里只负责说清原因并给出去 Chrome 的出路。 */
+let envWired = false;
+function envSnapshot() {
+  const ua = navigator.userAgent;
+  const appMatch = /ForBandApp\/([\d.]+)/i.exec(ua);
+  const nativeApp = !!appMatch;
+  const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches)
+    || navigator.standalone === true;
+  const webview = /;\s*wv\)/i.test(ua);
+  return {
+    ua,
+    standalone,
+    webview,
+    nativeApp,
+    appVersion: appMatch ? appMatch[1] : '',
+    // 官方 App 自己实现了麦克风与文件选择器，不能把它当成受限快捷方式
+    shellSuspected: /Android/i.test(ua) && !nativeApp && (standalone || webview),
+    secure: window.isSecureContext === true,
+    mic: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+    mp4: !!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')),
+  };
+}
+
+function envRow(dl, label, value) {
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  if (value && value.nodeType === 1) dd.appendChild(value);
+  else dd.textContent = value;
+  dl.append(dt, dd);
+}
+
+function initEnvPanel() {
+  if (envWired) return;
+  envWired = true;
+  const env = envSnapshot();
+  const list = byId('rc-env-list');
+  list.textContent = '';
+  envRow(list, '打开方式', env.nativeApp
+    ? '山水乐团 App'
+    : (env.standalone ? '独立窗口（桌面快捷方式）' : '浏览器标签页'));
+  if (env.nativeApp) envRow(list, 'App 版本', env.appVersion);
+  envRow(list, '安全连接', env.secure ? '是（https）' : '否');
+  envRow(list, '麦克风接口', env.mic ? '可用' : '不可用');
+  envRow(list, '网页录音格式', env.mp4 ? '支持 m4a' : '不支持');
+  envRow(list, 'WebView 标记', env.webview ? '检测到' : '未检测到');
+  const code = document.createElement('code');
+  code.textContent = env.ua;
+  envRow(list, '浏览器标识', code);
+  byId('rc-env-warn').hidden = !env.shellSuspected;
+  byId('rc-copy-url').addEventListener('click', copySiteUrl);
+}
+
+function copySiteUrl() {
+  const url = location.origin + location.pathname;
+  const fallback = () => {
+    const box = byId('rc-env-url');
+    box.value = url;
+    box.hidden = false;
+    byId('rc-env').open = true;
+    box.focus();
+    box.select();
+    BAND.toast('复制失败：请长按下面的网址手动复制');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => BAND.toast('网址已复制，粘贴到 Chrome 地址栏打开', 'success'))
+      .catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+function recHint(text, warn) {
+  const hint = byId('rec-hint');
+  if (!hint) return;
+  hint.textContent = text;
+  hint.classList.toggle('warn', !!warn);
+}
+function recFail(name) {
+  const env = envSnapshot();
+  let text = REC_FAIL_HINTS[name] || REC_FAIL_FALLBACK;
+  if (env.nativeApp && (name === 'NotAllowedError' || name === 'PermissionDeniedError')) {
+    // App 内没有地址栏，权限在系统设置里；不要沿用浏览器那条路径
+    text = '麦克风被拦下了：请到「设置 → 应用 → 山水乐团 → 权限 → 麦克风 → 仅在使用时允许」，'
+         + '再回来重新点「页面内录音」。';
+  } else if (env.nativeApp && (name === 'NotReadableError' || name === 'TrackStartError')) {
+    text = '系统没把麦克风交给 App：请到「设置 → 应用 → 山水乐团 → 权限 → 麦克风 → 仅在使用时允许」，'
+         + '并确认没有别的 App 占着麦克风，再重新点「页面内录音」。';
+  } else if (env.nativeApp && name === 'NoMediaDevices') {
+    text = '系统 WebView 不支持网页录音：请改用「选择本机文件」上传；'
+         + '也可更新系统的「Android System WebView」，再重启 App 试试。';
+  } else if (env.nativeApp && !REC_FAIL_HINTS[name]) {
+    text = '麦克风没启动成功：请改用「选择本机文件」上传，或退出 App 重进再试。';
+  } else if (env.shellSuspected && (name === 'NotAllowedError' || name === 'PermissionDeniedError')) {
+    // 快捷方式没有地址栏，原来的「点站点图标」路径不存在；直接指到应用权限，并给 Chrome 重装这条兜底
+    text = '麦克风被拦下了：这个桌面快捷方式多半来自手机自带浏览器，没有地址栏可改站点权限。'
+         + '请到「设置 → 应用 → 安装这个快捷方式的浏览器 → 权限 → 麦克风 → 仅在使用时允许」；'
+         + '找不到或仍不行，就删掉桌面图标，到「安装到手机」页下载官方 App（推荐），或用 Chrome 重新安装。';
+  }
+  recHint(text, true);
+  BAND.toast('麦克风没启动成功，原因见上方提示');
 }
 
 /**
  * 录音：**先试 audio/mp4**——规格的音频白名单是 m4a/mp3/wav，而 Chrome 的 MediaRecorder 默认产出 webm（不在白名单）。
  * 不支持就直接退回"选本地文件"，并**明说一句**，不许静默失败。
  */
+async function startRecording() {
+  if (recState !== 'idle' || pendingTake) return;
+  // 非 https / 老浏览器里 `mediaDevices` 整个不存在：直接说清楚，别等 getUserMedia 抛 TypeError
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    recFail('NoMediaDevices');
+    return;
+  }
+  // ⚠️ **"录音停"不等于"节拍器停"**（docs/08 §8.4）：两者各管各的——节拍器由用户自己按才停。
+  try {
+    // ⚠️ **必须显式关掉浏览器的语音处理**（docs/08 §8.4）：裸写 `{audio:true}` 会把回声消除 / 降噪 /
+    //    自动增益**全打开** —— 那三样是**为语音通话调的**：自动增益来回压电平、降噪把**乐器的弱音尾巴当噪声掐掉**、
+    //    回声消除连带压平乐器。给乐器录音，这是缺陷不是保守。代价（有意的取舍）：关掉回声消除 ⇒
+    //    **外放时节拍声必然进录音** ⇒ 所以要戴耳机。
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    // 等权限弹窗期间另一条已经进了试听卡：这条不能再开（两条并存会让状态收敛不了）
+    if (pendingTake || recState !== 'idle') {
+      stream.getTracks().forEach((t) => t.stop());
+      BAND.toast('先上传或丢弃这条');
+      return;
+    }
+    recHint(REC_HINT_DEFAULT, false);   // 权限已拿到：把上一次的失败指引收回去
+    chunks = [];
+    recStream = stream;
+    recorder = new MediaRecorder(stream, { mimeType: 'audio/mp4' });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const ms = liveMs();          // ⚠️ 先算秒数再清状态：清完就没了
+      recorder = null;
+      stopStream();
+      recDemoStop();
+      recState = 'idle';
+      recordedMs = 0;
+      segStart = null;
+      const blob = new Blob(chunks, { type: 'audio/mp4' });
+      chunks = [];
+      if (!blob.size) { BAND.toast('这段没录到声音，请重录一次'); return; }
+      const seconds = Math.min(MAX_SECONDS, Math.max(1, Math.round(ms / 1000)));
+      stageTake({
+        file: new File([blob], `take-${Date.now()}.m4a`, { type: 'audio/mp4' }),
+        url: URL.createObjectURL(blob),
+        seconds,
+        source: 'rec',
+        name: (byId('u-title').value.trim() || '未命名') + '.m4a',
+      });
+    };
+    recorder.start();
+    recDemoStart();
+  } catch (e) {
+    // 按 err.name 分流：站内拒绝 / 系统未授权 / 没有设备 / 非安全上下文，处理路径完全不同
+    recFail(e && e.name);
+  }
+}
+
 function setupRecorder() {
   const btn = byId('pick-record');
   const supported = window.MediaRecorder && MediaRecorder.isTypeSupported('audio/mp4');
   if (!supported) {
+    recUsable = false;
     btn.disabled = true;
     btn.querySelector('.rc-pick-s').textContent =
       '这个浏览器不能直接录音（它录出来的格式系统不收）——请用手机录音机录好，再选本地文件上传。';
     return;
   }
-  btn.addEventListener('click', async () => {
-    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
-    // ⚠️ **"录音停"不等于"节拍器停"**（docs/08 §8.4）：两者各管各的——节拍器由用户自己按才停。
-    try {
-      // ⚠️ **必须显式关掉浏览器的语音处理**（docs/08 §8.4）：裸写 `{audio:true}` 会把回声消除 / 降噪 /
-      //    自动增益**全打开** —— 那三样是**为语音通话调的**：自动增益来回压电平、降噪把**乐器的弱音尾巴当噪声掐掉**、
-      //    回声消除连带压平乐器。给乐器录音，这是缺陷不是保守。代价（有意的取舍）：关掉回声消除 ⇒
-      //    **外放时节拍声必然进录音** ⇒ 所以要戴耳机。
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      });
-      chunks = [];
-      recorder = new MediaRecorder(stream, { mimeType: 'audio/mp4' });
-      const startedAt = Date.now();
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        recDemoStop();
-        const seconds = Math.round((Date.now() - startedAt) / 1000);
-        if (seconds > MAX_SECONDS) {
-          BAND.toast(`录了 ${seconds} 秒，超过 3 分钟上限——重录一段吧`);
-          return;
-        }
-        const blob = new Blob(chunks, { type: 'audio/mp4' });
-        showUpdone((byId('u-title').value.trim() || '未命名') + '.m4a', BAND.sizeText(blob.size));
-        await sendRecording(new File([blob], `take-${Date.now()}.m4a`, { type: 'audio/mp4' }), seconds);
-      };
-      recorder.start();
-      recDemoStart();
-      setTimeout(() => {   // 到 3 分钟自动停，别录出超长的东西
-        if (recorder && recorder.state === 'recording') recorder.stop();
-      }, MAX_SECONDS * 1000);
-    } catch (e) {
-      BAND.toast('拿不到麦克风权限');
-    }
+  btn.addEventListener('click', () => {
+    // ⚠️ 暂停态下点主按钮也必须走停止：旧版只认 `state === 'recording'`，暂停中点它会**误开一条新录音**
+    if (recState === 'recording' || recState === 'paused') { stopTake(); return; }
+    if (recState === 'stopping') return;
+    startRecording();
   });
-  byId('rd-stop').addEventListener('click', () => {
-    if (recorder && recorder.state === 'recording') recorder.stop();
+  byId('rd-stop').addEventListener('click', stopTake);
+  byId('rd-pause').addEventListener('click', togglePause);
+}
+
+/* ---- 试听卡：本页唯一上传入口（docs/08 §8.4 ③）----
+   ⚠️ `pendingTake` 同一时刻只允许一条；本机文件也**不再挑完就传**，先试听再决定。
+   ⚠️ 本机文件只预检扩展名 + 体积；时长交给浏览器探，探不到就传 null（服务端本来不解析音频）。 */
+const rvAudio = byId('rv-audio');
+const rvPlay = byId('rv-play');
+const rvSeek = wireSeekPlayer(rvAudio, {
+  range: byId('rv-range'),
+  fill: byId('rv-fill'),
+  time: byId('rv-time'),
+  fallback: () => (pendingTake && pendingTake.seconds ? pendingTake.seconds : 0),
+});
+let probing = false;
+
+function setPicksLocked(on) {
+  const picks = document.querySelector('.rc-picks');
+  if (picks) {
+    picks.classList.toggle('busy', on);
+    picks.setAttribute('aria-disabled', on ? 'true' : 'false');
+  }
+  byId('pick-record').disabled = on || !recUsable;
+  byId('u-file').disabled = on;
+  byId('rc-pending-hint').hidden = !on;
+}
+
+function stageTake(take) {
+  if (pendingTake) releasePending();   // 兜底：正常路径入口已锁，到不了这里
+  pendingTake = take;
+  byId('rv-name').textContent = take.name || '未命名.m4a';
+  byId('rv-src').textContent = take.source === 'rec' ? '页面内录音' : '本机文件';
+  byId('rv-again').textContent = take.source === 'rec' ? '重录' : '重选';
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();                       // 清掉上一条的缓冲，别让旧 metadata 混进来
+  rvAudio.src = take.url;
+  byId('rc-review').classList.add('on');
+  setPicksLocked(true);
+  rvSeek.repaint();
+}
+
+function releasePending() {
+  if (!pendingTake) return;
+  const url = pendingTake.url;
+  pendingTake = null;
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();
+  if (url) URL.revokeObjectURL(url);
+  byId('rc-review').classList.remove('on');
+  setPicksLocked(false);
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  rvSeek.repaint();
+}
+
+function dropTake() {
+  if (!pendingTake) return;
+  releasePending();
+  BAND.toast('已丢弃');
+}
+
+function againTake() {
+  if (!pendingTake) return;
+  const source = pendingTake.source;
+  releasePending();
+  // 必须在用户手势内重新进入：录音直接开；本机文件重新弹选择器
+  if (source === 'rec') startRecording();
+  else byId('u-file').click();
+}
+
+/* 本机文件探时长：4 秒内拿不到（格式怪 / 解不出）就交 null，**不阻断试听与上传**。 */
+function probeSeconds(url) {
+  return new Promise((resolve) => {
+    const a = document.createElement('audio');
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      a.removeAttribute('src');
+      try { a.load(); } catch (e) { /* 探测用节点，回收失败也无妨 */ }
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(null), 4000);
+    a.preload = 'metadata';
+    a.addEventListener('loadedmetadata', () => {
+      const d = a.duration;
+      finish(isFinite(d) && d > 0 ? Math.max(1, Math.round(d)) : null);
+    });
+    a.addEventListener('error', () => finish(null));
+    a.src = url;
   });
 }
 
-/* ⭐ 「选择本机文件」**挑完就直接上传**（docs/08 §8.4）：不再要求点第二次按钮 —— 多那一跳的代价是"选了没传、却以为传了"。
-   ⚠️ 这条路**不受 3 分钟限制**（T5：只受 20MB 体积限制；服务端本来就解析不了音频时长）。 */
-byId('u-file').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  showUpdone(file.name, BAND.sizeText(file.size));
-  await sendRecording(file, null);   // ⚠️ 第二参传 null = 不报时长 ⇒ 不触发 3 分钟那条
-  e.target.value = '';               // 清掉，方便再挑同一个文件
+// 录音进行中不弹文件框：否则挑完文件会盖掉正在录的这条
+byId('u-file').addEventListener('click', (e) => {
+  if (recState !== 'idle') { e.preventDefault(); BAND.toast('先停止录音，再选文件'); }
 });
 
-async function sendRecording(file, seconds) {
-  const uploaded = await BAND.uploadFile(file);
-  const pieceValue = byId('u-piece').value;
-  await BAND.must('/api/recordings', {
-    method: 'POST',
-    body: {
-      fileId: uploaded.id,
-      pieceId: pieceValue ? Number(pieceValue) : null,
-      title: byId('u-title').value.trim() || null,
-      durationSec: seconds,
-    },
-  });
-  byId('u-title').value = '';
-  BAND.toast('已上传', 'success');
-  await load();
+byId('u-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';                 // 先清掉，方便再挑同一个文件
+  if (!file) return;
+  if (recState !== 'idle') { BAND.toast('先停止录音，再选文件'); return; }
+  if (pendingTake) { BAND.toast('先上传或丢弃这条'); return; }
+  if (probing || uploading) return;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!FILE_EXTS.includes(ext)) { BAND.toast('只收 m4a / mp3 / wav 这三种格式', 'warning'); return; }
+  if (file.size > MAX_FILE_BYTES) { BAND.toast('单个文件不能超过 20 MB', 'warning'); return; }
+  probing = true;
+  const url = URL.createObjectURL(file);
+  const seconds = await probeSeconds(url);
+  probing = false;
+  // 探测期间可能已经录完一条、或又开始录了：这时都不能盖掉它
+  if (recState !== 'idle') { URL.revokeObjectURL(url); BAND.toast('录音还没停，这条文件等录完再选'); return; }
+  if (pendingTake) { URL.revokeObjectURL(url); BAND.toast('先上传或丢弃这条'); return; }
+  stageTake({ file, url, seconds, source: 'file', name: file.name });
+});
+
+/* ⭐ 本页**唯一**的上传入口（docs/08 §8.4）：表单值在**点上传这一刻**才读 —— 试听期间用户还能改标题/曲目。 */
+async function uploadPending() {
+  if (!pendingTake || uploading) return;
+  uploading = true;
+  const upBtn = byId('rv-up');
+  const againBtn = byId('rv-again');
+  const dropBtn = byId('rv-drop');
+  const ops = [upBtn, againBtn, dropBtn];
+  ops.forEach((b) => { b.disabled = true; });
+  upBtn.setAttribute('aria-busy', 'true');
+  const take = pendingTake;
+  try {
+    const title = byId('u-title').value.trim() || null;
+    const pieceValue = byId('u-piece').value;
+    const assignValue = byId('u-assign').value;
+    const uploaded = await BAND.uploadFile(take.file);
+    await BAND.must('/api/recordings', {
+      method: 'POST',
+      body: {
+        fileId: uploaded.id,
+        // 关联作业时曲目以服务端的作业为准（这里传过去也会被忽略）
+        assignmentId: assignValue ? Number(assignValue) : null,
+        pieceId: pieceValue ? Number(pieceValue) : null,
+        title,
+        durationSec: take.seconds == null ? null : Math.round(take.seconds),
+      },
+    });
+    byId('u-title').value = '';
+    releasePending();
+    BAND.toast('已上传', 'success');
+    // 上传已经成功；刷新列表失败不能反过来报「上传失败」
+    try { await load(); } catch (e) { /* 下次进页面会重新拉 */ }
+  } catch (e) {
+    // 失败**保留 pending**：录音还在、秒数还在，可直接重试，不必重录
+    BAND.toast('上传失败，这条还在，可以再点一次');
+  } finally {
+    uploading = false;
+    ops.forEach((b) => { b.disabled = false; });
+    upBtn.removeAttribute('aria-busy');
+  }
 }
+
+rvPlay.innerHTML = ICON_PLAY;
+rvAudio.addEventListener('play', () => {
+  if (playingAudio && playingAudio !== rvAudio) {
+    playingAudio.pause();
+    playingAudio.currentTime = 0;
+  }
+  playingAudio = rvAudio;
+  playingKey = null;                   // 试听音频不在列表缓存里，别让它挡住淘汰
+  rvPlay.innerHTML = ICON_PAUSE;
+  rvPlay.setAttribute('aria-pressed', 'true');
+});
+rvAudio.addEventListener('pause', () => {
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  rvSeek.repaint();
+});
+rvAudio.addEventListener('ended', () => {
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  if (playingAudio === rvAudio) playingAudio = null;
+  rvAudio.currentTime = 0;
+  rvSeek.repaint();
+});
+rvPlay.addEventListener('click', () => {
+  if (!pendingTake) return;
+  if (!rvAudio.paused) { rvAudio.pause(); return; }
+  const p = rvAudio.play();
+  if (p && p.catch) p.catch(() => BAND.toast('再点一次播放'));
+});
+byId('rv-up').addEventListener('click', uploadPending);
+byId('rv-drop').addEventListener('click', dropTake);
+byId('rv-again').addEventListener('click', againTake);
+
+/* 待上传的这条还没落库：关页/刷新前必须问一句（docs/08 §8.4）。
+   ⚠️ 回收要放 `pagehide`：`beforeunload` 里 revoke 会让"取消离开"后的试听卡变哑。
+   ⚠️ pagehide 也可能来自 bfcache，恢复时把 `cacheReleased` 拨回来。 */
+window.addEventListener('beforeunload', (e) => {
+  if (pendingTake && !uploading) { e.preventDefault(); e.returnValue = ''; }
+});
+window.addEventListener('pagehide', () => {
+  cacheClear();
+  if (pendingTake) { URL.revokeObjectURL(pendingTake.url); pendingTake = null; }
+});
+window.addEventListener('pageshow', () => { cacheReleased = false; });
 
 /* ============================================================
    节拍器（圆弧拍点版；`recordings.html` 与 `metronome.html` **共用同一份**）
@@ -499,10 +1828,11 @@ const SUB_LABEL = { 1: '每拍 1 击', 2: '每拍 2 击（八分）', 3: '每拍
 const metro = { on: false, bpm: 80, num: 4, den: 4, sub: 1, step: 0, beat: 0, next: 0,
                 accents: [true, false, false, false], timer: null, epoch: 0 };
 // ⚠️ 可读钩子：探针读**实际排出去的拍**（别让探针逐帧采样 —— Windows 上 rAF 会被饿死，见 debug_log）
-window.__metro = { on: false, ticks: [] };
+window.__metro = { on: false, ticks: [], mode: 'webaudio' };
 let tapTimes = [];
 let MT_BASE_HINT = '';
 let startSeq = 0;                                  // 防「await 音频期间又点一次 / 改设置重起」造成双启动
+let compatNextAt = 0;                              // 兼容模式绝对目标时刻（performance.now() 毫秒）
 const DIAG = new URLSearchParams(location.search).get('diag') === '1';
 
 const mEl = (id) => document.getElementById(id);
@@ -567,17 +1897,28 @@ function setHint(text, warn) {
   h.classList.toggle('warn', !!warn);
 }
 
-const MT_RUN_HINT = '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+const IS_APP_SHELL = /ForBandApp\//i.test(navigator.userAgent);
+const MT_RUN_HINT = IS_APP_SHELL
+  ? '节拍器运行中。听不见？先检查媒体音量 / 蓝牙耳机。'
+  : '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+const MT_COMPAT_HINT = '节拍器运行中（兼容模式）。拍点精度略低于高精度模式；声音正常就保持，嫌不准可点「改用高精度模式」。';
 
 /** `?diag=1` 才显示：真机出问题让机主截这一行，比猜浏览器内核快。 */
 function diagSuffix() {
   if (!DIAG) return '';
   const ac = BAND._ac;
-  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建') + ' · UA: ' + navigator.userAgent;
+  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建')
+    + ' · 音频模式: ' + ((window.__metro && window.__metro.mode) || '?')
+    + ' · UA: ' + navigator.userAgent;
 }
 
 function showMetroFailure(e) {
-  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。请换用手机自带浏览器或 Chrome 再试。';
+  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。'
+    + (IS_APP_SHELL
+      ? '请检查媒体音量 / 蓝牙耳机，退出 App 重进再试。'
+      : (BAND.isHarmonyNext()
+        ? '请点「改用兼容模式」再试；也可检查媒体音量 / 蓝牙耳机。'
+        : '请换用手机自带浏览器或 Chrome 再试。'));
   setHint(msg + diagSuffix(), true);
   BAND.toast(msg);
 }
@@ -608,30 +1949,59 @@ function schedule() {
   }
 }
 
+function metroSetModeUi() {
+  const btn = mEl('m-mode');
+  if (!btn) return;
+  const compat = (window.__metro.mode || BAND.metroAudioMode()) === 'compat';
+  btn.textContent = compat ? '改用高精度模式' : '没声音？改用兼容模式';
+  btn.title = compat
+    ? '改用 Web Audio，拍点更准；华为浏览器可能没有声音'
+    : '改用 <audio> 播放点击音，兼容华为浏览器，精度略低';
+}
+
+function toggleMetroMode() {
+  const next = window.__metro.mode === 'compat' ? 'webaudio' : 'compat';
+  BAND.setMetroAudioMode(next);
+  window.__metro.mode = next;
+  metroSetModeUi();
+  if (metro.on) {
+    stopMetro();
+    startMetro().catch(showMetroFailure);
+  } else {
+    setHint((next === 'compat' ? '已选择兼容模式。' : '已选择高精度模式。') + diagSuffix(), false);
+  }
+}
+
 async function startMetro() {
   if (metro.on) return;
   const seq = ++startSeq;
+  const mode = BAND.metroAudioMode();
+  window.__metro.mode = mode;
+  metroSetModeUi();
+  if (mode === 'compat') {                              // 必须在任何 await 之前：第一次 play() 要在手势里
+    startMetroCompat();
+    return;
+  }
   // ⚠️ 先确认音频**真的在跑**，再开始排拍。上下文挂着时 `currentTime` 不走 ⇒ 只会排出第一拍、
   //    之后永远排不动；以前这里不核 state，页面看着"已开始"其实已经冻住，且全程不提示。
   const ac = await BAND.ensureAudio();
   if (seq !== startSeq) return;                         // 等音频期间被停止 / 改设置重起过
   if (!ac) {
-    const msg = BAND.audioIssueText();
-    setHint(msg + diagSuffix(), true);
-    BAND.toast(msg);
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
     return;
   }
   metro.beat = 0;
   metro.step = 0;
   const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响
   if (t0 === null) {
-    const msg = BAND.audioIssueText();
-    setHint(msg + diagSuffix(), true);
-    BAND.toast(msg);
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
     return;
   }
   metro.on = true;
   window.__metro.on = true;
+  window.__metro.mode = 'webaudio';
   metro.epoch++;
   window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
   paintBeatDot(0);
@@ -646,11 +2016,95 @@ async function startMetro() {
   btn.classList.add('rc-btn-line');
   const hint = mEl('m-hint');
   if (hint) { hint.classList.remove('warn'); hint.textContent = MT_RUN_HINT + diagSuffix(); }
+  metroSetModeUi();
+}
+
+/** 兼容模式：`<audio>` 播放预生成点击音，绕开“Web Audio 在跑但没声”的宿主。 */
+function startMetroCompat(notice) {
+  if (metro.on) return;
+  window.__metro.mode = 'compat';
+  metroSetModeUi();
+  BAND._audioIssue = null;
+  BAND.warmClickPool();
+  metro.beat = 0;
+  metro.step = 0;
+  const t0 = BAND.tickCompat(!!metro.accents[0]);       // 第一拍立刻响，且仍在点击手势里
+  if (t0 === null) {
+    const msg = BAND.audioIssueText();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  metro.on = true;
+  window.__metro.on = true;
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintBeatDot(0);
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;
+  if (metro.step === 0) metro.beat = 1 % metro.num;
+  compatNextAt = performance.now() + stepMs;
+  metro.timer = setTimeout(compatSchedule, stepMs);
+  const btn = mEl('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('rc-btn-primary');
+  btn.classList.add('rc-btn-line');
+  const hint = mEl('m-hint');
+  if (hint) {
+    hint.classList.remove('warn');
+    hint.textContent = (notice ? notice + ' ' : '') + MT_COMPAT_HINT + diagSuffix();
+  }
+}
+
+/** 兼容模式：把步/拍推进一格。 */
+function advanceCompatStep() {
+  metro.step = (metro.step + 1) % metro.sub;
+  if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.num;
+}
+
+/** 兼容模式：按绝对时间网格排下一声；迟到超过一整拍才丢格，禁止补播一串。 */
+function scheduleCompatNext() {
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  compatNextAt += stepMs;
+  const now = performance.now();
+  let delay = compatNextAt - now;
+  if (delay < -stepMs) {
+    while (compatNextAt <= now) {
+      compatNextAt += stepMs;
+      advanceCompatStep();
+    }
+    delay = compatNextAt - now;
+  }
+  metro.timer = setTimeout(compatSchedule, Math.max(0, delay));
+}
+
+function compatSchedule() {
+  if (!metro.on) return;
+  if (BAND._audioIssue && BAND._audioIssue.kind === 'compat') {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  const accent = metro.step === 0 && !!metro.accents[metro.beat];
+  const t = BAND.tickCompat(accent);
+  if (t === null) {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  window.__metro.ticks.push({ t, accent, beat: metro.beat, step: metro.step });
+  if (metro.step === 0) paintBeatDot(metro.beat);
+  advanceCompatStep();
+  scheduleCompatNext();
 }
 
 function stopMetro() {
   startSeq++;                                           // 让还在等音频的 startMetro 作废
-  if (metro.timer) clearInterval(metro.timer);
+  if (metro.timer) clearTimeout(metro.timer);
   metro.timer = null;
   metro.on = false;
   window.__metro.on = false;
@@ -672,7 +2126,9 @@ function metroRestart() { if (metro.on) { stopMetro(); startMetro().catch(showMe
 
 function setBpm(v) {
   metro.bpm = mClamp(Math.round(Number(v)) || 80, BPM_MIN, BPM_MAX);
-  const inp = mEl('m-bpm'); if (inp) inp.value = String(metro.bpm);
+  const inp = mEl('m-bpm');
+  // 只在值真的变了才回写：边输入边回写会把光标顶掉、把用户正在敲的数字截断
+  if (inp && inp.value !== String(metro.bpm)) inp.value = String(metro.bpm);
   mEl('m-bpm-big').textContent = String(metro.bpm);
   mEl('m-term').textContent = tempoTerm(metro.bpm);
   mStore.set(MK.bpm, String(metro.bpm));
@@ -727,6 +2183,17 @@ function tapHit() {
 function initMetro() {
   const hintEl = mEl('m-hint');
   MT_BASE_HINT = hintEl ? hintEl.textContent : '';
+  window.__metro.mode = BAND.metroAudioMode();
+  BAND.warmClickPool();                                  // 预加载点击音；真正播放仍要等用户点「开始」
+  if (hintEl && !mEl('m-mode')) {
+    const modeBtn = document.createElement('button');
+    modeBtn.type = 'button';
+    modeBtn.id = 'm-mode';
+    modeBtn.className = 'mt-mode';
+    hintEl.insertAdjacentElement('afterend', modeBtn);
+    modeBtn.addEventListener('click', toggleMetroMode);
+  }
+  metroSetModeUi();
 
   const beats = String(mStore.get(MK.beats, '4/4')).split('/');
   const accStr = mStore.get(MK.acc, null);
@@ -756,9 +2223,21 @@ function initMetro() {
   });
   mEl('m-tap').addEventListener('click', tapHit);
   const bpmIn = mEl('m-bpm');
-  const bpmHandler = () => { if (bpmIn.value !== '') setBpm(bpmIn.value); };
-  bpmIn.addEventListener('input', bpmHandler);     // ⚠️ change 不够：探针/真机常只派 input
-  bpmIn.addEventListener('change', bpmHandler);
+  // 输入过程中只认**完整合法**的值（30..240），不 clamp、不回写——否则敲 "1" 会被立刻改成 30，
+  // 接着再敲就变成 302 → 240，数字只会在两端乱跳。越界/清空留给失焦或回车时统一收口。
+  const bpmTyped = () => {
+    const raw = bpmIn.value;
+    if (raw === '') return;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < BPM_MIN || n > BPM_MAX) return;
+    setBpm(n);
+  };
+  const bpmCommit = () => {
+    setBpm(bpmIn.value === '' ? metro.bpm : bpmIn.value);
+  };
+  bpmIn.addEventListener('input', bpmTyped);       // ⚠️ change 不够：探针/真机常只派 input
+  bpmIn.addEventListener('change', bpmCommit);
+  bpmIn.addEventListener('blur', bpmCommit);
   const numIn = mEl('m-num');
   const numHandler = () => { if (numIn.value !== '') setNum(numIn.value); };
   numIn.addEventListener('input', numHandler);
@@ -865,12 +2344,76 @@ function renderToday() {
    ============================================================ */
 byId('go-record').addEventListener('click', () => setScreen('detail'));
 byId('dback').addEventListener('click', () => setScreen('list'));
-byId('rc-scope').addEventListener('click', (e) => {
+byId('rc-view').addEventListener('click', (e) => {
   const b = e.target.closest('.fchip');
-  if (!b || scope === b.dataset.scope) return;
-  scope = b.dataset.scope;
-  qsa('#rc-scope .fchip').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.scope === scope)));
-  load();
+  if (!b || !canManage()) return;
+  const next = b.dataset.view;
+  if (next === view) return;
+  view = next;
+  qsa('#rc-view .fchip').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === view)));
+  load().catch(() => {});
+});
+byId('as-open').addEventListener('click', () => openAssignPanel(byId('as-panel').hidden));
+byId('as-cancel').addEventListener('click', () => openAssignPanel(false));
+byId('as-save').addEventListener('click', createAssignment);
+byId('u-assign').addEventListener('change', syncAssignPiece);
+
+/* 管理视图的节点每次都重画 → 用事件代理（当前视图与历史周共用一套 data-*） */
+byId('manage-pane').addEventListener('click', (e) => {
+  const t = e.target;
+
+  const open = t.closest('[data-open-assign]');
+  if (open) { openAssignPanel(true); return; }
+
+  const re = t.closest('[data-rename]');
+  if (re) { startRename(re.closest('.as-chip'), findAssignment(re.dataset.rename)); return; }
+
+  const del = t.closest('[data-del-as]');
+  if (del) { deleteAssignment(findAssignment(del.dataset.delAs)); return; }
+
+  const jump = t.closest('[data-jump]');
+  if (jump) {
+    const [sid, mid] = jump.dataset.jump.split(':');
+    jumpToPerson(sid, mid);
+    return;
+  }
+
+  const secBtn = t.closest('[data-sec-toggle]');
+  if (secBtn) {
+    const body = byId(secBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    secBtn.setAttribute('aria-expanded', String(open));
+    // 历史周的声部头与本周共用声部 id，但折叠状态是两套：只记本周的 `wk-sec-*`
+    if ((secBtn.getAttribute('aria-controls') || '').startsWith('wk-sec-')) {
+      const sid = secBtn.dataset.secToggle;
+      if (open) closedSections.delete(String(sid)); else closedSections.add(String(sid));
+    }
+    return;
+  }
+
+  const pBtn = t.closest('[data-ptoggle]');
+  if (pBtn) {
+    const body = byId(pBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    pBtn.setAttribute('aria-expanded', String(open));
+    if (open) openPersons.add(pBtn.dataset.ptoggle); else openPersons.delete(pBtn.dataset.ptoggle);
+    return;
+  }
+
+  const wkBtn = t.closest('[data-week-toggle]');
+  if (wkBtn) {
+    const i = Number(wkBtn.dataset.weekToggle);
+    const body = byId(wkBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    wkBtn.setAttribute('aria-expanded', String(open));
+    if (open) { openWeeks.add(i); hydrateWeek(i); } else openWeeks.delete(i);
+  }
 });
 byId('theme-btn').addEventListener('click', (e) => { e.stopPropagation(); openPop(byId('theme-pop').hidden); });
 byId('night-btn').addEventListener('click', toggleNight);
@@ -890,7 +2433,7 @@ setPalette(store.get('band.palette', 'jade'));
 setTheme(store.get('band.theme', 'light'));
 renderToday();
 initMetro();
-load();
+load().catch(() => {});
 </script>
 </body>
 </html>

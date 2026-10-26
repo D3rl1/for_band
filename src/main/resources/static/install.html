@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>安装到手机 · 山水民族管弦乐团</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="pwa-install">
+  <section class="pwa-lead">
+    <p class="pwa-eyebrow">安装到手机</p>
+    <h2>把乐团装进口袋</h2>
+    <p class="pwa-sub">装到手机桌面后，点图标直接全屏打开，不用每次输网址。</p>
+  </section>
+
+  <div class="pwa-state" id="pwa-installed" hidden>
+    <p class="pwa-done">已经装好了 ✓</p>
+    <p class="pwa-note">以后有新版本会在这里弹提示，点「刷新」即可更新。</p>
+    <p class="pwa-note">如果这个图标是手机自带浏览器「添加到主屏幕」建的，录音和选文件可能用不了：请长按图标删除，改用上面的安卓 App（推荐）；或用 Chrome 打开本站重新安装。</p>
+  </div>
+
+  <div id="pwa-steps">
+    <section class="pwa-step" id="pwa-android-app">
+      <div class="pwa-artwrap">
+        <svg class="pwa-art" viewBox="0 0 120 160" aria-hidden="true">
+          <rect x="22" y="8" width="76" height="144" rx="14" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <rect x="48" y="14" width="24" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+          <path class="pwa-hot" d="M56 78V54l16-4v24" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle class="pwa-hot" cx="52" cy="80" r="5"/>
+          <circle class="pwa-hot" cx="68" cy="76" r="5"/>
+        </svg>
+      </div>
+      <div class="pwa-body">
+        <h3>安卓 App（推荐）</h3>
+        <p>手机自带浏览器「添加到主屏幕」建的快捷方式可能无法录音或选文件；装这个 App 就都能用。</p>
+        <a class="pwa-dl" href="/app/band.apk" download>下载安卓 App</a>
+        <p class="pwa-app-meta">Android 8.0+ · 鸿蒙 4.x 及更早 · 不到 1 MB</p>
+        <p class="pwa-note">首次安装若提示「未知来源」：小米在「设置 → 应用设置 → 授权管理 → 安装未知应用」允许浏览器；华为 / 荣耀在安装页点「继续安装」；OPPO / vivo 按提示允许本次安装。</p>
+        <p class="pwa-note">首次打开要重新登录一次；以后覆盖安装升级，数据保留。</p>
+      </div>
+    </section>
+
+    <section class="pwa-step">
+      <div class="pwa-artwrap">
+        <svg class="pwa-art" viewBox="0 0 120 160" aria-hidden="true">
+          <rect x="22" y="8" width="76" height="144" rx="14" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <rect x="48" y="14" width="24" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+          <circle class="pwa-hot" cx="84" cy="30" r="2.6"/>
+          <circle class="pwa-hot" cx="84" cy="42" r="2.6"/>
+          <circle class="pwa-hot" cx="84" cy="54" r="2.6"/>
+          <path class="pwa-hot" d="M58 70h32M58 82h32M58 94h20" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="pwa-body">
+        <h3>不想装 App？Android 用 Chrome / Edge</h3>
+        <ol>
+          <li>用 <b>Chrome</b> 或 <b>Edge</b> 打开本站（不要用手机自带浏览器、微信、QQ、夸克「添加到主屏幕」——那样建的快捷方式可能无法录音或选文件）。</li>
+          <li>点右上角 <b>⋮</b>。</li>
+          <li>选「安装应用」或「添加到主屏幕」（不同版本措辞不同）。</li>
+          <li>确认。</li>
+        </ol>
+        <p class="pwa-note">鸿蒙 NEXT（5.x / 纯血）装不了安卓 App：请直接用 <b>华为浏览器</b>打开本站；鸿蒙专用版在做。</p>
+      </div>
+    </section>
+
+    <section class="pwa-step">
+      <div class="pwa-artwrap">
+        <svg class="pwa-art" viewBox="0 0 120 160" aria-hidden="true">
+          <rect x="22" y="8" width="76" height="144" rx="14" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <rect x="48" y="14" width="24" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+          <path class="pwa-hot" d="M60 110V86m0 0-7 7m7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="pwa-hot" d="M44 114h32v18H44z" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="pwa-body">
+        <h3>iPhone（必须用 Safari）</h3>
+        <ol>
+          <li>用 <b>Safari</b> 打开本站（iOS 上的 Chrome 不能添加到主屏幕）。</li>
+          <li>点底部「分享」按钮。</li>
+          <li>向下找到「添加到主屏幕」。</li>
+          <li>点「添加」。</li>
+        </ol>
+        <p class="pwa-note">iOS 14.3 及以上：添加到主屏幕后可以录音，录出来是 m4a。</p>
+        <p class="pwa-note">iOS 的桌面网页应用有独立存储，装好后通常要重新登录一次；Android 一般保持登录。</p>
+      </div>
+    </section>
+
+    <section class="pwa-step">
+      <div class="pwa-artwrap">
+        <svg class="pwa-art" viewBox="0 0 120 160" aria-hidden="true">
+          <rect x="22" y="8" width="76" height="144" rx="14" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <rect x="48" y="14" width="24" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+          <circle class="pwa-hot" cx="74" cy="27" r="2.4"/>
+          <circle class="pwa-hot" cx="82" cy="27" r="2.4"/>
+          <circle class="pwa-hot" cx="90" cy="27" r="2.4"/>
+          <rect x="38" y="40" width="64" height="20" rx="5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path class="pwa-hot" d="M46 50h30" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="pwa-body">
+        <h3>微信 / QQ / 夸克等内置浏览器</h3>
+        <p class="pwa-warn">这些内置浏览器不支持安装。</p>
+        <ol>
+          <li>点右上角 <b>···</b> →「在浏览器打开」。</li>
+          <li>再按上面 Android / iPhone 的步骤做。</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="pwa-step">
+      <div class="pwa-artwrap">
+        <svg class="pwa-art" viewBox="0 0 120 160" aria-hidden="true">
+          <rect x="22" y="8" width="76" height="144" rx="14" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <rect x="48" y="14" width="24" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+          <rect class="pwa-hot" x="44" y="54" width="32" height="32" rx="8" fill="none"/>
+          <path class="pwa-hot" d="M60 64v14m-5-5 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M44 108h32" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".35"/>
+        </svg>
+      </div>
+      <div class="pwa-body">
+        <h3>卸载与更新</h3>
+        <p>长按桌面图标删除。新版本会自动提示，点「刷新」即可。</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+(async function () {
+  const me = await BAND.renderNav('install.html');
+  if (!me) return;
+  const installed = window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+  if (/ForBandApp\//i.test(navigator.userAgent)) {
+    document.getElementById('pwa-android-app').hidden = true;
+  }
+  if (installed) {
+    document.getElementById('pwa-steps').hidden = true;
+    document.getElementById('pwa-installed').hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

@@ -191,6 +191,55 @@ CREATE TABLE IF NOT EXISTS release_note (
     KEY idx_published_at (published_at)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '更新公告';
 
+-- ㉗ issue 问题讨论主表（docs/13 §13.3㉗，#227）。
+-- 全员登录可见；回帖 / 改状态更新 updated_at，编辑与 +1 不更新（docs/13 ㉗）。
+CREATE TABLE IF NOT EXISTS issue (
+    id                 BIGINT        NOT NULL AUTO_INCREMENT,
+    member_id          BIGINT        NOT NULL COMMENT '提问人（FK→member）',
+    title              VARCHAR(50)   NOT NULL COMMENT '纯文本，1–50 字',
+    content            VARCHAR(2000) NOT NULL COMMENT '纯文本，1–2000 字',
+    device_info        VARCHAR(100)  NULL COMMENT '手机品牌 + 系统版本；新帖必填，迁移来的旧反馈为 NULL',
+    user_agent         VARCHAR(255)  NULL COMMENT '服务端从请求头取，不信客户端传',
+    page_path          VARCHAR(255)  NULL COMMENT '前端自动带 location.pathname，不进表单',
+    status             VARCHAR(12)   NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/PROCESSING/FIXED/REJECTED',
+    status_changed_by  BIGINT        NULL COMMENT '最后一次改状态的人（FK→member，只可能是 ADMIN）',
+    status_changed_at  DATETIME      NULL,
+    edited_at          DATETIME      NULL COMMENT '作者最后一次编辑；界面显示「已编辑」',
+    source_feedback_id BIGINT        NULL COMMENT '迁移来源（FK→feedback）；唯一键保证迁移幂等',
+    created_at         DATETIME      NOT NULL,
+    updated_at         DATETIME      NOT NULL COMMENT '列表排序与红点判定；回帖 / 改状态更新，编辑与 +1 不更新',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_source_feedback (source_feedback_id),
+    KEY idx_status_updated (status, updated_at),
+    KEY idx_updated (updated_at),
+    KEY idx_member (member_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '问题讨论主表';
+
+-- ㉘ issue_comment 回帖 / 系统时间线（docs/13 §13.3㉘）。扁平结构，不做楼中楼。
+-- kind='SYSTEM' 由服务端写、member_id=NULL，是状态变更的留痕，不可编辑。
+CREATE TABLE IF NOT EXISTS issue_comment (
+    id         BIGINT        NOT NULL AUTO_INCREMENT,
+    issue_id   BIGINT        NOT NULL COMMENT 'FK→issue',
+    member_id  BIGINT        NULL COMMENT 'NULL = 系统',
+    kind       VARCHAR(8)    NOT NULL COMMENT 'USER/SYSTEM',
+    content    VARCHAR(1000) NOT NULL COMMENT '纯文本',
+    old_status VARCHAR(12)   NULL COMMENT '仅系统状态行',
+    new_status VARCHAR(12)   NULL COMMENT '仅系统状态行',
+    created_at DATETIME      NOT NULL,
+    edited_at  DATETIME      NULL COMMENT '仅作者可编辑自己的 USER 行',
+    PRIMARY KEY (id),
+    KEY idx_issue_created (issue_id, created_at, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '问题回帖 / 系统时间线';
+
+-- ㉙ issue_reaction「我也遇到」（docs/13 §13.3㉙）。一人一票靠联合主键保证，不靠代码判重。
+CREATE TABLE IF NOT EXISTS issue_reaction (
+    issue_id   BIGINT   NOT NULL COMMENT 'FK→issue',
+    member_id  BIGINT   NOT NULL COMMENT 'FK→member',
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (issue_id, member_id),
+    KEY idx_member (member_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '问题「我也遇到」';
+
 -- ⑨ file 统一文件表（docs/13 §13.3⑨）。曲目附件（`06`）、演出照片（`07`）、练习录音（`08`）
 -- **共用同一套上传/下载机制**（docs/08 §8.5），所以表只有一张、下载只走一个鉴权接口。
 CREATE TABLE IF NOT EXISTS file (
@@ -309,6 +358,26 @@ CREATE TABLE IF NOT EXISTS concert_photo (
     KEY idx_concert_id (concert_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '演出照片';
 
+-- ㉖ recording_assignment 本周录音作业（docs/13 §13.3㉖，2026-10-25 建）。业务规则见 docs/08 §8.4。
+-- ⚠️ 编号排最后（后补的表），但**建表必须排在 ⑯ recording 之前**：`recording.assignment_id` 指向它。
+-- ⚠️ `title` 必填、`piece_id` 可空：打击「单跳」、弦乐「长弓」这类**基本功不挂曲目**。
+-- ⚠️ 不存完成度（未交/部分交/已交是查询时按 `recording.assignment_id` 算的）——冗余状态列会随
+--    换声部、删录音、改作业而失真。
+-- ⚠️ 历史周只读；本周内可改，**已有录音关联的条目只许改 title、不许删**（服务层校验）。
+CREATE TABLE IF NOT EXISTS recording_assignment (
+    id         BIGINT      NOT NULL AUTO_INCREMENT,
+    week_start DATE        NOT NULL COMMENT '该周周一（Asia/Shanghai）——周的唯一定义，不存 week_end',
+    section_id BIGINT      NOT NULL COMMENT 'FK→section：布置给哪个声部',
+    title      VARCHAR(64) NOT NULL COMMENT '作业标题，如「单跳基本功」',
+    piece_id   BIGINT      NULL COMMENT 'FK→piece；基本功类作业为空',
+    created_by BIGINT      NOT NULL COMMENT 'FK→member：布置人',
+    created_at DATETIME    NOT NULL,
+    updated_at DATETIME    NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_week_section (week_start, section_id),
+    KEY idx_piece_id (piece_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '本周录音作业（按声部、按周布置）';
+
 -- ⑯ recording 练习录音（docs/13 §13.3⑯）。文件本体在 `file` 表（docs/08 §8.5 的统一机制）。
 -- ⚠️ `section_id` 实现为**可空**（docs/13 原文写 NOT NULL）：因为**指挥 / 团长也能上传自己的录音**，
 --    而他们没有声部（`member.section_id` 为 NULL）——写 NOT NULL 会把这些人直接堵死。
@@ -318,15 +387,17 @@ CREATE TABLE IF NOT EXISTS recording (
     member_id    BIGINT   NOT NULL COMMENT '上传者（FK→member）',
     section_id   BIGINT   NULL COMMENT '**冗余**：可见性按声部判定、查询高频；上传者无声部时为空',
     piece_id     BIGINT   NULL COMMENT '录的是哪首曲子（FK→piece，可空）',
+    assignment_id BIGINT  NULL COMMENT '关联本周作业（FK→recording_assignment，可空）；为空＝未关联，不计入完成度',
     title        VARCHAR(64)  NULL,
     file_id      BIGINT   NOT NULL COMMENT 'FK→file',
     duration_sec INT      NULL COMMENT '**客户端上报**的时长（服务端不解析音频，拦不住时长）',
     size_bytes   BIGINT   NULL,
-    uploaded_at  DATETIME NOT NULL,
+    uploaded_at  DATETIME NOT NULL COMMENT '归周依据：按它落周（不用作业创建时间）',
     PRIMARY KEY (id),
     KEY idx_member_id (member_id),
     KEY idx_section_id (section_id),
-    KEY idx_piece_id (piece_id)
+    KEY idx_piece_id (piece_id),
+    KEY idx_assignment_id (assignment_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '练习录音';
 
 -- ⑰ recording_comment 录音点评（docs/13 §13.3⑰）：**平铺按时间，不做父子嵌套**（docs/08 §8.4）。
@@ -539,4 +610,80 @@ BEGIN
 END$$
 CALL band_tighten_leave_reason()$$
 DROP PROCEDURE band_tighten_leave_reason$$
+
+-- 同上：存量库补 recording.assignment_id + idx_assignment_id（docs/13 §13.3⑯，2026-10-25）。
+-- ⚠️ 列与索引**分两段守护**：列可能已被手工加过而索引没有（或反之），不能只判列名。
+-- ⚠️ 新表 `recording_assignment` 不用过程——`CREATE TABLE IF NOT EXISTS` 已幂等。
+DROP PROCEDURE IF EXISTS band_add_recording_assignment_id$$
+CREATE PROCEDURE band_add_recording_assignment_id()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'recording'
+          AND COLUMN_NAME = 'assignment_id'
+    ) THEN
+        ALTER TABLE recording
+            ADD COLUMN assignment_id BIGINT NULL COMMENT '关联本周作业（FK→recording_assignment，可空）；为空＝未关联，不计入完成度' AFTER piece_id;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'recording'
+          AND INDEX_NAME = 'idx_assignment_id'
+    ) THEN
+        ALTER TABLE recording ADD KEY idx_assignment_id (assignment_id);
+    END IF;
+END$$
+CALL band_add_recording_assignment_id()$$
+DROP PROCEDURE band_add_recording_assignment_id$$
 DELIMITER ;
+
+-- ㉑ → ㉗ 历史反馈迁入（docs/15 §15.10，#227）。
+-- 只迁 OPEN；source_feedback_id 唯一 + NOT EXISTS 双保险，整段可重复执行。
+-- 换行用 CHAR(10) / 先剔除 CHAR(13)，不依赖 sql_mode 对反斜杠转义的处理。
+INSERT INTO issue
+    (member_id, title, content, device_info, user_agent, page_path,
+     status, source_feedback_id, created_at, updated_at)
+SELECT f.member_id,
+       COALESCE(
+         NULLIF(
+           CASE WHEN CHAR_LENGTH(f.first_line) > 50
+                THEN CONCAT(LEFT(f.first_line, 49), '…')
+                ELSE f.first_line
+           END, ''),
+         CONCAT('历史反馈 #', f.id)),
+       f.content, NULL, f.user_agent, f.page_path,
+       'PENDING', f.id, f.created_at, NOW()
+FROM (
+    SELECT id, member_id, content, user_agent, page_path, created_at,
+           TRIM(SUBSTRING_INDEX(REPLACE(content, CHAR(13), ''), CHAR(10), 1)) AS first_line
+    FROM feedback
+    WHERE status = 'OPEN'
+) f
+WHERE NOT EXISTS (SELECT 1 FROM issue i WHERE i.source_feedback_id = f.id);
+
+-- 给迁入的问题补系统回帖；重跑不会重复。
+INSERT INTO issue_comment (issue_id, member_id, kind, content, created_at)
+SELECT i.id, NULL, 'SYSTEM', '由历史反馈迁入', i.updated_at
+FROM issue i
+WHERE i.source_feedback_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM issue_comment c
+    WHERE c.issue_id = i.id AND c.kind = 'SYSTEM' AND c.content = '由历史反馈迁入'
+  );
+
+-- 旧行置 MIGRATED，并在 admin_note 追加（不覆盖）迁入编号。
+-- admin_note 是 VARCHAR(255)：先按后缀长度截旧值，严格模式下也不会 1406。
+UPDATE feedback f
+JOIN issue i ON i.source_feedback_id = f.id
+SET f.status = 'MIGRATED',
+    f.admin_note = CONCAT(
+      LEFT(
+        COALESCE(f.admin_note, ''),
+        GREATEST(0, 254 - CHAR_LENGTH(CONCAT('已迁入问题讨论 #', i.id, '（', DATE_FORMAT(CURDATE(), '%Y-%m-%d'), '）')))
+      ),
+      CASE WHEN f.admin_note IS NULL OR f.admin_note = '' THEN '' ELSE CHAR(10) END,
+      '已迁入问题讨论 #', i.id, '（', DATE_FORMAT(CURDATE(), '%Y-%m-%d'), '）'
+    )
+WHERE f.status = 'OPEN';

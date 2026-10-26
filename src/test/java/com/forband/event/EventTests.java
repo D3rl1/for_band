@@ -86,6 +86,42 @@ class EventTests extends IntegrationTestBase {
                 .andExpect(status().isNotFound());
     }
 
+    // TODO(你写): 声部长可见性测试（docs/04 §4.4，交接单 #220）
+    // 现场已就绪：secleaderB 是声部长、属于 section2；section1 是别的声部。
+    // 目标：列表里有「本声部声部课 + 全团排练」，没有「别声部声部课」；
+    //       详情：本声部 200，别声部 404。
+    // 可照抄上面 member_cannot_see_other_sections_section_class() 的写法。
+    @Test
+    void section_leader_cannot_see_other_sections_section_class() throws Exception {
+        long ownClassId = eventService.create(new EventCreateRequest(
+                "SECTION_CLASS", "声部长本声部声部课", LocalDate.now().plusDays(1),
+                java.time.LocalTime.of(18, 0), java.time.LocalTime.of(20, 0),
+                null, section2, null), admin).id();
+        long otherClassId = eventService.create(new EventCreateRequest(
+                "SECTION_CLASS", "别的声部声部课", LocalDate.now().plusDays(2),
+                java.time.LocalTime.of(18, 0), java.time.LocalTime.of(20, 0),
+                null, section1, null), admin).id();
+        long rehearsalId = eventService.create(new EventCreateRequest(
+                "REHEARSAL", "全团排练", LocalDate.now().plusDays(3),
+                java.time.LocalTime.of(19, 0), java.time.LocalTime.of(21, 0),
+                "排练厅", null, null), admin).id();
+
+        // 列表在 SQL 层过滤（docs/04 §4.4）
+        String body = api(secLeader2Token, "GET", "/api/events?size=50", null)
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        com.fasterxml.jackson.databind.JsonNode list = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(body).path("data").path("list");
+        java.util.Set<Long> ids = new java.util.HashSet<>();
+        list.forEach(n -> ids.add(n.path("id").asLong()));
+
+        // TODO(你写): 四个断言
+        // 1) ids 含 ownClassId
+        // 2) ids 含 rehearsalId
+        // 3) ids 不含 otherClassId
+        // 4) GET 别声部详情 -> 404；GET 本声部详情 -> 200
+    }
+
     @Test
     void canceled_event_excluded_from_check_in_and_stats() throws Exception {
         long eventId = eventService.create(new EventCreateRequest(

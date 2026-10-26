@@ -2,8 +2,16 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>节拍器 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
 <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
 <link rel="stylesheet" href="/band.css">
 <script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
@@ -81,10 +89,11 @@ const SUB_LABEL = { 1: '每拍 1 击', 2: '每拍 2 击（八分）', 3: '每拍
 const metro = { on: false, bpm: 80, num: 4, den: 4, sub: 1, step: 0, beat: 0, next: 0,
                 accents: [true, false, false, false], timer: null, epoch: 0 };
 // ⚠️ 可读钩子：探针读**实际排出去的拍**（别逐帧采样，见 `_metro_check.py`）。
-window.__metro = { on: false, ticks: [] };
+window.__metro = { on: false, ticks: [], mode: 'webaudio' };
 let tapTimes = [];
 let MT_BASE_HINT = '';
 let startSeq = 0;                                  // 防「await 音频期间又点一次 / 改设置重起」造成双启动
+let compatNextAt = 0;                              // 兼容模式绝对目标时刻（performance.now() 毫秒）
 const DIAG = new URLSearchParams(location.search).get('diag') === '1';
 
 const mEl = (id) => document.getElementById(id);
@@ -149,17 +158,28 @@ function setHint(text, warn) {
   h.classList.toggle('warn', !!warn);
 }
 
-const MT_RUN_HINT = '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+const IS_APP_SHELL = /ForBandApp\//i.test(navigator.userAgent);
+const MT_RUN_HINT = IS_APP_SHELL
+  ? '节拍器运行中。听不见？先检查媒体音量 / 蓝牙耳机。'
+  : '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+const MT_COMPAT_HINT = '节拍器运行中（兼容模式）。拍点精度略低于高精度模式；声音正常就保持，嫌不准可点「改用高精度模式」。';
 
 /** `?diag=1` 才显示：真机出问题让机主截这一行，比猜浏览器内核快。 */
 function diagSuffix() {
   if (!DIAG) return '';
   const ac = BAND._ac;
-  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建') + ' · UA: ' + navigator.userAgent;
+  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建')
+    + ' · 音频模式: ' + ((window.__metro && window.__metro.mode) || '?')
+    + ' · UA: ' + navigator.userAgent;
 }
 
 function showMetroFailure(e) {
-  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。请换用手机自带浏览器或 Chrome 再试。';
+  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。'
+    + (IS_APP_SHELL
+      ? '请检查媒体音量 / 蓝牙耳机，退出 App 重进再试。'
+      : (BAND.isHarmonyNext()
+        ? '请点「改用兼容模式」再试；也可检查媒体音量 / 蓝牙耳机。'
+        : '请换用手机自带浏览器或 Chrome 再试。'));
   setHint(msg + diagSuffix(), true);
   BAND.toast(msg);
 }
@@ -190,30 +210,59 @@ function schedule() {
   }
 }
 
+function metroSetModeUi() {
+  const btn = mEl('m-mode');
+  if (!btn) return;
+  const compat = (window.__metro.mode || BAND.metroAudioMode()) === 'compat';
+  btn.textContent = compat ? '改用高精度模式' : '没声音？改用兼容模式';
+  btn.title = compat
+    ? '改用 Web Audio，拍点更准；华为浏览器可能没有声音'
+    : '改用 <audio> 播放点击音，兼容华为浏览器，精度略低';
+}
+
+function toggleMetroMode() {
+  const next = window.__metro.mode === 'compat' ? 'webaudio' : 'compat';
+  BAND.setMetroAudioMode(next);
+  window.__metro.mode = next;
+  metroSetModeUi();
+  if (metro.on) {
+    stopMetro();
+    startMetro().catch(showMetroFailure);
+  } else {
+    setHint((next === 'compat' ? '已选择兼容模式。' : '已选择高精度模式。') + diagSuffix(), false);
+  }
+}
+
 async function startMetro() {
   if (metro.on) return;
   const seq = ++startSeq;
+  const mode = BAND.metroAudioMode();
+  window.__metro.mode = mode;
+  metroSetModeUi();
+  if (mode === 'compat') {                              // 必须在任何 await 之前：第一次 play() 要在手势里
+    startMetroCompat();
+    return;
+  }
   // ⚠️ 先确认音频**真的在跑**，再开始排拍。上下文挂着时 `currentTime` 不走 ⇒ 只会排出第一拍、
   //    之后永远排不动；以前这里不核 state，页面看着"已开始"其实已经冻住，且全程不提示。
   const ac = await BAND.ensureAudio();
   if (seq !== startSeq) return;                         // 等音频期间被停止 / 改设置重起过
   if (!ac) {
-    const msg = BAND.audioIssueText();
-    setHint(msg + diagSuffix(), true);
-    BAND.toast(msg);
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
     return;
   }
   metro.beat = 0;
   metro.step = 0;
   const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响
   if (t0 === null) {
-    const msg = BAND.audioIssueText();
-    setHint(msg + diagSuffix(), true);
-    BAND.toast(msg);
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
     return;
   }
   metro.on = true;
   window.__metro.on = true;
+  window.__metro.mode = 'webaudio';
   metro.epoch++;
   window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
   paintBeatDot(0);
@@ -228,11 +277,95 @@ async function startMetro() {
   btn.classList.add('rc-btn-line');
   const hint = mEl('m-hint');
   if (hint) { hint.classList.remove('warn'); hint.textContent = MT_RUN_HINT + diagSuffix(); }
+  metroSetModeUi();
+}
+
+/** 兼容模式：`<audio>` 播放预生成点击音，绕开“Web Audio 在跑但没声”的宿主。 */
+function startMetroCompat(notice) {
+  if (metro.on) return;
+  window.__metro.mode = 'compat';
+  metroSetModeUi();
+  BAND._audioIssue = null;
+  BAND.warmClickPool();
+  metro.beat = 0;
+  metro.step = 0;
+  const t0 = BAND.tickCompat(!!metro.accents[0]);       // 第一拍立刻响，且仍在点击手势里
+  if (t0 === null) {
+    const msg = BAND.audioIssueText();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  metro.on = true;
+  window.__metro.on = true;
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintBeatDot(0);
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;
+  if (metro.step === 0) metro.beat = 1 % metro.num;
+  compatNextAt = performance.now() + stepMs;
+  metro.timer = setTimeout(compatSchedule, stepMs);
+  const btn = mEl('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('rc-btn-primary');
+  btn.classList.add('rc-btn-line');
+  const hint = mEl('m-hint');
+  if (hint) {
+    hint.classList.remove('warn');
+    hint.textContent = (notice ? notice + ' ' : '') + MT_COMPAT_HINT + diagSuffix();
+  }
+}
+
+/** 兼容模式：把步/拍推进一格。 */
+function advanceCompatStep() {
+  metro.step = (metro.step + 1) % metro.sub;
+  if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.num;
+}
+
+/** 兼容模式：按绝对时间网格排下一声；迟到超过一整拍才丢格，禁止补播一串。 */
+function scheduleCompatNext() {
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  compatNextAt += stepMs;
+  const now = performance.now();
+  let delay = compatNextAt - now;
+  if (delay < -stepMs) {
+    while (compatNextAt <= now) {
+      compatNextAt += stepMs;
+      advanceCompatStep();
+    }
+    delay = compatNextAt - now;
+  }
+  metro.timer = setTimeout(compatSchedule, Math.max(0, delay));
+}
+
+function compatSchedule() {
+  if (!metro.on) return;
+  if (BAND._audioIssue && BAND._audioIssue.kind === 'compat') {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  const accent = metro.step === 0 && !!metro.accents[metro.beat];
+  const t = BAND.tickCompat(accent);
+  if (t === null) {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  window.__metro.ticks.push({ t, accent, beat: metro.beat, step: metro.step });
+  if (metro.step === 0) paintBeatDot(metro.beat);
+  advanceCompatStep();
+  scheduleCompatNext();
 }
 
 function stopMetro() {
   startSeq++;                                           // 让还在等音频的 startMetro 作废
-  if (metro.timer) clearInterval(metro.timer);
+  if (metro.timer) clearTimeout(metro.timer);
   metro.timer = null;
   metro.on = false;
   window.__metro.on = false;
@@ -254,7 +387,9 @@ function metroRestart() { if (metro.on) { stopMetro(); startMetro().catch(showMe
 
 function setBpm(v) {
   metro.bpm = mClamp(Math.round(Number(v)) || 80, BPM_MIN, BPM_MAX);
-  const inp = mEl('m-bpm'); if (inp) inp.value = String(metro.bpm);
+  const inp = mEl('m-bpm');
+  // 只在值真的变了才回写：边输入边回写会把光标顶掉、把用户正在敲的数字截断
+  if (inp && inp.value !== String(metro.bpm)) inp.value = String(metro.bpm);
   mEl('m-bpm-big').textContent = String(metro.bpm);
   mEl('m-term').textContent = tempoTerm(metro.bpm);
   mStore.set(MK.bpm, String(metro.bpm));
@@ -309,6 +444,17 @@ function tapHit() {
 function initMetro() {
   const hintEl = mEl('m-hint');
   MT_BASE_HINT = hintEl ? hintEl.textContent : '';
+  window.__metro.mode = BAND.metroAudioMode();
+  BAND.warmClickPool();                                  // 预加载点击音；真正播放仍要等用户点「开始」
+  if (hintEl && !mEl('m-mode')) {
+    const modeBtn = document.createElement('button');
+    modeBtn.type = 'button';
+    modeBtn.id = 'm-mode';
+    modeBtn.className = 'mt-mode';
+    hintEl.insertAdjacentElement('afterend', modeBtn);
+    modeBtn.addEventListener('click', toggleMetroMode);
+  }
+  metroSetModeUi();
 
   const beats = String(mStore.get(MK.beats, '4/4')).split('/');
   const accStr = mStore.get(MK.acc, null);
@@ -338,9 +484,21 @@ function initMetro() {
   });
   mEl('m-tap').addEventListener('click', tapHit);
   const bpmIn = mEl('m-bpm');
-  const bpmHandler = () => { if (bpmIn.value !== '') setBpm(bpmIn.value); };
-  bpmIn.addEventListener('input', bpmHandler);
-  bpmIn.addEventListener('change', bpmHandler);
+  // 输入过程中只认**完整合法**的值（30..240），不 clamp、不回写——否则敲 "1" 会被立刻改成 30，
+  // 接着再敲就变成 302 → 240，数字只会在两端乱跳。越界/清空留给失焦或回车时统一收口。
+  const bpmTyped = () => {
+    const raw = bpmIn.value;
+    if (raw === '') return;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < BPM_MIN || n > BPM_MAX) return;
+    setBpm(n);
+  };
+  const bpmCommit = () => {
+    setBpm(bpmIn.value === '' ? metro.bpm : bpmIn.value);
+  };
+  bpmIn.addEventListener('input', bpmTyped);
+  bpmIn.addEventListener('change', bpmCommit);
+  bpmIn.addEventListener('blur', bpmCommit);
   const numIn = mEl('m-num');
   const numHandler = () => { if (numIn.value !== '') setNum(numIn.value); };
   numIn.addEventListener('input', numHandler);

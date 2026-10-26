@@ -24,7 +24,7 @@
       "file": "bell.svg",
       "sha256": "5227140d3559a4794233779b5008c75e2475db4f761aaa4fdbec14c914721f8a",
       "usage": "**右上角铃铛**——「反馈 + 更新」合并成的那个入口",
-      "note": "点开小面板两项，未读时带朱砂红点"
+      "note": "#227 起点开只剩「更新公告」一项，未读时带朱砂红点"
     },
     {
       "key": "calendar-cog",
@@ -109,6 +109,13 @@
       "sha256": "b5a11e8998b92dd160e839ffd45c8d9ab4b9611d1a433345d9d343dbc2997e3f",
       "usage": "菜单 · 更新公告（管理端发布）",
       "note": "⚠️ **不能与右上角铃铛共用**——`bell` 已给合并入口"
+    },
+    {
+      "key": "messages-square",
+      "file": "messages-square.svg",
+      "sha256": "eaad0af0779c6ef7816f2468017b3a1aa58338486dc85aa1ba6b276a6b1454b0",
+      "usage": "菜单 · 问题讨论（日常「我的」）",
+      "note": "2026-10-26 新增（#227）；不得复用 `inbox` / `megaphone`"
     },
     {
       "key": "metronome",

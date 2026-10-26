@@ -50,6 +50,7 @@
 | `laptop` | `laptop.svg` | 482 | ba31e3905885a10332b0b54b7491415672f571b351187e5f815d1f4383369125 |
 | `mail` | `mail.svg` | 391 | a96db905ade0fbf9bb58a07118f2c24051c7d4714f847ff74813eef45a1fa562 |
 | `megaphone` | `megaphone.svg` | 511 | b5a11e8998b92dd160e839ffd45c8d9ab4b9611d1a433345d9d343dbc2997e3f |
+| `messages-square` | `messages-square.svg` | 543 | eaad0af0779c6ef7816f2468017b3a1aa58338486dc85aa1ba6b276a6b1454b0 |
 | `mic` | `mic.svg` | 400 | b1be29238f563ba7e3623ad8e0e0bc51285f17c8bd5d4c37aa5c6b6263e2dbf8 |
 | `music` | `music.svg` | 384 | 4342c822e4599beda6eed52d63b754a0511e447b5c19a13ad636b2c3c7594f94 |
 | `newspaper` | `newspaper.svg` | 496 | 594c08f861753af41a6e7239bed08620b7f2419d6d5946b33290883ef2739ccf |
@@ -76,11 +77,11 @@
 - ⚠️ **别整包搬**：整包约 1600 个图标。要新的就照上面那条命令取单个、补哈希、把本表与 `manifest.json` 一起更新。
 - ⚠️ **换图标要同步三处**：本目录的文件 + `manifest.json` + `band-shell.js` 的 `menu`。
 
-## 五、这 20 个各用在哪
+## 五、这批图标各用在哪
 
 | key | 用在哪 | 备注 |
 |---|---|---|
-| `bell` | **右上角铃铛**——「反馈 + 更新」合并成的那个入口 | 点开小面板两项，未读时带朱砂红点 |
+| `bell` | **右上角铃铛**——「反馈 + 更新」合并成的那个入口 | #227 起点开只剩「更新公告」一项，未读时带朱砂红点 |
 | `calendar-cog` | 菜单 · 活动管理 | ⚠️ 日历三兄弟之一 |
 | `calendar-days` | 菜单 · 活动安排 |  |
 | `calendar-minus` | 菜单 · 我的请假 | ⚠️ 日历三兄弟之一 |
@@ -92,6 +93,7 @@
 | `laptop` | **样张用**：登录设备列表里的"电脑" | ⚠️ 真站 `sessions.html` 渲染的是服务端给的设备文字，当前**不需要** |
 | `mail` | **右上角信封**——声部长留言 | ⚠️ **条件渲染**：只有历任/现任 `SECTION_LEADER` 看得到 |
 | `megaphone` | 菜单 · 更新公告（管理端发布） | ⚠️ **不能与右上角铃铛共用**——`bell` 已给合并入口 |
+| `messages-square` | 菜单 · 问题讨论（日常「我的」） | 2026-10-26 新增（#227）；不得复用 `inbox` / `megaphone` |
 | `mic` | 菜单 · 练习录音 |  |
 | `music` | 菜单 · 曲目库 | ⚠️ 派生自 Feather（见 LICENSE 第二节） |
 | `newspaper` | **样张用**：更新日志（离线项） | ⚠️ 真站 `updates.html` 不占菜单，当前**不需要**这个图标 |

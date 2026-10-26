@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  * 练习录音（docs/13 §13.3⑯）。文件本体在 `file` 表，走统一上传/鉴权下载（docs/08 §8.5）。
  * <p>
  * **`sectionId` 是冗余列**（可见性按声部判定、查询高频）；上传者没有声部时（指挥 / 团长）为空。
- * `durationSec` 是**客户端上报**的——服务端不解析音频，所以 3 分钟上限只在前端拦（见 {@link RecordingService}）。
+ * `durationSec` 是**客户端上报**的——服务端不解析音频，所以 8 分钟上限（暂停不计）只在前端拦（见 {@link RecordingService}）。
  */
 @TableName("recording")
 public class Recording {
@@ -21,6 +21,8 @@ public class Recording {
     private Long memberId;
 
     private Long sectionId;
+
+    private Long assignmentId;
 
     private Long pieceId;
 
@@ -56,6 +58,14 @@ public class Recording {
 
     public void setSectionId(Long sectionId) {
         this.sectionId = sectionId;
+    }
+
+    public Long getAssignmentId() {
+        return assignmentId;
+    }
+
+    public void setAssignmentId(Long assignmentId) {
+        this.assignmentId = assignmentId;
     }
 
     public Long getPieceId() {
