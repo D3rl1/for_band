@@ -8,7 +8,7 @@
  * 改缓存策略或预缓存清单时必须同时改 VERSION，否则旧缓存不会被清掉。
  */
 
-const VERSION = 'v6';
+const VERSION = 'v7';
 const PAGES_CACHE = 'band-pages-' + VERSION;
 const ASSETS_CACHE = 'band-assets-' + VERSION;
 const OWN_PREFIXES = ['band-pages-', 'band-assets-'];

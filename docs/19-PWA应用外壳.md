@@ -4,7 +4,7 @@
 
 | 文档 | 状态 |
 |---|---|
-| 本规格 | ✅ **已实现（#219；2026-10-19 定稿，2026-10-24 补回执）**<br>`manifest.json` / `service-worker.js`（源码 **v6**；2026-10-26 因节拍器资源更新从 v5 升起，**尚未发布到线上**）/ `offline.html` / `install.html` / 28 页 head 均已落地；缓存头由 **Spring `WebMvcConfig.addResourceHandlers`** 落地。回执见 §19.12 |
+| 本规格 | ✅ **已实现（#219；2026-10-19 定稿，2026-10-24 补回执）**<br>`manifest.json` / `service-worker.js`（源码 **v7**；2026-10-30 `v1.1` 发布时随前端批次从 v6 升起，**已上线**）/ `offline.html` / `install.html` / 28 页 head 均已落地；缓存头由 **Spring `WebMvcConfig.addResourceHandlers`** 落地。回执见 §19.12 |
 
 ---
 
@@ -451,7 +451,7 @@
 
 | 项 | 内容 |
 |---|---|
-| **已落地文件** | `static/manifest.json`；`static/service-worker.js`（**VERSION `v5`**（2026-10-26 因节拍器资源更新在源码升至 `v6`，尚未发布，见 #224），含 `/app/` 直连、`/sounds/` SWR）；`static/offline.html`；`static/install.html`；`static/icons/`（`icon-source.svg` + 5 张精确尺寸 PNG）；28 个根页面的 head + `viewport-fit=cover`；`band-core.js` 注册 SW；`band-shell.js` 菜单登记「安装到手机」 |
+| **已落地文件** | `static/manifest.json`；`static/service-worker.js`（**VERSION `v7`**（2026-10-26 源码升至 `v6` 随 v1.0 上线；2026-10-30 `v1.1` 因静态资源批次再升至 `v7`），含 `/app/` 直连、`/sounds/` SWR）；`static/offline.html`；`static/install.html`；`static/icons/`（`icon-source.svg` + 5 张精确尺寸 PNG）；28 个根页面的 head + `viewport-fit=cover`；`band-core.js` 注册 SW；`band-shell.js` 菜单登记「安装到手机」 |
 | **缓存头** | `WebMvcConfig.addResourceHandlers`：`/**`、`/icons/**`、`/fonts/**`、`/vendor/**`、`/tuner/**` 全 `no-cache`；`/api/**` 不经过此路径 |
 | **验证** | 线上 `service-worker.js` 返回 JS MIME + `no-cache`；`manifest.json` / HTML 均 `no-cache`；§19.9.1 的 28 页扫描通过；DevTools 离线 / 更新提示按 §19.9.2 行为 |
 | **闸门** | `python tools/spec_check.py` 通过（0 项不一致） |
