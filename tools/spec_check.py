@@ -10,7 +10,8 @@ for_band 规格 ↔ 代码一致性检查。
 用法（在 for_band/ 下）：  python tools/spec_check.py
 退出码：0 = 无 ❌；1 = 有 ❌（便于以后接 CI）。
 
-十三条规则（R1–R5、R10 与 R13 查"文档↔代码"，R6–R9 查"文档体系自己不乱"，R11–R12 查"前端页面的隐式契约"）：
+十六条规则（R1–R5、R10 与 R13 查"文档↔代码"，R6–R9 查"文档体系自己不乱"，R11–R12 查"前端页面的隐式契约"，
+R14–R16 查"文档会不会再长回去"）：
   R1 无标记的表 / 列（含 NOT NULL 约束）/ 端点 → 代码里必须存在
   R2 `🚧 待实现（#N）` → 必须在 `交接单.md` 里找得到 #N
       （反向漏标只**提示**：`交接单` §二 未办条目在 docs 里找不到 `🚧` 时，报进末尾的"需人扫一眼"）
@@ -30,6 +31,14 @@ for_band 规格 ↔ 代码一致性检查。
       （页头脚本串是隐式契约，少抄一个/顺序抄错不报错、只出怪症状）
   R13 `sql/schema.sql` 建的每张表 → `docs/13` 里必须有 `` `表名` ``（表结构的唯一权威，
       "加一个模块"的第一步；建了表不登记 = 权威当场过期，而没有任何东西会报错）
+  R14 体积预算（兜底）：交接单 ≤100 KB / 已办卷 ≤800 KB / 两个日志与更新告示 ≤120 KB /
+      其余根 md ≤60 KB / docs/*.md ≤200 KB。超了要**轮转**，不是调大预算；
+      既有超预算的登记进 GRANDFATHERED，降回去之后必须自己删掉（不许永久豁免）
+  R15 台账卫生（防回涨的主力）：交接单 §二/§三 的 `✅` 行必须为 0（已办当场搬走）；
+      交接单单行 >8 KB 判罚 / >4 KB 提示；work_log 只留当月、debug_log 只留当季；
+      work_log 单条 >5 KB 判罚 / >1.5 KB 提示（存量只提示，新条目起收紧）
+  R16 大文件节索引：>2000 行（`Read` 静默截断线）的 md 必须带顶部节索引，且行号与
+      `##`~`####` 标题逐条一致 → `python tools/doc_index.py <文件> --write`
 
 另有一段**只提示、不判罚**的报告区：规格条目行里出现"未实现/待实现"这类词却没挂标记
 （这类词在散文里合法，做成 fail 会天天爆红被无视）。
@@ -45,6 +54,7 @@ import json
 import re
 import sys
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 # Windows 控制台默认不是 utf-8，中文输出会炸（本机踩过的坑）
@@ -60,6 +70,7 @@ STATIC_DIR = ROOT / "src" / "main" / "resources" / "static"
 BAND_SHELL_JS = STATIC_DIR / "band-shell.js"
 ICON_MANIFEST = STATIC_DIR / "vendor" / "icons" / "manifest.json"
 HANDOVER = ROOT / "交接单.md"
+HANDOVER_DONE = ROOT / "交接单-已办.md"   # 已办卷：主文件搬出去的 ✅ 行，编号仍算数
 DOC00 = DOCS_DIR / "00-总览与架构.md"
 DOC13 = DOCS_DIR / "13-数据模型总表.md"
 
@@ -308,6 +319,9 @@ stats["Java 端点"] = len(java_endpoints)
 handover_ids = set()
 if HANDOVER.exists():
     handover_ids = expand_ids(HANDOVER.read_text(encoding="utf-8"))
+    # 已办卷里也是「本台账的条目」——不并进来，R2 会在下一次搬走已办后误报
+    if HANDOVER_DONE.exists():
+        handover_ids |= expand_ids(HANDOVER_DONE.read_text(encoding="utf-8"))
     stats["交接单条目"] = len(handover_ids)
 else:
     add("fail", "解析", "找不到 交接单.md")
@@ -722,6 +736,182 @@ else:
                 f"`sql/schema.sql` 建了表 `{table}`，但 `docs/13` 里找不到 `` `{table}` ``"
                 f" → docs/13 是表结构的**唯一权威**（AGENTS.md 规格优先第 2 条）："
                 f"新表必须同时登记它的表清单 / 建表顺序 / 字段定义")
+
+# ================================================================ 以下查"文档会不会再长回去"
+# 起因（2026-10-29）：`交接单.md` 438 行却有 468 KB（最长一行 16.6 KB，已办占 85%）；
+# `docs/14` 3459 行超过 `Read` 的 2000 行上限被**静默截断**。存量已靠「拆卷 / 轮转 / 节索引」
+# 收拾完，这一段负责**不许长回去**。
+#
+# ⚠️ 纯体积预算天生"今天红、明天红"，喊三次就没人看（文件头那条"假阳性会杀死闸门"）。
+#    所以主规则是 R15/R16（查**结构**），R14 只做兜底；阈值都按清理后的实测值留了余量。
+
+KB = 1024
+
+# ---------------------------------------------------------------- R14 体积预算（兜底）
+BUDGETS = {
+    "交接单.md": 100 * KB,       # 只留未办；已办在 交接单-已办.md
+    "交接单-已办.md": 800 * KB,   # 追加型历史卷，只查不读；给足量但要有上限
+    "work_log.md": 120 * KB,     # 只留当月
+    "debug_log.md": 120 * KB,    # 只留当季（速查表也在里面）
+    "更新告示.md": 120 * KB,
+    "DECISIONS.md": 60 * KB,
+}
+ROOT_MD_BUDGET = 60 * KB
+DOCS_MD_BUDGET = 200 * KB
+# 既有超预算文件：登记后不判罚。**降回预算内必须自己删掉**（否则报红），不许永久豁免。
+GRANDFATHERED = {
+    "docs/14-前端资源与样式规范.md":
+        "332 KB / 3458 行；按章拆要同步 40 处 `docs/14:行号` 引用，本轮先用节索引（R16）保证可定位",
+}
+
+for p in sorted(list(ROOT.glob("*.md")) + list(DOCS_DIR.glob("*.md"))):
+    relp = p.relative_to(ROOT).as_posix()
+    size = p.stat().st_size
+    budget = BUDGETS.get(relp, ROOT_MD_BUDGET if p.parent == ROOT else DOCS_MD_BUDGET)
+    if relp in GRANDFATHERED:
+        if size <= budget:
+            add("fail", "R14 豁免该撤",
+                f"{relp} 已降到 {size // KB} KB（预算 {budget // KB} KB）→ 从 spec_check 的 "
+                f"GRANDFATHERED 名单里删掉它（不许永久豁免）")
+        continue
+    if size > budget:
+        add("fail", "R14 文档超预算",
+            f"{relp} {size // KB} KB > 预算 {budget // KB} KB → "
+            f"该轮转了（日志按月/季搬进 docs/log-archive/、已办搬进 交接单-已办.md），"
+            f"不要调大预算")
+
+# ---------------------------------------------------------------- R15 台账卫生（真正防回涨）
+def split_cells(line):
+    """按 `|` 切表格行：跳过行内代码里的 `|` 与 `\\|` 转义。"""
+    out, cur, incode, i = [], [], False, 0
+    while i < len(line):
+        c = line[i]
+        if c == "`":
+            incode = not incode
+            cur.append(c)
+        elif c == chr(92) and i + 1 < len(line):
+            cur.append(c)
+            cur.append(line[i + 1])
+            i += 1
+        elif c == "|" and not incode:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return out
+
+
+def status_of(line):
+    """状态列 = 最后一个单元格。
+
+    ⚠️ 先按「最后一个 `|`」从右切，**不要**整行逐格解析：2026-10-29 实测 `#101` 那行
+    行内代码的反引号是**奇数个**（`**`stop → 换 jar → 跑 `sql/schema.sql` → `start`**`），
+    逐格解析会把后半行吞成一格，状态列永远读不到 → 那条 `✅ 已办` 在闸门和拆卷脚本里
+    **双双隐形**。尾列里几乎不会出现 `|`，从右切最稳；没有尾竖线的行（`#57`）才退回逐格。
+    """
+    s = line.strip()
+    if s.endswith("|") and s.count("|") >= 2:
+        return s[:-1].rsplit("|", 1)[-1].strip()
+    cs = split_cells(s)
+    while cs and not cs[0].strip():
+        cs.pop(0)
+    while cs and not cs[-1].strip():
+        cs.pop()
+    return cs[-1].strip() if cs else ""
+
+
+today = date.today()
+cur_month = "%04d-%02d" % (today.year, today.month)
+cur_q = "%04d-Q%d" % (today.year, (today.month - 1) // 3 + 1)
+
+if HANDOVER.exists():
+    in_lists = False
+    done_rows, too_long, fat = [], [], []
+    for i, l in enumerate(HANDOVER.read_text(encoding="utf-8").splitlines(), 1):
+        if l.startswith("## "):
+            in_lists = l.startswith("## 二") or l.startswith("## 三")
+            continue
+        if in_lists and re.match(r"^\|\s*#\d+\s*\|", l) and status_of(l).startswith("✅"):
+            done_rows.append(i)
+        b = len(l.encode("utf-8"))
+        if b > 8 * KB:
+            too_long.append((i, b))
+        elif b > 4 * KB:
+            fat.append((i, b))
+    if done_rows:
+        add("fail", "R15 已办没搬走",
+            f"交接单 §二/§三 还有 {len(done_rows)} 行状态是 ✅（第 "
+            f"{'、'.join(map(str, done_rows[:5]))} 行）→ 已办行必须当场搬进 `交接单-已办.md`，"
+            f"主文件只留未办")
+    for i, b in too_long:
+        add("fail", "R15 单行过长",
+            f"交接单.md:{i} 单行 {b / KB:.1f} KB > 8 KB → 拆成多行，细节挪进对应 docs")
+    if fat:
+        i, b = max(fat, key=lambda x: x[1])
+        add("warn", "R15 单行偏长",
+            f"交接单.md 有 {len(fat)} 行超过 4 KB（最长第 {i} 行 {b / KB:.1f} KB）；"
+            f"没到 8 KB 硬线，只是提醒该拆了")
+
+WORK_LOG = ROOT / "work_log.md"
+if WORK_LOG.exists():
+    wtext = WORK_LOG.read_text(encoding="utf-8")
+    stale = sorted({m for m in re.findall(r"^## (\d{4}-\d{2})-\d{2}", wtext, re.M)
+                    if m != cur_month})
+    if stale:
+        add("fail", "R15 日志没轮转",
+            f"work_log.md 里还有 {'、'.join(stale)} 的日期节 → 搬进 "
+            f"`docs/log-archive/work_log-<月>.md`，主文件只留 {cur_month}")
+    big_entries, huge = [], []
+    for i, l in enumerate(wtext.splitlines(), 1):
+        if not l.startswith("- "):
+            continue
+        b = len(l.encode("utf-8"))
+        if b > 5 * KB:
+            huge.append((i, b))
+        elif b > 1.5 * KB:
+            big_entries.append((i, b))
+    for i, b in huge:
+        add("fail", "R15 日志条目过长",
+            f"work_log.md:{i} 单条 {b / KB:.1f} KB > 5 KB → 这里只留摘要，展开的内容进 "
+            f"`debug_log.md` 或对应 docs")
+    if big_entries:
+        i, b = max(big_entries, key=lambda x: x[1])
+        add("warn", "R15 日志条目偏长",
+            f"work_log.md 当月有 {len(big_entries)} 条超过 1.5 KB（最长第 {i} 行 "
+            f"{b / KB:.1f} KB）→ 往后的新条目按「一条一行 ≤1.5 KB」写，存量只提示不判罚")
+
+DEBUG_LOG = ROOT / "debug_log.md"
+if DEBUG_LOG.exists():
+    stale_q = set()
+    for l in DEBUG_LOG.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^## (\d{4})-(\d{2})-\d{2}", l)
+        if m:
+            q = "%s-Q%d" % (m.group(1), (int(m.group(2)) - 1) // 3 + 1)
+            if q != cur_q:
+                stale_q.add(q)
+    if stale_q:
+        add("fail", "R15 复盘没轮转",
+            f"debug_log.md 里还有 {'、'.join(sorted(stale_q))} 的复盘条目 → 搬进 "
+            f"`docs/log-archive/debug_log-<年>-Q<n>.md`，主文件只留 {cur_q}")
+
+# ---------------------------------------------------------------- R16 大文件必须有节索引
+# `Read` 一次最多 2000 行、超了**静默截断**（不报错、不提示），第 2000 行以后等于不存在。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import doc_index
+except Exception as exc:                      # noqa: BLE001 —— 工具丢了本身就是闸门失效
+    doc_index = None
+    add("fail", "R16 缺工具",
+        f"找不到 tools/doc_index.py（{exc}）→ >2000 行的文档没法校验节索引")
+if doc_index is not None:
+    big = [p for p in sorted(list(ROOT.glob("*.md")) + list(DOCS_DIR.glob("*.md")))
+           if len(p.read_text(encoding="utf-8").splitlines()) > doc_index.LIMIT_LINES]
+    stats["需节索引的大文件"] = len(big)
+    for p in big:
+        for msg in doc_index.check(p):
+            add("fail", "R16 索引过期", msg)
 
 # --------------------------------------------- 报告区（只提示，不影响退出码）
 NEVER_DONE_WORDS = ("未实现", "待实现", "尚未实现", "暂未实现", "没有实现")

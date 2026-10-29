@@ -519,6 +519,150 @@ const BAND = {
   }};
 
 /* ============================================================
+   外观控件：配色（6 套预置）+ 深浅（docs/14 §14.6.2b / #239）
+   ------------------------------------------------------------
+   ⚠️ 全部封在 `BAND.appearance` 里：本文件是 classic script，旧 8 页各自的内联
+   `const PAL_NAME / store / setPalette…` 已删；将来若有人再摊成顶层 const，
+   会与本文件/其它脚本**重复声明**（SyntaxError）。
+   ⚠️ `band-nav.js` 已在 <head> 把 data-palette / data-theme 打到 <html>（首帧不闪）；
+   这里只接线控件、把按钮状态同步回来，切换时才写 localStorage。
+   ⚠️ 沉浸页 `showcase.html`（我的专场）**明确不加**控件（用户 2026-10-29 拍板）。
+   ⚠️ 「墨洇」只在 `html.theme-xvt` 期间生效（band.css §1b）；连续点击用**代际令牌**
+   保证**最后一代**过渡结束时才摘类——旧回调提前摘会让后一次退回默认交叉淡化并叠出白闪。
+   ============================================================ */
+Object.assign(BAND, {
+  appearance: {
+    PAL_NAME: { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' },
+    ICON_SUN: '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>',
+    ICON_MOON: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>',
+    _wired: false,
+    _gen: 0,
+
+    _get(key, dflt) {
+      try { return localStorage.getItem(key) ?? dflt; } catch (e) { return dflt; }
+    },
+    _set(key, value) {
+      try { localStorage.setItem(key, value); } catch (e) { /* 隐私模式：本页仍生效 */ }
+    },
+
+    /** 旧 8 页有静态 `.ev-appbar` ⇒ 只接线；其余标准导航页就地注入一份（不含「今天」chip）。 */
+    mount(host) {
+      if (!host || document.body.classList.contains('page-showcase')) return;
+      if (!document.getElementById('theme-btn')) {
+        const bar = document.createElement('div');
+        bar.className = 'ev-appbar';
+        bar.innerHTML = `
+          <button class="ticon" id="theme-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="配色方案" title="配色">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+          </button>
+          <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+            <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${this.ICON_MOON}</svg>
+          </button>
+          <div class="ev-pop" id="theme-pop" role="dialog" aria-label="配色方案" hidden>
+            <div class="pop-h">配色<span class="pop-cur" id="pop-cur">墨·青</span></div>
+            <div class="seedrow" id="palette" role="group" aria-label="配色方案">
+              <button class="seedswatch" type="button" data-p="jade"   title="墨·青" aria-pressed="false"></button>
+              <button class="seedswatch" type="button" data-p="teal"   title="墨·松" aria-pressed="false"></button>
+              <button class="seedswatch" type="button" data-p="violet" title="墨·紫" aria-pressed="false"></button>
+              <button class="seedswatch" type="button" data-p="olive"  title="墨·缃" aria-pressed="false"></button>
+              <button class="seedswatch" type="button" data-p="clay"   title="墨·赭" aria-pressed="false"></button>
+              <button class="seedswatch" type="button" data-p="ink"    title="纯墨"  aria-pressed="false"></button>
+            </div>
+          </div>`;
+        host.parentNode.insertBefore(bar, host.nextSibling);
+      }
+      this.wire();
+      // 未设 data-theme 即浅色（band-nav.js 只写 dark）；配色同理，缺省墨·青。
+      this.setPalette(this._get('band.palette', 'jade'));
+      this.setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+    },
+
+    wire() {
+      if (this._wired) return;
+      const btn = document.getElementById('theme-btn');
+      const night = document.getElementById('night-btn');
+      const palette = document.getElementById('palette');
+      if (!btn || !night || !palette) return;
+      this._wired = true;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openPop(document.getElementById('theme-pop').hidden);
+      });
+      night.addEventListener('click', () => this.toggleNight());
+      palette.addEventListener('click', (e) => {
+        const b = e.target.closest('.seedswatch');
+        if (b) this.setPalette(b.dataset.p);
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) this.openPop(false);
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.openPop(false); });
+    },
+
+    setPalette(p) {
+      if (!this.PAL_NAME[p]) p = 'jade';
+      document.documentElement.dataset.palette = p;
+      document.querySelectorAll('#palette .seedswatch').forEach((b) => {
+        const on = b.dataset.p === p;
+        b.setAttribute('aria-pressed', String(on));
+        b.classList.toggle('on', on);
+      });
+      const cur = document.getElementById('pop-cur');
+      if (cur) cur.textContent = this.PAL_NAME[p];
+      this._set('band.palette', p);
+    },
+
+    setTheme(t) {
+      const on = t === 'dark';
+      document.documentElement.dataset.theme = on ? 'dark' : 'light';
+      const btn = document.getElementById('night-btn');
+      if (btn) {
+        btn.setAttribute('aria-pressed', String(on));
+        btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
+      }
+      const ic = document.getElementById('night-ic');
+      if (ic) ic.innerHTML = on ? this.ICON_SUN : this.ICON_MOON;
+      this._set('band.theme', document.documentElement.dataset.theme);
+    },
+
+    toggleNight() {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const btn = document.getElementById('night-btn');
+      if (!document.startViewTransition || reduce || !btn) { this.setTheme(next); return; }
+      const r = btn.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
+      const style = document.documentElement.style;
+      style.setProperty('--cx', cx + 'px');
+      style.setProperty('--cy', cy + 'px');
+      style.setProperty('--cr', cr + 'px');
+      const cls = document.documentElement.classList;
+      const gen = ++this._gen;
+      cls.add('theme-xvt');
+      try {
+        const t = document.startViewTransition(() => this.setTheme(next));
+        // 只有**最新一代**的过渡结束才摘门控类；被连点替换掉的旧过渡不能提前摘（#234）。
+        const done = () => { if (gen === this._gen) cls.remove('theme-xvt'); };
+        if (t && t.finished) t.finished.then(done, done);
+        else done();
+      } catch (e) {
+        cls.remove('theme-xvt');
+        this.setTheme(next);
+      }
+    },
+
+    openPop(o) {
+      const pop = document.getElementById('theme-pop');
+      if (!pop) return;
+      pop.hidden = !o;
+      const btn = document.getElementById('theme-btn');
+      if (btn) btn.setAttribute('aria-expanded', String(o));
+    },
+  },
+});
+
+/* ============================================================
    PWA 外壳（docs/19 / #219）：SW 注册、更新提示、离线提示。
    ⚠️ 只在这里注册一次（band-core.js 被除 index.html 外的所有根页面引用）。
    ⚠️ 更新提示必须用户点「刷新」才生效：install 不 skipWaiting，这里也绝不自动 reload。

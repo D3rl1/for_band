@@ -409,7 +409,8 @@ async function load() {
   me = await BAND.renderNav('issues.html');
   if (!me) return;
 
-  BAND.issueActivity().then((latest) => BAND.markIssueSeen(latest));
+  // 内容请求前先取动态快照；详情成功渲染后才写回（docs/15 §15.12）。
+  const snapshot = BAND.issueActivity();
 
   const raw = new URLSearchParams(location.search).get('id');
   issueId = Number(raw);
@@ -427,6 +428,8 @@ async function load() {
   reacted = data.reactedByMe;
   reactionCount = data.reactionCount;
   render();
+  const latest = await snapshot;
+  if (latest) BAND.markIssueSeen(latest);
 }
 
 load();

@@ -115,20 +115,18 @@ Object.assign(BAND, {
       + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
   },
 
-  /** 「问题讨论」导航项的板级未读点（docs/15 §15.11）。
-      只认 `issues.html` 那一行的 `.ndot`；在问题两页上直接熄灭（页面自己会写已读）。
+  /** 「问题讨论」导航项的板级未读点（docs/15 §15.11 / §15.12）。
+      只认指向 `issues.html` 的那几行 `.ndot`（桌面与抽屉共用同一份 DOM，用 All 兜底）。
+      ⚠️ **不再在问题两页上直接熄灭**：页面只有"内容成功加载后"才写已读，
+      加载失败必须保留原水位与红点。`issueUnread()` 返回 `null`（拉不到）时不动 DOM。
       ⚠️ `renderNav` 的两条路径都要调用——复用分支漏了就会"回页面红点不更新"。 */
   refreshIssueDot() {
-    const dot = document.querySelector('.rail .menu a[href="/issues.html"] .ndot');
-    if (!dot || typeof this.issueUnread !== 'function') return;
-    const here = location.pathname;
-    if (here === '/issues.html' || here === '/issue-detail.html') {
-      dot.hidden = true;
-      return;
-    }
-    this.issueUnread()
-      .then((unread) => { dot.hidden = !unread; })
-      .catch(() => { dot.hidden = true; });
+    const dots = document.querySelectorAll('a[href="/issues.html"] .ndot');
+    if (!dots.length || typeof this.issueUnread !== 'function') return;
+    this.issueUnread().then((unread) => {
+      if (unread === null) return;
+      dots.forEach((d) => { d.hidden = !unread; });
+    }).catch(() => { /* 不知道就不动 */ });
   },
 
   /** 各折叠组的开关状态（键 = **组名**，如 `'系统管理'`；不再用下标，否则切视图会错位）。
@@ -250,6 +248,12 @@ Object.assign(BAND, {
       // （`.mbody.loading` 会把非骨架子元素一起藏掉）。正常路径是 `alive()` 里的 `endLoading()`。
       setTimeout(() => this.endLoading(mbody), 3000);
     }
+
+    // 外观控件（配色 / 深浅，docs/14 §14.6.2b / #239）：所有标准导航页统一挂载，
+    // 沉浸页（showcase）由 `BAND.appearance.mount` 自己跳过。
+    // ⚠️ 必须在内容搬迁**之前**注入：旧 8 页的静态 `.ev-appbar` 本来就在 `#navbar` 后面，
+    //    注入的这份也要落在 `.mbody` 最前面，位置才与它们一致。
+    if (BAND.appearance) BAND.appearance.mount(document.getElementById('navbar'));
 
     // 把 #navbar 之后的页面内容全部挪进 `.mbody`（toast-host 留在 body 上）
     const host = document.getElementById('navbar');
@@ -717,69 +721,138 @@ Object.assign(BAND, {
       触发阈值 **64**、位移衰减 **×0.5**、位移封顶 **96**。
       ⚠️⚠️ `transform` **只许打在 `.mbody`** 上（打在 `.main` 上会建 containing block，
       `showcase.html` 那些 `position: fixed` 层与 `#wel` 的参照系会一起乱）。
-      ⚠️ 2026-10-02：**提示条 `.mhint` 已整条删除**（用户嫌占地方）⇒ 这里只剩"推正文 + 松手重新取数"，
-      拉动时正文下移就是唯一的反馈；`ptr-load` 那个只服务转圈的类一并撤了。
+      ⚠️ 2026-10-02：**提示条 `.mhint` 已整条删除**（用户嫌占地方）⇒ 别再恢复那条占版面的文字/箭头。
+      2026-10-29（#235，用户澄清）：所谓"卡顿"是**刷新结束缺少动画、回弹突变**——
+      现在补两样**不占布局**的反馈：拉动时一枚细圆环随正文露出，松手过阈值后它转起来；
+      请求结束先摘 `ptr-drag` 再清位移，让 `band.css` 那条 320ms 过渡接管归位（顺序反了就是瞬跳）。
+      状态机 `idle → tracking → pulling → loading → settling`，一次手势最多发一次请求。
       ⚠️ 触摸必须走 `touchmove` + `{ passive: false }`，而且**只有确认在下拉才 `preventDefault`**
       （别抢正常滚动）；Pointer Events 做不到这件事。
       ⚠️ 鼠标分支只为**窄窗口下的验收**（鼠标拖不触发原生滚动，没有要压的东西）；
       整段由 `isNarrow()`（**只认窄屏**，`#114`）圈住 —— 见 `allowed()`。 */
   mountPullRefresh(s) {
     if (!s || !s.mbody || !this.refresher()) return;   // 没有刷新器就别给这个手势（空承诺）
-    const THRESHOLD = 64, DECAY = .5, CAP = 96;
+    const THRESHOLD = 64, DECAY = .5, CAP = 96, SLOP = 8, HOLD = 56;
     const root = document.documentElement;
     const body = s.mbody;
-    let startY = 0, dy = 0, dragging = false, busy = false;
+    let startY = 0, startX = 0, dy = 0, state = 'idle', token = 0;
+
+    // 浮动指示器：`.mbody` 的子节点 ⇒ 跟着正文一起位移；`top:-38px` 让它只在拉开的缝里露头。
+    const spin = document.createElement('div');
+    spin.className = 'ptr-spin';
+    spin.setAttribute('aria-hidden', 'true');
+    body.appendChild(spin);
+
     const atTop = () => (document.scrollingElement.scrollTop || 0) <= 0;
-    // ⚠️ **抽屉开着时不许接管**（2026-09-28 补）：`band.css` 里 `html.drawer-open` 已经锁了
-    // `<html>/<body>` 的滚动，但这段手势是**用 transform 推 `.mbody`**、根本不走滚动
-    // ⇒ 不拦的话，"锁住主页面"就成了半句话（正文照样被拖着走）。
-    const allowed = () => this.isNarrow() && !busy
-      && !root.classList.contains('drawer-open') && atTop();
+    // ⚠️ **抽屉 / 个人栏 / 铃铛面板 / 模态开着时不许接管**（2026-09-28 补）：这段手势是
+    // 用 transform 推 `.mbody`、根本不走滚动 ⇒ 不拦的话"锁住主页面"就成了半句话。
+    const overlayOpen = () => root.classList.contains('drawer-open')
+      || !!document.querySelector('.profile.open, .hpanel:not([hidden]), [aria-modal="true"]');
+    const allowed = () => this.isNarrow() && state === 'idle' && atTop() && !overlayOpen();
+
     const paint = () => {
       root.classList.toggle('ptr-drag', dy > 0);
+      root.classList.toggle('ptr-ready', dy >= THRESHOLD);
       body.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
     };
-    const begin = (y) => { if (!allowed()) return; startY = y; dy = 0; dragging = true; };
-    const move = (y) => {
-      if (!dragging) return;
-      const raw = y - startY;
-      if (raw <= 0) { if (dy !== 0) { dy = 0; paint(); } return; }
-      dy = Math.min(raw * DECAY, CAP);     // 橡皮筋：衰减 + 封顶，**只动 transform**
-      paint();
+    /** 归位：**先摘 `ptr-drag` 再写位移**——摘掉后 `band.css` 的 320ms 过渡才接管（#235）。 */
+    const settle = (offset) => {
+      root.classList.remove('ptr-drag', 'ptr-ready');
+      body.style.transform = offset ? 'translateY(' + offset + 'px)' : '';
     };
-    const reset = () => {
-      root.classList.remove('ptr-drag');
-      body.style.transform = '';
+    const abort = () => {
+      state = 'idle';
+      dy = 0;
+      settle(0);
+    };
+    const begin = (x, y) => {
+      if (!allowed()) return;
+      startX = x; startY = y; dy = 0; state = 'tracking';
+    };
+    /** @returns {boolean} 是否已接管（调用方据此 preventDefault） */
+    const move = (x, y) => {
+      if (state !== 'tracking' && state !== 'pulling') return false;
+      const rawY = y - startY;
+      const rawX = x - startX;
+      if (state === 'tracking') {
+        // 横向占优 / 往上推 / 还没过 slop ⇒ 交还给原生滚动，绝不 preventDefault
+        if (Math.abs(rawX) > Math.abs(rawY) || rawY < -SLOP || rawY <= SLOP) return false;
+        state = 'pulling';
+      }
+      if (rawY <= 0) { dy = 0; paint(); return true; }
+      dy = Math.min(rawY * DECAY, CAP);     // 橡皮筋：衰减 + 封顶，**只动 transform**
+      paint();
+      return true;
+    };
+    const finish = (my) => {
+      if (my !== token) return;             // 旧请求晚到：别去动新一次的状态
+      state = 'settling';
+      root.classList.remove('ptr-loading');
+      settle(0);
+      const done = () => {
+        if (my !== token) return;
+        state = 'idle';
+        dy = 0;
+      };
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        done();
+        return;
+      }
+      let hit = false;
+      const onEnd = (e) => {
+        if (e.propertyName !== 'transform') return;
+        hit = true;
+        body.removeEventListener('transitionend', onEnd);
+        done();
+      };
+      body.addEventListener('transitionend', onEnd);
+      // 兜底：过渡没触发（元素被换掉 / 距离为 0）也要回到 idle
+      setTimeout(() => {
+        if (hit) return;
+        body.removeEventListener('transitionend', onEnd);
+        done();
+      }, 380);
     };
     const end = () => {
-      if (!dragging) return;
-      dragging = false;
-      if (dy < THRESHOLD) { reset(); return; }
-      busy = true;
-      body.style.transform = 'translateY(' + THRESHOLD + 'px)';
-      const done = () => {                 // 收尾：归位（别静默弹回）
-        body.style.transform = '';
-        busy = false;
-        setTimeout(() => { root.classList.remove('ptr-drag'); }, 340);
-      };
+      if (state === 'tracking') {
+        state = 'idle';
+        dy = 0;
+        settle(0);
+        return;
+      }
+      if (state !== 'pulling') return;
+      if (dy < THRESHOLD) { abort(); return; }
+      state = 'loading';                    // 一次手势只发一次请求
+      dy = HOLD;
+      root.classList.remove('ptr-drag', 'ptr-ready');
+      root.classList.add('ptr-loading');
+      body.style.transform = 'translateY(' + HOLD + 'px)';
+      const my = ++token;
       let p;
       try { p = Promise.resolve(this.refresher()()); } catch (e) { p = Promise.resolve(); }
-      Promise.resolve(p).catch(() => {}).then(() => setTimeout(done, 400));
+      Promise.resolve(p).catch(() => {}).then(() => finish(my));
     };
-    document.addEventListener('touchstart', (e) => begin(e.touches[0].clientY), { passive: true });
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;    // 多指手势不抢
+      begin(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
     document.addEventListener('touchmove', (e) => {
-      if (!dragging) return;
-      if (e.touches[0].clientY - startY > 0) e.preventDefault();
-      move(e.touches[0].clientY);
+      if (state !== 'tracking' && state !== 'pulling') return;
+      if (e.touches.length !== 1) { abort(); return; }
+      const t = e.touches[0];
+      if (move(t.clientX, t.clientY)) e.preventDefault();
     }, { passive: false });
     document.addEventListener('touchend', end);
-    document.addEventListener('touchcancel', () => { if (dragging) { dragging = false; reset(); } });
+    document.addEventListener('touchcancel', () => {
+      if (state === 'tracking' || state === 'pulling') abort();
+    });
     // 鼠标分支（窄窗口下验收用）：只在窄屏生效（`isNarrow()` 圈着，见 `allowed()`）
     document.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' && e.button === 0) begin(e.clientY);
+      if (e.pointerType === 'mouse' && e.button === 0) begin(e.clientX, e.clientY);
     });
     window.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'mouse') move(e.clientY);
+      if (e.pointerType !== 'mouse') return;
+      if (move(e.clientX, e.clientY)) e.preventDefault();
     });
     window.addEventListener('pointerup', (e) => {
       if (e.pointerType === 'mouse') end();

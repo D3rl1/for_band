@@ -2,17 +2,41 @@
 
 Object.assign(BAND, {
 
+  /** 已读水位的**内存镜像**：隐私模式 / 存储不可写时，本页仍能立刻熄灭红点
+   *  （`docs/15` §15.12「存储不可写时本页仍能保持已读」）。 */
+  _seenMem: {},
+
+  _seenRaw(key) {
+    if (Object.prototype.hasOwnProperty.call(this._seenMem, key)) return this._seenMem[key];
+    let raw = '';
+    try { raw = localStorage.getItem(key) || ''; } catch (e) { raw = ''; }
+    this._seenMem[key] = raw;
+    return raw;
+  },
+
+  /** 水位只前进：数字 id 取最大、ISO 字符串按字符串比较取大；内存先写，localStorage 失败不影响本页。 */
+  _seenWriteMax(key, value) {
+    const next = value == null ? '' : String(value);
+    if (!next) return;
+    const cur = this._seenRaw(key);
+    const bigger = /^\d+$/.test(next) && /^\d+$/.test(cur)
+      ? Number(next) > Number(cur)
+      : next > cur;
+    if (!bigger) return;
+    this._seenMem[key] = next;
+    try { localStorage.setItem(key, next); } catch (e) { /* 隐私模式：本页已读仍生效 */ }
+  },
+
   /** 公告的"已读到哪一版"（**设备级**，不是账号级，docs/15 §15.5）。 */
   seenRelease() {
-    try {
-      return Number(localStorage.getItem('band_seen_release')) || 0;
-    } catch (e) {
-      return 0;   // 隐私模式：当作没记录过 → 每次都会弹，可接受
-    }
+    return Number(this._seenRaw('band_seen_release')) || 0;
   },
 
   markReleaseSeen(id) {
-    try { localStorage.setItem('band_seen_release', String(id)); } catch (e) { /* 忽略 */ }
+    this._seenWriteMax('band_seen_release', Number(id) || 0);
+    // 刚成功读到公告：铃铛与已打开面板里的那一行**立刻**熄灭；新公告留到下次导航检查再亮。
+    document.querySelectorAll('.hact-bell .hact-dot, .hpanel-dot')
+      .forEach((d) => { d.hidden = true; });
   },
 
   /**
@@ -31,28 +55,26 @@ Object.assign(BAND, {
 
   /** 本机读到的「问题讨论」最新动态（设备级，同 `band_seen_release`）。 */
   seenIssueActivity() {
-    try {
-      return localStorage.getItem('band_seen_issue_activity') || '';
-    } catch (e) {
-      return '';
-    }
+    return this._seenRaw('band_seen_issue_activity');
   },
 
-  /** 有没有未读：服务器值更新，或本机从没记过（首次使用也算一次未读）。 */
+  /** 有没有未读：服务器值更新，或本机从没记过（首次使用也算一次未读）。
+   *  ⚠️ 拉不到动态时返回 **`null`（不知道）**，调用方别把它当成"已读"去熄点。 */
   issueUnread() {
     return this.issueActivity().then((latest) => {
-      if (!latest) return false;
+      if (!latest) return null;
       const seen = this.seenIssueActivity();
       return !seen || String(latest) > seen;
     });
   },
 
-  /** 打开 `issues.html` / `issue-detail.html` 后把当前值写回本机，并立刻熄灭导航红点。 */
+  /** 内容**成功加载后**把本次快照写回本机，并立刻熄灭当前所有「问题讨论」红点。
+   *  水位只前进；新动态（T+1）留到下一次导航检查再亮。 */
   markIssueSeen(latest) {
     if (!latest) return;
-    try { localStorage.setItem('band_seen_issue_activity', String(latest)); } catch (e) { /* 忽略 */ }
-    const dot = document.querySelector('.rail .menu a[href="/issues.html"] .ndot');
-    if (dot) dot.hidden = true;
+    this._seenWriteMax('band_seen_issue_activity', latest);
+    document.querySelectorAll('a[href="/issues.html"] .ndot')
+      .forEach((d) => { d.hidden = true; });
   },
 
   /**
@@ -77,15 +99,13 @@ Object.assign(BAND, {
    * ⚠️ 读完之后内容**不会消失**，只是**不再弹**（它常驻在右上角那个「信封」里）。
    */
   seenSectionNote() {
-    try {
-      return Number(localStorage.getItem('band_seen_section_note')) || 0;
-    } catch (e) {
-      return 0;   // 隐私模式：当作没读过 → 会再弹一次，可接受
-    }
+    return Number(this._seenRaw('band_seen_section_note')) || 0;
   },
 
   markSectionNoteSeen(id) {
-    try { localStorage.setItem('band_seen_section_note', String(id)); } catch (e) { /* 忽略 */ }
+    this._seenWriteMax('band_seen_section_note', Number(id) || 0);
+    // 留言已成功展示：信封上的未读点立刻灭；内容本身仍常驻在信封里。
+    document.querySelectorAll('.hact-mail .hact-dot').forEach((d) => { d.hidden = true; });
   },
 
   /** 「我刚上任、还没读过上一任的留言」那一条；没有就是 `null`。
@@ -160,7 +180,7 @@ Object.assign(BAND, {
   releaseUnread() {
     return this.api('/api/release-notes/latest').then((envelope) =>
       !!(envelope.code === 0 && envelope.data && envelope.data.id > this.seenRelease()))
-      .catch(() => false);   // 拉不到就不显示红点，别打扰
+      .catch(() => null);   // 拉不到 = 不知道，别把已有点误解成"已读"
   },
 
   /** 未读公告的小红点。单独一个方法是为了**只拉一次**——`paintNav` 会跑两遍（缓存 + 权威）。
@@ -172,7 +192,9 @@ Object.assign(BAND, {
     if (!dot) {
       return;
     }
-    this.releaseUnread().then((unread) => { dot.hidden = !unread; });
+    this.releaseUnread().then((unread) => {
+      if (unread !== null) dot.hidden = !unread;
+    });
   },
 
   /** 信封上的未读点：有"我刚上任、还没读过"的那一条才亮（`docs/03` §3.5）。
@@ -183,9 +205,8 @@ Object.assign(BAND, {
       return;
     }
     this.sectionNotePending().then((note) => {
-      if (note && note.id > this.seenSectionNote()) {
-        dot.hidden = false;
-      }
+      // 有未读才亮；读过 / 没有 / 拉取失败都保持熄灭（信封点不是"内容已读"的判据）。
+      dot.hidden = !(note && note.id > this.seenSectionNote());
     });
   },
 
@@ -211,7 +232,9 @@ Object.assign(BAND, {
     document.body.append(back, panel);
     bell.setAttribute('aria-expanded', 'true');
     const rowDot = panel.querySelector('.hpanel-dot');
-    this.releaseUnread().then((unread) => { rowDot.hidden = !unread; });
+    this.releaseUnread().then((unread) => {
+      if (unread !== null) rowDot.hidden = !unread;
+    });
     back.addEventListener('click', () => this.closeHeadPanel());
     this._panelKey = (e) => { if (e.key === 'Escape') this.closeHeadPanel(); };
     document.addEventListener('keydown', this._panelKey);
@@ -308,6 +331,9 @@ Object.assign(BAND, {
     for (const n of rows) {
       list.appendChild(this.letterItem(n, me, sectionId, redraw));
     }
+    // 成功展示后才算已读（docs/15 §15.12）：写入本次展示的最大 noteId，信封点立刻灭。
+    const maxId = rows.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0);
+    if (maxId) this.markSectionNoteSeen(maxId);
     // ⭐ **现任声部长多一个「写」**（服务端还会再判一次；这一层只是不给没权限的人看）
     if (me.role === 'SECTION_LEADER') {
       list.appendChild(this.letterComposer(sectionId, redraw));

@@ -70,6 +70,12 @@ async function load() {
   host.innerHTML = '';
   document.getElementById('empty').hidden = d.list.length > 0;
   for (const n of d.list) host.appendChild(card(n));
+  // 成功渲染后才算已读（docs/15 §15.12）：第 1 页包含最新公告，写回本页最大 id；
+  // 翻到旧页**不降低水位**（markReleaseSeen 内部取 max），也只清铃铛/公告行，不动信封与讨论点。
+  if (page === 1) {
+    const maxId = d.list.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0);
+    if (maxId) BAND.markReleaseSeen(maxId);
+  }
   const pages = Math.max(1, Math.ceil(d.total / SIZE));
   document.getElementById('pageinfo').textContent = `第 ${page}/${pages} 页 · 共 ${d.total} 条`;
   document.getElementById('prev').disabled = page <= 1;

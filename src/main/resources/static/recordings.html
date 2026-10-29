@@ -71,6 +71,16 @@
   </div>
 
   <div id="mine-pane">
+    <!-- #238 本周练习卡：数据唯一来源 `/api/recordings/assignments/current`（docs/08 §8.4） -->
+    <section class="rc-week" id="week-card" hidden aria-label="本周练习">
+      <div class="rc-week-h">
+        <h3>本周练习</h3>
+        <span class="rc-week-sum" id="week-sum"></span>
+      </div>
+      <div class="rc-week-list" id="week-list"></div>
+      <p class="rc-week-note" id="week-note" hidden></p>
+    </section>
+
     <div class="rc-recs" id="list"></div>
 
     <div class="ev-empty" id="empty">
@@ -139,11 +149,26 @@
     <p class="rc-hint" id="rec-hint">两条路，自己挑：对着手机现录，或者把本机已经录好的文件传上来。传上来之后声部长可以点评。</p>
 
     <div class="rc-f2">
-      <div class="rc-f"><label for="u-title">标题</label><input id="u-title" maxlength="64" placeholder="如：快板那一段"></div>
+      <div class="rc-f">
+        <label for="u-title">标题</label>
+        <input id="u-title" maxlength="64" placeholder="如：快板那一段">
+        <div class="rc-name-row">
+          <span class="rc-name-state" id="u-name-state">自动命名</span>
+          <button class="rc-linkbtn" type="button" id="u-name-auto" hidden>恢复自动命名</button>
+        </div>
+        <p class="rc-hint rc-hint-tight" id="u-name-note" hidden></p>
+      </div>
       <div class="rc-f"><label for="u-assign">关联本周作业（可选）</label>
         <select id="u-assign" disabled><option value="">不关联本周作业</option></select></div>
     </div>
     <div class="rc-f"><label for="u-piece">关联曲目（可选）</label><select id="u-piece"><option value="">不关联曲目</option></select></div>
+    <!-- #237：两个辅助字段只服务页面内录音（选本机文件时按文件名命名，不看它们） -->
+    <div class="rc-f2" id="u-extra">
+      <div class="rc-f"><label for="u-content">练习内容（可选）</label>
+        <input id="u-content" maxlength="32" placeholder="如：长弓 / 快板"></div>
+      <div class="rc-f"><label for="u-section">小节 / 段落（可选）</label>
+        <input id="u-section" maxlength="32" placeholder="如：17–32 / 副歌"></div>
+    </div>
     <p class="rc-hint rc-hint-tight" id="u-hint" hidden></p>
 
     <!-- ⭐ **两个入口是分开的、各自带文字的控件**（docs/08 §8.4）：**这里曾经是一个裸的
@@ -286,7 +311,9 @@ let view = null;           // 'mine' | 'manage'（首次按角色定：四角色
 let inited = false;        // 曲目 / 录音器 / 环境面板只初始化一次
 let pieces = [];           // 上传表单与布置面板共用
 let sections = [];         // 布置面板的声部下拉
-let currentAssignments = [];   // 本人声部本周作业（上传下拉）
+let currentAssignments = [];   // 本人声部本周作业（上传下拉 + 本周练习卡共用）
+let assignGen = 0;             // #238：旧响应晚到就丢，别回盖新数据
+let assignStatus = 'idle';     // idle | loading | ok | error（失败不当空态）
 let manageData = null;
 let weeksData = null;
 let weeksLoading = null;
@@ -308,8 +335,11 @@ let wired = false;         // ⚠️ `load()` 会被反复调用 ⇒ 事件绑�
 const audioCache = new Map();   // fileId -> {url} | {promise}；Map 插入顺序即 LRU 顺序
 let cacheReleased = false;      // 页面已在卸载：迟到的取流结果必须立刻 revoke
 
-let pendingTake = null;    // {file, url, seconds, source:'rec'|'file', name} —— 同一时刻只允许一条
+let pendingTake = null;    // {file, url, seconds, source:'rec'|'file', name, bpms} —— 同一时刻只允许一条
 let uploading = false;
+// #237 自动命名：auto = 跟随来源刷新建议；manual = 用户改过标题，任何来源变化都不覆盖
+let nameMode = 'auto';
+let recBpms = [];          // 本条页面录音真正录下的 BPM 序列（连续去重；暂停中不记）
 
 const ICON_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.52.85l11-6.8a1 1 0 0 0 0-1.7l-11-6.8A1 1 0 0 0 8 5.2Z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="4" height="14" rx="1.2"/><rect x="13" y="5" width="4" height="14" rx="1.2"/></svg>';
@@ -1151,14 +1181,39 @@ function jumpToPerson(sid, mid) {
   row.focus({ preventScroll: true });
 }
 
-/* —— 上传表单的「关联本周作业」—— */
+/* —— 上传表单的「关联本周作业」+ 本周练习卡（#238）—— */
 async function refreshAssignments() {
-  if (!me || me.role === 'HONORARY') return;
-  try { currentAssignments = await BAND.must('/api/recordings/assignments/current'); }
-  catch (e) { currentAssignments = []; }
+  if (!me) return;
+  renderWeekCard();
+  if (me.role === 'HONORARY') return;
+  const gen = ++assignGen;
+  assignStatus = 'loading';
+  renderWeekCard();
+  try {
+    const list = await BAND.must('/api/recordings/assignments/current');
+    if (gen !== assignGen) return;             // 旧响应晚到：丢弃
+    currentAssignments = Array.isArray(list) ? list : [];
+    assignStatus = 'ok';
+  } catch (e) {
+    if (gen !== assignGen) return;
+    assignStatus = 'error';                    // 失败**不当空态**：旧数据保留
+  }
+  syncAssignSelect();
+  renderWeekCard();
+}
+
+function syncAssignSelect() {
   const sel = byId('u-assign');
   const hint = byId('u-hint');
+  if (!sel) return;
   const keep = sel.value;
+  if (assignStatus === 'error' && !currentAssignments.length) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '本周作业加载失败；可直接录普通练习，稍后再试。';
+    hint.hidden = false;
+    return;
+  }
   BAND.fillSelect(sel,
     currentAssignments.map((a) => ({ value: a.id, label: a.title + (a.pieceTitle ? ' · ' + a.pieceTitle : ' · 基本功') })),
     '不关联本周作业');
@@ -1185,6 +1240,95 @@ async function refreshAssignments() {
   }
 }
 
+/* —— #238 本周练习卡：只读 `current` 接口；日期范围接口没有，本轮不显示 —— */
+function weekRow(a) {
+  const row = document.createElement('div');
+  row.className = 'rc-week-row' + (a.linked ? ' is-done' : '');
+  const dot = document.createElement('span');
+  dot.className = 'rc-week-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const tx = document.createElement('span');
+  tx.className = 'rc-week-tx';
+  const t = document.createElement('b');
+  t.className = 'rc-week-t';
+  t.textContent = a.title;
+  const p = document.createElement('span');
+  p.className = 'rc-week-p';
+  p.textContent = a.pieceId ? (a.pieceTitle || '曲目') : '基本功 · 无曲目';
+  tx.append(t, p);
+  const st = document.createElement('span');
+  st.className = 'rc-week-st';
+  st.textContent = a.linked ? '已交' : '未交';
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'rc-btn rc-btn-line rc-btn-sm rc-week-go';
+  go.dataset.weekGo = String(a.id);
+  go.textContent = a.linked ? '再录一条' : '去录音';
+  row.append(dot, tx, st, go);
+  return row;
+}
+
+function renderWeekCard() {
+  const card = byId('week-card');
+  if (!card) return;
+  const show = !!me && me.role !== 'HONORARY' && view === 'mine';
+  card.hidden = !show;
+  if (!show) return;
+  const host = byId('week-list');
+  const sum = byId('week-sum');
+  const note = byId('week-note');
+  host.textContent = '';
+  sum.textContent = '';
+  note.textContent = '';
+  note.hidden = true;
+  if (!me.sectionId) {
+    note.textContent = '你没有所属声部，不参与本周作业。';
+    note.hidden = false;
+    return;
+  }
+  if (assignStatus === 'error' && !currentAssignments.length) {
+    note.textContent = '本周练习加载失败。';
+    note.hidden = false;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'rc-btn rc-btn-line rc-btn-sm rc-week-retry';
+    retry.textContent = '重试';
+    retry.addEventListener('click', () => { refreshAssignments(); });
+    note.appendChild(retry);
+    return;
+  }
+  if (!currentAssignments.length) {
+    note.textContent = assignStatus === 'loading' ? '正在加载本周练习…' : '本周未布置作业。';
+    note.hidden = false;
+    return;
+  }
+  const done = currentAssignments.filter((a) => a.linked).length;
+  sum.textContent = done + ' / ' + currentAssignments.length + ' 项已提交';
+  for (const a of currentAssignments) host.appendChild(weekRow(a));
+  if (assignStatus === 'error') {
+    note.textContent = '更新失败，显示的是上一次的练习。';
+    note.hidden = false;
+  }
+}
+
+byId('week-card').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-week-go]');
+  if (!btn) return;
+  const a = currentAssignments.find((x) => String(x.id) === btn.dataset.weekGo);
+  if (!a) return;
+  if (recState !== 'idle' || pendingTake || uploading || probing) {
+    BAND.toast('先完成或丢弃当前这条录音');
+    return;
+  }
+  setScreen('detail');
+  const sel = byId('u-assign');
+  sel.value = String(a.id);
+  syncAssignPiece();
+  if (nameMode === 'auto') applyAutoName();
+  byId('upload-box').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  byId('u-title').focus({ preventScroll: true });
+});
+
 function syncAssignPiece() {
   const sel = byId('u-assign');
   const pieceSel = byId('u-piece');
@@ -1207,6 +1351,158 @@ function syncAssignPiece() {
   }
   hint.hidden = false;
 }
+
+/* ============================================================
+   #237 录音自动命名（行为以 docs/08 §8.4「录音自动命名」为准）
+   ------------------------------------------------------------
+   - 本机文件：去最后一个音频扩展名（大小写不敏感），空基名 → “录音”。
+   - 页面录音：乐器_姓名_曲目或练习内容_小节_速度，空段不输出下划线。
+   - 手改优先：用户碰过 `#u-title` 就进 manual，任何自动来源都不再覆盖；
+     “恢复自动命名”明确点击后才重新采用当前建议。
+   ============================================================ */
+const AUDIO_EXT_RE = /\.(m4a|mp3|wav)$/i;
+
+function fileBaseName(name) {
+  const base = String(name || '').trim().replace(AUDIO_EXT_RE, '').trim();
+  return base || '录音';
+}
+
+/** 纯整数 / 整数范围统一成“第17–32小节”；起点大于终点保留原文并提示。 */
+function normSection(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { text: '', badRange: false };
+  let m = s.match(/^(\d+)\s*[-–—~～]\s*(\d+)$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    return a <= b
+      ? { text: `第${a}–${b}小节`, badRange: false }
+      : { text: s, badRange: true };
+  }
+  m = s.match(/^(\d+)$/);
+  if (m) return { text: `第${Number(m[1])}小节`, badRange: false };
+  return { text: s, badRange: false };
+}
+
+/** 连续去重：80,80,100,80 → 80→100→80BPM（暂停中没录下的值不进序列）。 */
+function formatBpms(list) {
+  const seq = [];
+  for (const raw of (list || [])) {
+    const n = Math.round(Number(raw));
+    if (!n) continue;
+    if (!seq.length || seq[seq.length - 1] !== n) seq.push(n);
+  }
+  return seq.length ? seq.join('→') + 'BPM' : '';
+}
+
+function recordBpm(v) {
+  if (recState !== 'recording') return;      // 暂停中调速不计（恢复时再记当前值）
+  const n = Math.round(Number(v));
+  if (!n) return;
+  if (!recBpms.length || recBpms[recBpms.length - 1] !== n) recBpms.push(n);
+}
+
+function suggestRecName(bpms) {
+  const parts = [];
+  const instrument = me && me.instrument ? String(me.instrument).trim() : '';
+  if (instrument) parts.push(instrument);
+  if (me && me.name) parts.push(String(me.name).trim());
+
+  const sel = byId('u-assign');
+  const a = sel ? currentAssignments.find((x) => String(x.id) === sel.value) : null;
+  const pieceSel = byId('u-piece');
+  let content = '';
+  if (a) {
+    content = a.pieceId ? (a.pieceTitle || a.title || '') : (a.title || '');
+  } else if (pieceSel && pieceSel.value) {
+    const opt = pieceSel.options[pieceSel.selectedIndex];
+    content = opt ? opt.textContent.trim() : '';
+  }
+  if (!content) content = byId('u-content').value.trim() || '自由练习';
+  parts.push(content);
+
+  const sec = normSection(byId('u-section').value);
+  if (sec.text) parts.push(sec.text);
+  const bpm = formatBpms(bpms);
+  if (bpm) parts.push(bpm);
+  return { name: parts.filter(Boolean).join('_'), badRange: sec.badRange,
+           noInstrument: !instrument };
+}
+
+function paintNameMode() {
+  const state = byId('u-name-state');
+  if (!state) return;
+  state.textContent = nameMode === 'manual' ? '已手动修改' : '自动命名';
+  state.classList.toggle('manual', nameMode === 'manual');
+  byId('u-name-auto').hidden = nameMode !== 'manual';
+}
+
+function paintTitleNote(badRange, noInstrument, tooLong) {
+  const note = byId('u-name-note');
+  if (!note) return;
+  const msgs = [];
+  if (tooLong) msgs.push('标题最多 64 字，请缩短');
+  if (badRange) msgs.push('小节范围的起点大于终点，已按原文保留');
+  if (noInstrument) msgs.push('资料中未填乐器，可直接修改标题');
+  note.textContent = msgs.join('；');
+  note.hidden = !msgs.length;
+  note.classList.toggle('warn', !!tooLong);
+}
+
+/** 试听卡主名称 = 当前待提交标题（空 → “未命名”）；本机文件另标原文件名。 */
+function paintPreviewName() {
+  const rvName = byId('rv-name');
+  if (!rvName) return;
+  rvName.textContent = byId('u-title').value.trim() || '未命名';
+  const src = byId('rv-src');
+  if (!pendingTake) { src.textContent = ''; return; }
+  src.textContent = pendingTake.source === 'file'
+    ? '本机文件 · 原文件：' + (pendingTake.name || '')
+    : '页面内录音';
+}
+
+/** 自动模式才写标题；force=true 是用户点“恢复自动命名”。 */
+function applyAutoName(force) {
+  if (nameMode === 'manual' && !force) { paintNameMode(); return; }
+  if (pendingTake && pendingTake.source === 'file') { paintNameMode(); return; }
+  const bpms = pendingTake && pendingTake.source === 'rec' ? pendingTake.bpms : recBpms;
+  const s = suggestRecName(bpms);
+  byId('u-title').value = s.name;               // 建议可以超 64：显示全量 + 就近提示，上传前拦截
+  paintTitleNote(s.badRange, s.noInstrument, s.name.length > 64);
+  paintPreviewName();
+  paintNameMode();
+}
+
+function resetNameMeta() {
+  nameMode = 'auto';
+  recBpms = [];
+  byId('u-title').value = '';
+  byId('u-content').value = '';
+  byId('u-section').value = '';
+  paintNameMode();
+  paintTitleNote(false, false, false);
+  paintPreviewName();
+}
+
+/** 辅助字段只服务页面录音：选中本机文件时收起（不计入文件名）。 */
+function syncExtraFields() {
+  const box = byId('u-extra');
+  if (box) box.hidden = !!(pendingTake && pendingTake.source === 'file');
+}
+
+byId('u-title').addEventListener('input', () => {
+  nameMode = 'manual';                          // 手写优先：之后任何来源变化都不覆盖
+  paintNameMode();
+  paintTitleNote(false, false, byId('u-title').value.length > 64);
+  paintPreviewName();
+});
+byId('u-name-auto').addEventListener('click', () => {
+  nameMode = 'auto';
+  applyAutoName(true);
+});
+for (const id of ['u-content', 'u-section']) {
+  byId(id).addEventListener('input', () => { if (nameMode === 'auto') applyAutoName(); });
+}
+byId('u-piece').addEventListener('change', () => { if (nameMode === 'auto') applyAutoName(); });
 
 /* ---- 点评线（就地展开，平铺按时间，不做父子嵌套 —— docs/08 §8.4） ---- */
 async function drawComments(r, box) {
@@ -1288,6 +1584,8 @@ function recDemoStart() {
   recordedMs = 0;
   segStart = performance.now();
   recState = 'recording';
+  recBpms = [];                   // 新录音：重开速度序列，不沿用上一条
+  recordBpm(metro.bpm);
   byId('recdemo').classList.add('on');
   byId('recdemo').classList.remove('paused');
   byId('rd-time').textContent = '0:00';
@@ -1366,6 +1664,7 @@ function togglePause() {
     }
     segStart = performance.now();
     recState = 'recording';
+    recordBpm(metro.bpm);            // 暂停中调过的速度从“恢复录音”这一刻才计入
     setPausedUI(false);
     const note = byId('rd-note');
     note.textContent = '继续录音…';
@@ -1573,10 +1872,13 @@ async function startRecording() {
         seconds,
         source: 'rec',
         name: (byId('u-title').value.trim() || '未命名') + '.m4a',
+        bpms: recBpms.slice(),      // 停下这一刻的速度快照；之后再调节拍器不影响这条
       });
     };
     recorder.start();
     recDemoStart();
+    // 自动模式：开录前就给出按当前字段 + 当前速度的建议（手改过就不碰）
+    if (nameMode === 'auto') applyAutoName();
   } catch (e) {
     // 按 err.name 分流：站内拒绝 / 系统未授权 / 没有设备 / 非安全上下文，处理路径完全不同
     recFail(e && e.name);
@@ -1630,8 +1932,17 @@ function setPicksLocked(on) {
 function stageTake(take) {
   if (pendingTake) releasePending();   // 兜底：正常路径入口已锁，到不了这里
   pendingTake = take;
-  byId('rv-name').textContent = take.name || '未命名.m4a';
-  byId('rv-src').textContent = take.source === 'rec' ? '页面内录音' : '本机文件';
+  if (take.source === 'file') {
+    // 本机文件：自动模式用去扩展名的文件名；手动标题保留（docs/08 §8.4）
+    if (nameMode === 'auto') {
+      const base = fileBaseName(take.name);
+      byId('u-title').value = base;
+      paintTitleNote(false, false, base.length > 64);
+    }
+  } else {
+    take.bpms = (take.bpms || []).slice();
+    if (nameMode === 'auto') applyAutoName();
+  }
   byId('rv-again').textContent = take.source === 'rec' ? '重录' : '重选';
   rvAudio.pause();
   rvAudio.removeAttribute('src');
@@ -1639,6 +1950,8 @@ function stageTake(take) {
   rvAudio.src = take.url;
   byId('rc-review').classList.add('on');
   setPicksLocked(true);
+  paintPreviewName();
+  syncExtraFields();
   rvSeek.repaint();
 }
 
@@ -1654,12 +1967,15 @@ function releasePending() {
   setPicksLocked(false);
   rvPlay.innerHTML = ICON_PLAY;
   rvPlay.setAttribute('aria-pressed', 'false');
+  syncExtraFields();
+  paintPreviewName();
   rvSeek.repaint();
 }
 
 function dropTake() {
   if (!pendingTake) return;
   releasePending();
+  resetNameMeta();                     // 主动丢弃：标题 / 手改标记 / 速度快照 / 小节 / 练习内容一并清
   BAND.toast('已丢弃');
 }
 
@@ -1724,6 +2040,14 @@ byId('u-file').addEventListener('change', async (e) => {
 /* ⭐ 本页**唯一**的上传入口（docs/08 §8.4）：表单值在**点上传这一刻**才读 —— 试听期间用户还能改标题/曲目。 */
 async function uploadPending() {
   if (!pendingTake || uploading) return;
+  // ⚠️ 超长在**传文件之前**拦截：否则先传上去再因 title 失败，白等一轮（docs/08 §8.4）
+  const rawTitle = byId('u-title').value.trim();
+  if (rawTitle.length > 64) {
+    paintTitleNote(false, false, true);
+    byId('u-title').focus();
+    BAND.toast('标题最多 64 字，请缩短后再上传');
+    return;
+  }
   uploading = true;
   const upBtn = byId('rv-up');
   const againBtn = byId('rv-again');
@@ -1733,7 +2057,7 @@ async function uploadPending() {
   upBtn.setAttribute('aria-busy', 'true');
   const take = pendingTake;
   try {
-    const title = byId('u-title').value.trim() || null;
+    const title = rawTitle || null;
     const pieceValue = byId('u-piece').value;
     const assignValue = byId('u-assign').value;
     const uploaded = await BAND.uploadFile(take.file);
@@ -1748,8 +2072,8 @@ async function uploadPending() {
         durationSec: take.seconds == null ? null : Math.round(take.seconds),
       },
     });
-    byId('u-title').value = '';
     releasePending();
+    resetNameMeta();                   // 上传成功：标题 / 手改标记 / 速度快照 / 辅助字段一并清
     BAND.toast('已上传', 'success');
     // 上传已经成功；刷新列表失败不能反过来报「上传失败」
     try { await load(); } catch (e) { /* 下次进页面会重新拉 */ }
@@ -2132,6 +2456,7 @@ function setBpm(v) {
   mEl('m-bpm-big').textContent = String(metro.bpm);
   mEl('m-term').textContent = tempoTerm(metro.bpm);
   mStore.set(MK.bpm, String(metro.bpm));
+  recordBpm(metro.bpm);          // 录制中改速 ⇒ 记进本条（暂停中不记，恢复时补记）
   metroRestart();
 }
 function setNum(v) {
@@ -2273,66 +2598,7 @@ function playReveal() {
   nodes.forEach((n, i) => setTimeout(() => n.classList.add('in'), 30 + i * 35));
 }
 
-const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
-const ICON_SUN  = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
-const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
-const store = {
-  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
-};
-function setPalette(p) {
-  if (!PAL_NAME[p]) p = 'jade';
-  document.documentElement.dataset.palette = p;
-  qsa('#palette .seedswatch').forEach((b) => {
-    const on = b.dataset.p === p;
-    b.setAttribute('aria-pressed', String(on));
-    b.classList.toggle('on', on);
-  });
-  const cur = byId('pop-cur');
-  if (cur) cur.textContent = PAL_NAME[p];
-  store.set('band.palette', p);
-}
-function setTheme(t) {
-  const on = t === 'dark';
-  document.documentElement.dataset.theme = on ? 'dark' : 'light';
-  const btn = byId('night-btn');
-  if (btn) {
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
-  }
-  const ic = byId('night-ic');
-  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
-  store.set('band.theme', document.documentElement.dataset.theme);
-}
-function toggleNight() {
-  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const btn = byId('night-btn');
-  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
-  const r = btn.getBoundingClientRect();
-  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
-  const root = document.documentElement.style;
-  root.setProperty('--cx', cx + 'px');
-  root.setProperty('--cy', cy + 'px');
-  root.setProperty('--cr', cr + 'px');
-  const cls = document.documentElement.classList;
-  cls.add('theme-xvt');
-  try {
-    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
-    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
-    else cls.remove('theme-xvt');
-  } catch (e) {
-    cls.remove('theme-xvt');
-    setTheme(next);
-  }
-}
-function openPop(o) {
-  const pop = byId('theme-pop');
-  if (!pop) return;
-  pop.hidden = !o;
-  byId('theme-btn').setAttribute('aria-expanded', String(o));
-}
+/* 配色 / 深浅控件由 `BAND.appearance` 统一接线（band-core.js），`band-shell` 负责挂载（#239）。 */
 function renderToday() {
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = new Date();
@@ -2356,7 +2622,10 @@ byId('rc-view').addEventListener('click', (e) => {
 byId('as-open').addEventListener('click', () => openAssignPanel(byId('as-panel').hidden));
 byId('as-cancel').addEventListener('click', () => openAssignPanel(false));
 byId('as-save').addEventListener('click', createAssignment);
-byId('u-assign').addEventListener('change', syncAssignPiece);
+byId('u-assign').addEventListener('change', () => {
+  syncAssignPiece();
+  if (nameMode === 'auto') applyAutoName();
+});
 
 /* 管理视图的节点每次都重画 → 用事件代理（当前视图与历史周共用一套 data-*） */
 byId('manage-pane').addEventListener('click', (e) => {
@@ -2415,24 +2684,13 @@ byId('manage-pane').addEventListener('click', (e) => {
     if (open) { openWeeks.add(i); hydrateWeek(i); } else openWeeks.delete(i);
   }
 });
-byId('theme-btn').addEventListener('click', (e) => { e.stopPropagation(); openPop(byId('theme-pop').hidden); });
-byId('night-btn').addEventListener('click', toggleNight);
-byId('palette').addEventListener('click', (e) => {
-  const b = e.target.closest('.seedswatch');
-  if (b) setPalette(b.dataset.p);
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
-});
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
-
 /* ============================================================
    启动
    ============================================================ */
-setPalette(store.get('band.palette', 'jade'));
-setTheme(store.get('band.theme', 'light'));
 renderToday();
 initMetro();
+paintNameMode();
+syncExtraFields();
 load().catch(() => {});
 </script>
 </body>

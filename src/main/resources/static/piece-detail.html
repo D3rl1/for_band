@@ -274,85 +274,8 @@ document.getElementById('mo-save').addEventListener('click', async () => {
   load();
 });
 
-/* ---------- 外观：配色（预置）+ 深浅（docs/14 §14.6.2b） ---------- */
-const PAL_NAME = { jade: '墨·青', teal: '墨·松', violet: '墨·紫', olive: '墨·缃', clay: '墨·赭', ink: '纯墨' };
-const ICON_SUN = '<path d="M12 5v2M12 17v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"/><circle cx="12" cy="12" r="3.6"/>';
-const ICON_MOON = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/>';
-const store = {
-  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } },
-};
-function setPalette(p) {
-  if (!PAL_NAME[p]) p = 'jade';
-  document.documentElement.dataset.palette = p;
-  document.querySelectorAll('#palette .seedswatch').forEach((b) => {
-    const on = b.dataset.p === p;
-    b.setAttribute('aria-pressed', String(on));
-    b.classList.toggle('on', on);
-  });
-  const cur = document.getElementById('pop-cur');
-  if (cur) cur.textContent = PAL_NAME[p];
-  store.set('band.palette', p);
-}
-function setTheme(t) {
-  const on = t === 'dark';
-  document.documentElement.dataset.theme = on ? 'dark' : 'light';
-  const btn = document.getElementById('night-btn');
-  if (btn) {
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', on ? '切换到浅色' : '切换到深色');
-  }
-  const ic = document.getElementById('night-ic');
-  if (ic) ic.innerHTML = on ? ICON_SUN : ICON_MOON;
-  store.set('band.theme', document.documentElement.dataset.theme);
-}
-function toggleNight() {
-  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const btn = document.getElementById('night-btn');
-  if (!document.startViewTransition || reduce || !btn) { setTheme(next); return; }
-  const r = btn.getBoundingClientRect();
-  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  const cr = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy)) * 1.05;
-  const root = document.documentElement.style;
-  root.setProperty('--cx', cx + 'px');
-  root.setProperty('--cy', cy + 'px');
-  root.setProperty('--cr', cr + 'px');
-  // 门控类只在这段时间挂上 ⇒ 「墨洇」不会顺手接管**跳页过渡**（见 band.css §1b 的注释）
-  const cls = document.documentElement.classList;
-  cls.add('theme-xvt');
-  try {
-    const t = document.startViewTransition(() => setTheme(next));   // 新配色从按钮圆心洇开
-    if (t && t.finished) t.finished.finally(() => cls.remove('theme-xvt'));
-    else cls.remove('theme-xvt');
-  } catch (e) {
-    cls.remove('theme-xvt');
-    setTheme(next);
-  }
-}
-function openPop(o) {
-  const pop = document.getElementById('theme-pop');
-  if (!pop) return;
-  pop.hidden = !o;
-  document.getElementById('theme-btn').setAttribute('aria-expanded', String(o));
-}
-document.getElementById('theme-btn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  openPop(document.getElementById('theme-pop').hidden);
-});
-document.getElementById('night-btn').addEventListener('click', toggleNight);
-document.getElementById('palette').addEventListener('click', (e) => {
-  const b = e.target.closest('.seedswatch');
-  if (b) setPalette(b.dataset.p);
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('#theme-pop') && !e.target.closest('#theme-btn')) openPop(false);
-});
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openPop(false); });
-
+/* 配色 / 深浅控件由 `BAND.appearance` 统一接线（band-core.js），`band-shell` 负责挂载（#239）。 */
 renderToday();
-setPalette(store.get('band.palette', 'jade'));
-setTheme(store.get('band.theme', 'light'));
 load();
 </script>
 </body>

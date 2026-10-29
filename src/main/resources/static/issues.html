@@ -157,8 +157,9 @@ async function load() {
   const me = await BAND.renderNav('issues.html');
   if (!me) return;
 
-  // 打开问题讨论即视为已读（docs/15 §15.11）；issueActivity 与导航红点共用同一个请求
-  BAND.issueActivity().then((latest) => BAND.markIssueSeen(latest));
+  // 内容请求**前**先取动态快照；列表成功加载后才写回（docs/15 §15.12）。
+  // 快照或列表任一失败都保留原水位与红点，不提前消耗未读。
+  const snapshot = BAND.issueActivity();
 
   newBtn.classList.toggle('is-hidden', me.role === 'HONORARY');
   if (me.role === 'HONORARY') setFormOpen(false);
@@ -175,6 +176,8 @@ async function load() {
 
   listHost.textContent = '';
   for (const it of d.list) listHost.appendChild(card(it));
+  const latest = await snapshot;
+  if (latest) BAND.markIssueSeen(latest);
 
   const filtered = !!statusFilter || mineOnly;
   const isEmpty = d.list.length === 0;
