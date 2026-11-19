@@ -1,0 +1,16 @@
+{
+  "checks": 10,
+  "passed": [
+    "animated",
+    "pause",
+    "reduce-static",
+    "preference-resume",
+    "idempotent",
+    "width-390",
+    "width-320",
+    "destroy",
+    "remount",
+    "failure-keeps-avatar"
+  ],
+  "pageErrors": []
+}

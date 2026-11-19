@@ -1,0 +1,4232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>录音 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body data-rcscreen="list">
+<div id="navbar"></div>
+
+<!-- ══ 外观控件行（与活动页 / 演出页同一套，docs/14 §14.6.2b）══════════════════════════════
+     今天 + 配色（popover）/ 深浅两个图标按钮。切一次 ⇒ 配色 token 全站生效（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**（AGENTS.md）：配色入口现在是 `/theme.html` 的真实链接；页面不再保留配色弹层。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <a class="ticon" id="theme-btn" href="/theme.html" aria-label="主题设置" title="主题设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </a>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+</div>
+
+<!-- ═══════════ 屏 1：录音墙 ═══════════ -->
+<section class="rc-screen" data-rcscreen="list">
+  <div class="ev-lhead">
+    <div class="sec"><h2>录音墙</h2><span class="sub" id="rc-count"></span></div>
+    <div class="rc-head-tools">
+      <div class="ev-filters" id="rc-view" role="group" aria-label="视图">
+        <button class="fchip" type="button" data-view="mine" aria-pressed="true">我的录音</button>
+        <button class="fchip" type="button" data-view="manage" aria-pressed="false" hidden>录音管理</button>
+      </div>
+      <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="go-record">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+        录一段
+      </button>
+    </div>
+  </div>
+
+  <div id="mine-pane">
+    <!-- #238 本周练习卡：数据唯一来源 `/api/recordings/assignments/current`（docs/08 §8.4） -->
+    <section class="rc-week" id="week-card" hidden aria-label="本周练习">
+      <div class="rc-week-h">
+        <h3>本周练习</h3>
+        <span class="rc-week-sum" id="week-sum"></span>
+      </div>
+      <div class="rc-week-list" id="week-list"></div>
+      <p class="rc-week-note" id="week-note" hidden></p>
+    </section>
+
+    <div class="rc-recs" id="list"></div>
+
+    <!-- #263：本人录音按周分组后的「加载更早」——沿用既有 page/size 接口，不新增分组端点 -->
+    <div class="rc-mine-foot" id="mine-foot" hidden>
+      <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="mine-more">加载更早录音</button>
+      <span class="rc-mine-done" id="mine-done" hidden>已加载全部</span>
+      <span class="rc-mine-count" id="mine-count"></span>
+    </div>
+
+    <div class="ev-empty" id="empty">
+      <span class="ic">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+      </span>
+      <b>还没有录音</b>
+    </div>
+  </div>
+
+  <!-- ⭐ 录音管理（管理员 / 团长 / 指挥 / 声部长，2026-10-26 #225）：
+       与「我的录音」同页切换；声部长在服务端被强制收窄到本声部。 -->
+  <div id="manage-pane" hidden>
+    <section class="rm-block rm-hero" id="rm-hero" aria-label="本周完成情况"></section>
+
+    <section class="rm-block" id="rm-assign">
+      <div class="rm-block-h">
+        <h3>本周布置</h3>
+        <span class="sub" id="as-sub"></span>
+        <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="as-open"
+                aria-expanded="false" aria-controls="as-panel">布置作业</button>
+      </div>
+      <div class="rm-panel" id="as-panel" hidden>
+        <div class="rm-panel-grid">
+          <div class="rc-f"><label for="as-sec">声部</label><select id="as-sec"></select></div>
+          <div class="rc-f"><label for="as-title">作业名</label>
+            <input id="as-title" maxlength="64" placeholder="如：快板合奏"></div>
+          <div class="rc-f"><label for="as-piece">关联曲目（可选）</label>
+            <select id="as-piece"><option value="">基本功 · 无曲目</option></select></div>
+        </div>
+        <div class="rm-panel-ops">
+          <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="as-save">保存</button>
+          <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="as-cancel">取消</button>
+        </div>
+      </div>
+      <div id="as-body"></div>
+    </section>
+
+    <section class="rm-block" id="rm-miss" hidden>
+      <div class="rm-block-h"><h3>未交名单</h3><span class="sub" id="miss-sub"></span></div>
+      <div id="miss-body"></div>
+    </section>
+
+    <section class="rm-block" id="rm-week">
+      <div class="rm-block-h"><h3>本周录音</h3><span class="sub" id="week-sub"></span></div>
+      <div id="week-sections"></div>
+    </section>
+
+    <section class="rm-block" id="rm-history">
+      <div class="rm-block-h"><h3>以前的周</h3><span class="sub" id="history-sub"></span></div>
+      <div id="weeks"></div>
+    </section>
+  </div>
+</section>
+
+<!-- ═══════════ 屏 2：录音台 ═══════════ -->
+<section class="rc-screen" data-rcscreen="detail">
+  <span class="rc-dback" id="dback" role="button" tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    返回录音墙
+  </span>
+
+  <!-- 卡 1：添加录音工作区（#265 按已认可样张重排：来源入口 → 分支 → 统一提交区）
+       荣誉团员看不到这一块：他们只读，服务端也会 403。
+       ⚠️ 两个入口仍是**分开的、各自带文字的控件**（docs/08 §8.4）：本机文件那条曾经是一个裸的
+       `<input type="file" accept="audio/*">`——无标签、没人注意得到，点下去还会被系统送去录音机 App
+       （`audio/*` 是通配，安卓按"谁能产出音频"匹配，录音机正好声明了它；⚠️ **不是 `capture` 的锅**）。
+       ⚠️ `accept` 必须列**显式扩展名 + 具体 MIME**，不得用 `audio/*`、不得加 `capture`。
+       ⚠️ input 是入口卡内的透明覆盖层（`.rc-file-hit`）：点击命中的就是 input 本身，
+         不依赖 label→input 的间接转发 —— 部分安卓自带浏览器/WebView 不响应那种转发。
+       ⚠️ **选完先进入清单 / 试听态，不静默上传**（docs/08 §8.4 #264）：本页只有工作区末尾那一个提交入口。 -->
+  <div class="rc-card rc-ws" id="upload-box" hidden>
+    <div class="rc-ws-head">
+      <h2>添加录音</h2>
+      <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="ws-change" hidden>更换添加方式</button>
+    </div>
+    <p class="rc-hint" id="rec-hint">两条路，自己挑：对着手机现录，或者把本机已经录好的文件传上来。传上来之后声部长可以点评。</p>
+
+    <!-- ① 来源入口态：没有任何未完成内容时直接看到，不预填示例文件 -->
+    <div class="rc-picks" id="ws-sources">
+      <button class="rc-pick" type="button" id="pick-record">
+        <span class="rc-pick-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <span class="rc-pick-tx">
+          <span class="rc-pick-t">页面内录音</span>
+          <span class="rc-pick-s">点一下就开始，最长 8 分钟（暂停不计）</span>
+        </span>
+      </button>
+      <label class="rc-pick" for="u-file">
+        <span class="rc-pick-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7a2 2 0 0 1 2-2h3.5l1.6 2H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>
+        </span>
+        <span class="rc-pick-tx">
+          <span class="rc-pick-t">选择本机文件</span>
+          <span class="rc-pick-s">可多选 · mp3 / wav / m4a · 单个不超过 20 MB</span>
+        </span>
+        <input id="u-file" type="file" class="rc-file-hit" multiple
+               accept=".m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/x-m4a,audio/wav"
+               aria-label="选择本机文件（可多选）">
+      </label>
+    </div>
+    <p class="rc-hint" id="rc-pending-hint" hidden>先上传或丢弃当前这条</p>
+
+    <!-- ② 页面内录音分支：点击来源只进入准备区，按「开始录音」才请求麦克风（docs/14 §14.6.4 #265） -->
+    <div class="rc-ws-branch" id="ws-rec" hidden>
+      <div class="rc-recprep" id="rec-prep">
+        <p class="rc-hint">按下面的「开始录音」才会请求麦克风；最长 8 分钟，暂停的时间不计。节拍器就在下方，录音时一直能用。</p>
+        <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="rec-start">开始录音</button>
+      </div>
+      <!-- 页面内录音的演示条：暂停只冻结自己的动画，节拍器照常（docs/08 §8.4） -->
+      <div class="rc-recdemo" id="recdemo">
+        <span class="rc-rd-dot" aria-hidden="true"></span>
+        <b class="rc-rd-time" id="rd-time">0:00</b>
+        <span class="rc-rd-wave" id="rd-wave" aria-hidden="true"></span>
+        <span class="rc-rd-note" id="rd-note" role="status" aria-live="polite">正在录…</span>
+        <button class="rc-btn rc-btn-line rc-btn-sm rc-pause" type="button" id="rd-pause" aria-pressed="false">暂停</button>
+        <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="rd-stop">停止</button>
+      </div>
+      <div class="rc-slot" id="rv-slot-rec"></div>
+    </div>
+
+    <!-- ③ 本机文件分支（#264 队列 / #265 布局）：
+         桌面 = 窄清单 + 宽编辑区；工作区有效宽度 ≤650px 时清单在上、当前项编辑在下（由 JS 加 .narrow）。 -->
+    <div class="rc-ws-branch" id="ws-files" hidden>
+      <div class="rc-ws-split">
+        <div class="rc-ws-listcol">
+          <!-- #268：已有清单时继续选择本机录音（原生 input 多次追加；执行中禁用并给可见说明）。
+               与首次选择共用同一套预检 / 入队规则，但不重建批次、不动旧项草稿与 fileId。 -->
+          <div class="rc-ws-labrow">
+            <p class="rc-ws-lab">本批文件 <span id="ws-count"></span></p>
+            <label class="rc-ws-add" id="ws-add" for="u-file-more">继续添加文件
+              <input id="u-file-more" type="file" class="rc-file-hit" multiple
+                     accept=".m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/x-m4a,audio/wav"
+                     aria-label="继续添加本机文件（可多选）">
+            </label>
+          </div>
+          <p class="rc-hint rc-hint-tight" id="ws-add-note" hidden>上传结束后可以继续添加。</p>
+          <div class="rc-ws-list" id="ws-list" role="listbox" aria-label="本批待上传文件"></div>
+          <div class="rc-ws-rej" id="ws-rejects" hidden></div>
+        </div>
+        <div class="rc-ws-edit" id="ws-edit">
+          <!-- #250：信息在前、名称在后；内容随当前项切换，草稿互不覆盖。
+               ⚠️ 这块**两种来源共用**：页面内录音停止后由 applyWsMode() 把它连同下文的
+               `#rc-review` 一起挪进 `#rv-slot-rec`；只在有未提交内容（pendingTake / batch）时显示。 -->
+          <div id="name-form" hidden>
+            <div class="rc-up-grid">
+              <div class="rc-up-info">
+                <div class="rc-f"><label for="u-assign">关联本周作业（可选）</label>
+                  <select id="u-assign" disabled><option value="">不关联本周作业</option></select></div>
+                <div class="rc-f"><label for="u-piece">关联曲目（可选）</label><select id="u-piece"><option value="">不关联曲目</option></select></div>
+                <!-- 命名依据只属于本机文件；页面内录音固定按练习信息（不画单选假选择器） -->
+                <div class="rc-f" id="u-basis" hidden>
+                  <span class="rc-label">命名依据</span>
+                  <div class="rc-radios">
+                    <label><input type="radio" name="u-basis" value="file" checked>沿用文件名</label>
+                    <label><input type="radio" name="u-basis" value="practice">按练习信息命名</label>
+                  </div>
+                </div>
+                <div class="rc-f" id="u-content-field">
+                  <label for="u-content">练习内容（可选）</label>
+                  <input id="u-content" maxlength="32" placeholder="如：长弓 / 快板">
+                </div>
+                <!-- 命名专用辅助字段：沿用文件名时收起（隐藏不等于清空），切回来继续用 -->
+                <div class="rc-f2" id="u-extra">
+                  <div class="rc-f"><label for="u-section">小节 / 段落（可选）</label>
+                    <input id="u-section" maxlength="32" placeholder="如：17–32 / 副歌"></div>
+                  <div class="rc-f"><label for="u-speed">速度注记（可选）</label>
+                    <input id="u-speed" maxlength="64" inputmode="numeric" placeholder="如：80 或 80→100">
+                    <label class="band-switch rc-speed-switch"><input id="u-speed-include" type="checkbox" role="switch" checked><span>写入名称</span></label>
+                    <p class="rc-hint rc-hint-tight">仅注明名称，不会改变录音或节拍器。</p>
+                  </div>
+                </div>
+              </div>
+              <div class="rc-up-name">
+                <div class="rc-f">
+                  <div class="rc-name-head">
+                    <label for="u-title">录音名称</label>
+                    <label class="band-switch rc-auto-switch"><input id="u-name-auto" type="checkbox" role="switch" checked><span>自动命名</span></label>
+                  </div>
+                  <input id="u-title" maxlength="64" placeholder="如：赛马 · 17–32小节 · 80 BPM">
+                  <div class="rc-name-row">
+                    <span class="rc-name-state" id="u-name-state">自动命名</span>
+                    <span class="rc-name-count" id="u-name-count">0 / 64</span>
+                  </div>
+                  <p class="rc-hint rc-hint-tight" id="u-name-note" hidden></p>
+                  <details class="rc-src" id="u-src" hidden>
+                    <summary>查看录音来源</summary>
+                    <p class="rc-hint" id="u-src-name"></p>
+                    <p class="rc-hint" id="u-src-note">原文件名仅用于核对来源；这里改名不会修改你的本机文件。</p>
+                  </details>
+                </div>
+              </div>
+            </div>
+            <p class="rc-hint rc-hint-tight" id="u-hint" hidden></p>
+          </div>
+          <div class="rc-slot" id="rv-slot-file"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 唯一提交区：普通文档流（不做 fixed / sticky 底栏），窄屏可换行 -->
+    <div class="rc-ws-ops" id="ws-ops" hidden>
+      <span class="rc-ws-msg" id="ws-msg" role="status" aria-live="polite"></span>
+      <button class="rc-btn rc-btn-primary rc-btn-sm" id="rv-up" type="button" data-band-ripple>上传这条</button>
+      <button class="rc-btn rc-btn-line rc-btn-sm" id="rv-again" type="button">重录</button>
+      <button class="rc-btn rc-btn-line rc-btn-sm" id="rv-drop" type="button">丢弃</button>
+    </div>
+    <p class="rc-hint rc-hint-tight" id="ws-note" hidden>不点上传就不会保存</p>
+
+    <!-- 试听卡：录完 / 选完本机文件先进这里（本页唯一提交入口就在上面）。
+         ⚠️ 两种来源**共用同一个节点**，#265 按当前分支把它挪进对应槽位（挪动 DOM 不丢监听器）。 -->
+    <div class="rc-review" id="rc-review">
+      <div class="rc-review-h">
+        <span class="rc-review-id"><b id="rv-name"></b><span id="rv-src"></span></span>
+      </div>
+      <!-- #256：与记录条共用同一播放区（播放钮 + 声波 + 独立进度 + 左当前 / 右总时长） -->
+      <div class="rc-player">
+        <button class="rc-play rc-play-sm" id="rv-play" type="button" aria-label="试听这条录音" aria-pressed="false"></button>
+        <div class="rc-stage">
+          <div class="rc-wave" id="rv-wave" aria-hidden="true"></div>
+          <div class="rc-seek-wrap">
+            <span class="rc-float" id="rv-float" aria-hidden="true">0:00</span>
+            <div class="rc-seek">
+              <span class="rc-bar"><i class="rc-fill" id="rv-fill"></i></span>
+              <input class="rc-range" id="rv-range" type="range" min="0" max="0" step="0.01" value="0" aria-label="试听进度" disabled>
+            </div>
+          </div>
+          <div class="rc-time" id="rv-time"><span class="rc-cur" id="rv-cur">0:00</span><span class="rc-total" id="rv-total"></span></div>
+        </div>
+      </div>
+      <audio class="rc-audio" id="rv-audio" preload="metadata"></audio>
+    </div>
+
+    <!-- 桌面快捷方式/WebView 宿主可能拦麦克风、吞文件选择器：网页无法绕过，只能把原因说清、给出可执行出路 -->
+    <p class="rc-env-warn" id="rc-env-warn" hidden>当前可能是手机自带浏览器创建的桌面快捷方式：它可能拦下麦克风，也不支持选本机文件。请到 <a href="/install.html">「安装到手机」</a> 页下载官方 App（推荐），或点「复制网址」到 Chrome 打开。长期使用请删掉这个图标。</p>
+
+    <!-- 普通自查说明收进次级入口（#265）：真实错误仍在相关操作旁直接可见 -->
+    <div class="rc-env-row">
+      <details class="rc-env" id="rc-env">
+        <summary>录音 / 选文件不正常？点这里自查</summary>
+        <div class="rc-env-panel">
+          <dl id="rc-env-list"></dl>
+          <p class="rc-env-note">网页只能读取这些能力，不能代替系统授权，也不能强制宿主弹出文件选择器。</p>
+          <input id="rc-env-url" readonly hidden aria-label="本站网址">
+        </div>
+      </details>
+      <button class="rc-btn rc-btn-line rc-btn-sm" type="button" id="rc-copy-url">复制网址</button>
+    </div>
+  </div>
+
+  <!-- 卡 2：节拍器（`recordings.html` 与独立页 `metronome.html` 同一套弧版面板） -->
+  <div class="rc-card mt-metro" id="metro-card">
+    <h2>节拍器</h2>
+    <p class="rc-hint">手机自带的录音 App 会把声音焦点抢走，所以节拍器做在页面里。它跟录音各走各的：录音停了它不停，切走页面才会停。</p>
+
+    <!-- 圆弧拍点：几拍就几个点；当前拍变色，重音拍与普通拍异色；点圆点 = 设/取消那一拍的重音 -->
+    <div class="mt-stage">
+      <svg class="mt-arc" id="m-arc" viewBox="0 0 220 70" role="group" aria-label="拍点：点圆点即设或取消那一拍的重音">
+        <path class="mt-base" id="m-arc-base" d=""></path>
+        <g id="m-dots"></g>
+      </svg>
+      <div class="mt-read">
+        <span class="big" id="m-bpm-big">80</span><span class="unit">BPM</span>
+        <span class="term" id="m-term">中板 · Moderato</span>
+        <span class="sig" id="m-sig">4 / 4 · 每拍 1 击</span>
+      </div>
+    </div>
+
+    <!-- #265：常用 BPM / 启停留在第一行；拍号 / 细分 / TAP / 音频模式等既有能力收进「更多设置」，
+         **一个都不能删**（docs/14 §14.6.4「上传录音工作区重排」）。 -->
+    <div class="mt-ctl">
+      <button class="rc-btn rc-btn-primary rc-btn-sm" type="button" id="m-toggle">开始</button>
+      <label class="mt-f" for="m-bpm">速度
+        <input id="m-bpm" type="number" min="30" max="240" step="1" inputmode="numeric" value="80"> BPM
+      </label>
+    </div>
+    <details class="mt-more">
+      <summary>更多设置（打拍 / 拍号 / 细分）</summary>
+      <div class="mt-ctl">
+        <button class="rc-btn rc-btn-line rc-btn-sm mt-tap" type="button" id="m-tap">TAP 打拍</button>
+        <label class="mt-f" for="m-num">拍号
+          <input id="m-num" type="number" min="1" max="16" step="1" inputmode="numeric" value="4"><span class="slash">/</span>
+          <select id="m-den"><option>2</option><option>4</option><option>8</option><option>16</option></select>
+        </label>
+        <label class="mt-f" for="m-sub">细分
+          <select id="m-sub">
+            <option value="1">不细分</option>
+            <option value="2">八分（2）</option>
+            <option value="3">三连（3）</option>
+            <option value="4">十六分（4）</option>
+          </select>
+        </label>
+      </div>
+    </details>
+    <p class="mt-tip" id="m-hint">录音中<b>请勿切走应用</b>。点圆弧上的圆点 → 设 / 取消那一拍的重音；更大的点是重拍，响起来颜色也不一样。</p>
+  </div>
+</section>
+
+<script>
+'use strict';
+
+const byId = (id) => document.getElementById(id);
+const qsa = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+// 时长上限 8 分钟（#226）：**只计真正录进去的时间**（暂停不计）；服务端不解析音频，拦不住（T5 既有口径）
+const MAX_SECONDS = 480;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;   // 本机文件仍只受体积限制，不受 8 分钟约束
+const FILE_EXTS = ['m4a', 'mp3', 'wav'];
+const AUDIO_CACHE_MAX = 6;                 // 列表音频页面内缓存条数（约 48MB 上限）
+
+let me = null;
+let view = null;           // 'mine' | 'manage'（首次按角色定：四角色默认录音管理）
+let inited = false;        // 曲目 / 录音器 / 环境面板只初始化一次
+let pieces = [];           // 上传表单与布置面板共用
+let sections = [];         // 布置面板的声部下拉
+let currentAssignments = [];   // 本人声部本周作业（上传下拉 + 本周练习卡共用）
+let assignGen = 0;             // #238：旧响应晚到就丢，别回盖新数据
+let assignStatus = 'idle';     // idle | loading | ok | error（失败不当空态）
+let manageData = null;
+let manageGen = 0;            // #242：/manage 旧响应晚到就丢，别回盖新周
+let weeksData = null;
+let weeksFor = null;          // weeksData 对应「服务器本周周一」（/manage 的 weekStart；#242）
+let weeksLoadingFor = null;   // 在飞请求对应的服务器本周；null = 没有在飞（#242）
+const openPersons = new Set();   // 人名行展开状态（本周与历史共用一个集合，id 带前缀不会撞）
+const closedSections = new Set();// 本周声部块默认展开，只记「被收起」的
+const openWeeks = new Set();
+const weekManage = new Map();    // weekStart -> ManageView（按周缓存；重开/切视图都不再请求）
+let recorder = null;
+let chunks = [];
+// ⭐ **同一时刻最多一个在播**（docs/08 §8.4，#112）：用户原话「听录音的时候可以同时按多个录音听，这个不好」。
+// ⚠️ **持一个"当前正在播的那个"引用、切换时显式关掉旧的** —— **不要靠 `pause` 事件去推状态**：
+//    快速连点会打断进行中的事件，`pause` 不保证按时到达，状态就卡住了（docs/14 §14.6.6「过渡必须可取消」同族）。
+let playingAudio = null;
+let playingKey = null;     // 正在播的那条 fileId（缓存淘汰时保护它，别把 URL 抽走）
+let wired = false;         // ⚠️ `load()` 会被反复调用 ⇒ 事件绑定只做一次
+
+// 列表音频**按需取流 + 页面内 LRU 缓存**：不上来就为所有卡预取，也不让 `blob:` URL 只增不减。
+// ⚠️ **只在内存**（不落 IndexedDB / Cache Storage）：共用设备换人登录时，磁盘缓存可能让下一个人听到上一个人的录音。
+const audioCache = new Map();   // fileId -> {url} | {promise}；Map 插入顺序即 LRU 顺序
+let cacheReleased = false;      // 页面已在卸载：迟到的取流结果必须立刻 revoke
+
+let pendingTake = null;    // {file, url, seconds, source:'rec'|'file', name, bpms} —— 同一时刻只允许一条
+let uploading = false;
+// #250 自动命名：auto = 跟随来源刷新建议；manual = 用户改过标题，任何来源变化都不覆盖
+let nameMode = 'auto';
+let nameBasis = 'file';    // 本机文件的命名依据：file | practice（页面录音固定 practice）
+let includeSpeed = true;   // 「写入名称」独立开关（只控制速度片段）
+let speedManual = false;   // 速度注记被人工改过 ⇒ 录音快照不再覆盖
+let recBpms = [];          // 本条页面录音真正录下的 BPM 序列（连续去重；暂停中不记）
+
+const ICON_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.52.85l11-6.8a1 1 0 0 0 0-1.7l-11-6.8A1 1 0 0 0 8 5.2Z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="4" height="14" rx="1.2"/><rect x="13" y="5" width="4" height="14" rx="1.2"/></svg>';
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function fmtClock(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor(sec % 3600 / 60);
+  const s = sec % 60;
+  // 长录音（≥1 小时）用 H:MM:SS，浮标与时间行都不靠猜位数
+  return h > 0
+    ? h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+    : m + ':' + String(s).padStart(2, '0');
+}
+
+/* ---- 可拖动进度条（列表卡与试听卡共用；docs/08 §8.4 ①） ----
+   ⚠️ 原生 `<input type="range">` 叠在视觉轨上：键盘 / 读屏 / 触摸都交给浏览器，**不自写拖拽**。
+   ⚠️ `input` 只重绘、**不动 `currentTime`**；`change`（松手 / 抬手 / 键盘）才跳一次。
+   ⚠️ `range.max` 只认**有限且 > 0** 的 `audio.duration`；列表里的 `durationSec` 只用来兜底显示文本。 */
+/* #256：按**组件有效宽度**（不是窗口宽度）选宽 / 紧凑两档；
+   桌面管理卡较窄时也用紧凑布局，窗口 resize / 卡片重排都重算。 */
+const PLAYER_WIDE_MIN = 620;
+const playerResize = (typeof ResizeObserver !== 'undefined')
+  ? new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const w = e.contentRect.width;
+        e.target.classList.toggle('rc-compact', w > 0 && w <= PLAYER_WIDE_MIN);
+      }
+    })
+  : null;
+function attachPlayerSize(el) {
+  if (!el) return;
+  const fit = () => el.classList.toggle('rc-compact', el.clientWidth > 0 && el.clientWidth <= PLAYER_WIDE_MIN);
+  fit();
+  if (playerResize) playerResize.observe(el);
+  else window.addEventListener('resize', fit, { passive: true });
+}
+
+function wireSeekPlayer(audio, opts) {
+  const range = opts.range, fill = opts.fill, time = opts.time, floatEl = opts.float;
+  const curEl = opts.cur, totalEl = opts.total;
+  // #256：时间行左当前 / 右总时长；老的单个 time 节点保留作兼容（试听卡外的调用点）
+  const paintTime = (cur, total) => {
+    if (curEl || totalEl) {
+      if (curEl) curEl.textContent = fmtClock(cur);
+      if (totalEl) totalEl.textContent = total > 0 ? fmtClock(total) : '';
+      return;
+    }
+    if (time) time.textContent = fmtClock(cur) + (total > 0 ? ' / ' + fmtClock(total) : '');
+  };
+  const fallbackSec = () => {
+    const f = typeof opts.fallback === 'function' ? opts.fallback() : opts.fallback;
+    return Number(f) > 0 && isFinite(f) ? Number(f) : 0;
+  };
+  let dragging = false;
+  let endTimer = 0;
+
+  const realDur = () => (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 0;
+
+  const hideFloat = () => { if (floatEl) floatEl.classList.remove('on'); };
+  const showFloat = (v) => {
+    if (!floatEl) return;
+    const d = realDur();
+    if (d <= 0) { hideFloat(); return; }
+    floatEl.textContent = fmtClock(v);
+    floatEl.classList.add('on');
+    const wrap = floatEl.parentElement;
+    if (!wrap) return;
+    const w = wrap.clientWidth;
+    const fw = floatEl.offsetWidth;
+    const ratio = Math.min(1, Math.max(0, v / d));
+    // 与原生 14px 滑块同心；再按浮标自身宽度夹在容器内（0% / 100% 不裁切）
+    const cx = 7 + ratio * Math.max(0, w - 14);
+    const x = Math.min(Math.max(cx - fw / 2, 0), Math.max(0, w - fw));
+    floatEl.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
+  };
+
+  const paint = () => {
+    if (dragging) return;              // 手指还按着时 metadata 到达，不得把填充画回 0
+    hideFloat();
+    const d = realDur();
+    const cur = d > 0 ? Math.min(Math.max(audio.currentTime || 0, 0), d) : 0;
+    paintAt(cur, d || fallbackSec(), d > 0);
+  };
+
+  const paintAt = (cur, total, usable) => {
+    range.disabled = !usable;
+    if (usable) {
+      range.max = String(realDur());
+      if (!dragging) range.value = String(cur);
+    } else {
+      range.max = '0';
+      if (!dragging) range.value = '0';
+    }
+    if (fill) fill.style.width = usable && total > 0 ? Math.min(100, cur / total * 100).toFixed(1) + '%' : '0%';
+    paintTime(cur, total);
+  };
+
+  range.addEventListener('input', () => {
+    dragging = true;
+    clearTimeout(endTimer);
+    const d = realDur();
+    const v = Number(range.value) || 0;
+    if (fill) fill.style.width = d > 0 ? Math.min(100, v / d * 100).toFixed(1) + '%' : '0%';
+    paintTime(v, d);
+    showFloat(v);
+  });
+
+  range.addEventListener('change', () => {
+    dragging = false;
+    clearTimeout(endTimer);
+    hideFloat();
+    const d = realDur();
+    if (d <= 0) { paint(); return; }
+    const v = Math.min(d, Math.max(0, Number(range.value) || 0));
+    // 代际令牌：每次跳转递增；等 metadata 期间又跳了一次，旧回调作废
+    audio.__seekGen = (audio.__seekGen || 0) + 1;
+    const gen = audio.__seekGen;
+    const apply = () => { if (gen === audio.__seekGen) audio.currentTime = v; };
+    if (audio.readyState >= 1) apply();
+    else audio.addEventListener('loadedmetadata', function onMeta() {
+      audio.removeEventListener('loadedmetadata', onMeta);
+      apply();
+    });
+  });
+
+  // pointerup 先藏浮标；change 随后提交。没有 change（拖回原位）时兜底收尾，不留悬空 dragging。
+  const settle = () => {
+    hideFloat();
+    clearTimeout(endTimer);
+    endTimer = setTimeout(() => {
+      if (dragging) { dragging = false; paint(); }
+    }, 0);
+  };
+  range.addEventListener('pointerup', settle);
+  range.addEventListener('lostpointercapture', settle);
+  range.addEventListener('keyup', settle);
+  range.addEventListener('blur', settle);
+  range.addEventListener('pointercancel', () => {
+    clearTimeout(endTimer);
+    hideFloat();
+    dragging = false;
+    paint();
+  });
+  audio.addEventListener('loadedmetadata', paint);
+  audio.addEventListener('durationchange', paint);
+  audio.addEventListener('timeupdate', paint);
+  paint();   // 先用 fallback（列表的 durationSec）画出总时长；真实 metadata 到了再覆盖
+
+  return { repaint: paint };
+}
+
+/* ---- 播放动感（#243 / #256）：只表达“正在播放”，不是真实音量波形 ----
+   波区高度按组件宽度分档（宽 44px / 紧凑 36px），**只改 transform**；暂停时按指数缓动平滑收拢到 3px。
+   #256：条数按容器有效宽度计算（clamp 16–120，每根可见宽 3px），resize / 展开时重排；
+   多个播放器共用一条 RAF，已移除的卡片在下一帧被清掉。 */
+const WAVE_PEAKS = [12, 22, 29, 19, 34, 26, 36, 21, 30, 23, 14];
+const waveRecords = new Map();
+const WAVE_EPOCH = performance.now();
+let waveRaf = null, waveLast = 0;
+
+function waveReduced() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// 运行中切偏好：reduce 时也要立刻画一次低线；恢复偏好时若仍有音频在播，重新启动共享时钟。
+if (window.matchMedia) {
+  const waveMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const onWaveMotion = () => {
+    if (!waveMotion.matches && ![...waveRecords].some(([a]) => !a.paused && !a.ended)) return;
+    ensureWaveLoop();
+  };
+  if (waveMotion.addEventListener) waveMotion.addEventListener('change', onWaveMotion);
+  else if (waveMotion.addListener) waveMotion.addListener(onWaveMotion);
+}
+
+/** #256 密度：正常下限 16、上限 120，按 `floor(W/9)` 取；极窄到 16 根会挤破
+ *  「3px 条 + 3px 间距」的节距时，**优先减条数**（`3 + (n-1)*6 ≤ W`），绝不挤压进度 / 溢出卡片。 */
+function waveCountFor(width) {
+  const w = Math.max(0, Number(width) || 0);
+  const ideal = Math.floor(w / 9);
+  const fit = Math.max(1, Math.floor((w - 3) / 6) + 1);
+  return Math.min(120, Math.max(1, Math.min(Math.max(16, ideal), fit)));
+}
+
+/** 按当前有效宽度重排柱条；条数没变就不重建（不打断正在跑的动画）。 */
+function layoutWave(el) {
+  const rec = el && el.__waveRec;
+  if (!rec) return;
+  if (!el.isConnected) {                 // 卡片已被重绘掉：解除 RO，别把死 DOM 留在观察表里
+    if (waveResize) waveResize.unobserve(el);
+    return;
+  }
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (!w || !h) return;                 // 还在隐藏容器里：等 ResizeObserver / 显示后再排
+  const heightChanged = rec.height !== h;
+  rec.height = h;
+  const n = waveCountFor(w);
+  if (n !== rec.bars.length) {
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) frag.appendChild(document.createElement('span'));
+    el.replaceChildren(frag);
+    rec.bars = Array.from(el.children);
+    rec.levels = rec.bars.map(() => 3);
+    for (const bar of rec.bars) bar.style.transform = 'scaleY(' + (3 / h) + ')';
+  } else if (heightChanged && !(rec.audio && !rec.audio.paused && !rec.audio.ended)) {
+    // 高度档位变了而条数没变：低线仍要正好 3px（分母跟着 44 / 36 走）
+    for (const bar of rec.bars) bar.style.transform = 'scaleY(' + (3 / h) + ')';
+  }
+}
+
+const waveResize = (typeof ResizeObserver !== 'undefined')
+  ? new ResizeObserver((entries) => { for (const e of entries) layoutWave(e.target); })
+  : null;
+
+function attachWave(audio, el) {
+  if (!audio || !el) return;
+  const rec = { el, audio, bars: [], levels: [], height: 36 };
+  el.__waveRec = rec;
+  el.replaceChildren();
+  waveRecords.set(audio, rec);
+  layoutWave(el);                        // 已在文档里的（试听卡）能立刻排；卡片插入后由 RO 补
+  if (waveResize) waveResize.observe(el);
+  else requestAnimationFrame(() => layoutWave(el));
+  const kick = () => ensureWaveLoop();
+  audio.addEventListener('play', kick);
+  audio.addEventListener('pause', kick);
+  audio.addEventListener('ended', kick);
+}
+
+/** 列表 / 管理视图重绘后清掉已离屏的声波：解除 RO、停掉可能还在响的旧音频。 */
+function sweepWaveRecords() {
+  for (const [audio, rec] of waveRecords) {
+    if (rec.el && rec.el.isConnected) continue;
+    if (waveResize) waveResize.unobserve(rec.el);
+    // 播放器尺寸观察也挂在卡片上：卡片重绘掉后一并解除，别把死 DOM 留在 RO 表里
+    const cardEl = rec.el && rec.el.closest && rec.el.closest('.rc-rec');
+    if (playerResize && cardEl) playerResize.unobserve(cardEl);
+    if (!audio.paused) {
+      try { audio.pause(); } catch (e) { /* 已移除的节点，停不掉也无妨 */ }
+    }
+    waveRecords.delete(audio);
+  }
+}
+
+function ensureWaveLoop() {
+  if (waveRaf !== null) return;
+  waveLast = performance.now();
+  waveRaf = requestAnimationFrame(waveLoop);
+}
+
+function waveLoop(now) {
+  const dt = Math.min(.05, Math.max(0, (now - waveLast) / 1000));
+  waveLast = now;
+  const reduced = waveReduced();
+  let moving = false;
+  for (const [audio, rec] of waveRecords) {
+    if (!audio.isConnected || !rec.el.isConnected) { waveRecords.delete(audio); continue; }
+    const height = rec.height || 36;
+    const playing = !audio.paused && !audio.ended && !reduced;
+    for (let i = 0; i < rec.bars.length; i++) {
+      if (reduced) {                       // reduce：直接低线静止，不做缓动
+        rec.levels[i] = 3;
+        rec.bars[i].style.transform = 'scaleY(' + (3 / height) + ')';
+        continue;
+      }
+      const prev = rec.levels[i];
+      let target = 3;
+      if (playing) {
+        const clock = (now - WAVE_EPOCH) / 1000;
+        const pulse = .5 + .5 * Math.sin(clock * Math.PI * 2 * (.68 + (i % 4) * .11) + i * .77);
+        const env = .78 + .22 * Math.sin(clock * .87 + i * .49);
+        // 缩放分母取当前实际占位高（44 / 36），不能固定除以 36 后在桌面上二次放大
+        target = 3 + (WAVE_PEAKS[i % WAVE_PEAKS.length] - 3) * (height / 36) * pulse * env;
+      }
+      // 指数跟随 + 速度上限：波峰后自然回落，不会二次拉伸
+      const step = (target - prev) * (1 - Math.exp(-dt / .075));
+      const limit = 150 * dt;
+      let next = prev + Math.max(-limit, Math.min(limit, step));
+      if (!playing && Math.abs(next - 3) < .015) next = 3;
+      rec.levels[i] = next;
+      rec.bars[i].style.transform = 'scaleY(' + (next / height) + ')';
+      if (playing || next !== 3) moving = true;
+    }
+  }
+  waveRaf = moving ? requestAnimationFrame(waveLoop) : null;
+}
+
+/* ---- 列表音频：按需取流 + 6 条 LRU 缓存（#226 顺带修 blob 泄漏） ---- */
+const cacheKey = (fileId) => String(fileId);
+
+function evictCache(keepKey) {
+  while (audioCache.size > AUDIO_CACHE_MAX) {
+    let victimKey = null;
+    for (const [k, v] of audioCache) {
+      if (k === keepKey) continue;
+      if (k === playingKey && v.url) continue;   // 正在播的那条不许踢
+      victimKey = k;
+      break;
+    }
+    if (victimKey == null) break;
+    const victim = audioCache.get(victimKey);
+    audioCache.delete(victimKey);
+    if (victim.url) URL.revokeObjectURL(victim.url);
+  }
+}
+
+function cachedUrl(fileId) {
+  const k = cacheKey(fileId);
+  const hit = audioCache.get(k);
+  if (hit && hit.url) {
+    audioCache.delete(k);
+    audioCache.set(k, hit);                    // 命中即提到队尾
+    return Promise.resolve(hit.url);
+  }
+  if (hit && hit.promise) return hit.promise;  // 并发点击复用同一个请求
+
+  const entry = {};
+  entry.promise = BAND.fileBlob(fileId).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    // 取流期间页面卸载 / 这条被删：结果不能再用，立刻回收
+    if (cacheReleased || audioCache.get(k) !== entry) {
+      URL.revokeObjectURL(url);
+      throw new Error('cache dropped');
+    }
+    entry.url = url;
+    delete entry.promise;
+    audioCache.set(k, entry);
+    evictCache(k);
+    return url;
+  }).catch((err) => {
+    // 失败不能留在缓存里：否则下一次点击复用同一个已拒绝的 Promise，永远播不出来
+    if (audioCache.get(k) === entry) audioCache.delete(k);
+    throw err;
+  });
+  audioCache.set(k, entry);
+  return entry.promise;
+}
+
+function dropCache(fileId) {
+  const k = cacheKey(fileId);
+  const hit = audioCache.get(k);
+  if (!hit) return;
+  audioCache.delete(k);
+  if (hit.url) URL.revokeObjectURL(hit.url);
+}
+
+function cacheClear() {
+  cacheReleased = true;
+  for (const hit of audioCache.values()) {
+    if (hit.url) URL.revokeObjectURL(hit.url);
+  }
+  audioCache.clear();
+}
+
+/* ============================================================
+   屏一 · 录音墙
+   ============================================================ */
+const MANAGE_ROLES = ['ADMIN', 'LEADER', 'CONDUCTOR', 'SECTION_LEADER'];
+// 声部长没挂声部时后端 `/manage` 会按 30003 拒绝；这里先拦住，别让页面进去吃 403
+const canManage = () => !!me && MANAGE_ROLES.includes(me.role)
+  && !(me.role === 'SECTION_LEADER' && !me.sectionId);
+const isPartState = (s) => s === 'PARTIAL' || s === 'PART';
+
+function stopPlaying() {
+  if (playingAudio) { playingAudio.pause(); playingAudio = null; playingKey = null; }
+}
+
+async function load() {
+  me = await BAND.renderNav('recordings.html');
+  if (!me) return;
+
+  // 荣誉团员只读：他们不能上传（docs/02 防腐条款），服务端也会 403——这里只是不显示无用的按钮
+  const honorary = me.role === 'HONORARY';
+  byId('upload-box').hidden = honorary;
+  byId('go-record').hidden = honorary;
+  if (!honorary) {
+    initEnvPanel();   // 自己带 once 门；先于网络请求：pieces 拉失败也要能自查
+    if (!pieces.length) {
+      const d = await BAND.must('/api/pieces?size=100');
+      pieces = d.list;
+      BAND.fillSelect(byId('u-piece'),
+        pieces.map((p) => ({ value: p.id, label: p.title })), '不关联曲目');
+    }
+    if (!wired) { wired = true; setupRecorder(); }
+  }
+
+  // 视图权限：管理视图只给四角色；其余人永远退回「我的录音」
+  const manageChip = document.querySelector('#rc-view [data-view="manage"]');
+  manageChip.hidden = !canManage();
+  if (view == null) view = canManage() ? 'manage' : 'mine';
+  if (view === 'manage' && !canManage()) view = 'mine';
+  document.body.dataset.rcview = view;
+  qsa('#rc-view .fchip').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.view === view));
+  });
+  byId('mine-pane').hidden = view !== 'mine';
+  byId('manage-pane').hidden = view !== 'manage';
+
+  if (!honorary) await refreshAssignments();
+
+  // #263：视图切回「我的录音」时**优先保留**已加载的周与位置；只有别处增删过才重建。
+  if (view === 'mine') await loadMine({ reset: mineStale || !mineWeeks.size });
+  else await loadManage();
+}
+
+/* ============================================================
+   #263 我的录音：按周分组 + 加载更早（docs/08 §8.4）
+   ------------------------------------------------------------
+   归周口径：`uploaded_at` 在 **Asia/Shanghai** 的上传日期，周一 00:00 → 下周一 00:00（右端不含）；
+   周键 = 该周周一 `YYYY-MM-DD`。接口给的是**无 offset 的服务器本地时间** ⇒ 直接取日期，
+   **绝不** `new Date(x)` 让浏览器按本机时区改天。缺失 / 无法解析的值进「时间待确认」组。
+   加载：沿用 `/api/recordings?memberId=本人&page=&size=50`，逐页追加；
+   不新增分组端点，不为本人列表调用仅管理角色可用的 `/manage`。
+   ============================================================ */
+const MINE_PAGE = 50;
+let mineGen = 0;              // 代际：旧响应不得回盖新列表
+let minePage = 1;
+let mineTotal = 0;
+let mineLoaded = 0;
+let mineDone = false;         // 服务器明确没有更多
+let mineLoading = false;
+let mineFail = '';            // 上次失败说明（原位重试）
+let mineStale = false;        // 别处的增删让当前列表过期
+let mineAutoOpen = true;      // 首次渲染展开最近一个有录音的周
+let mineFocusWeek = null;     // 上传 / 删除后要定位的周键
+let mineWeeks = new Map();    // key -> {key,start,end,unknown,recs,el,btn,body,countEl}
+const mineSeen = new Set();   // 已并入的记录 id（跨页去重）
+const openMineWeeks = new Set();   // 展开集合：稳定周键，不用数组下标
+
+/** uploadedAt → 上海日期分量。无 offset 的直接当上海墙上时间。 */
+function shanghaiDate(iso) {
+  const s = String(iso || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const h = Number(m[4]), mi = Number(m[5]), se = Number(m[6] || 0);
+  const tz = m[7];
+  if (!tz) return { y, mo, d };    // 无 offset = 服务器本地时间 = 上海语义
+  let offMin = 0;
+  if (tz !== 'Z') {
+    const sign = tz[0] === '-' ? -1 : 1;
+    const t = tz.slice(1).replace(':', '');
+    offMin = sign * (Number(t.slice(0, 2)) * 60 + Number(t.slice(2, 4)));
+  }
+  const u = new Date(Date.UTC(y, mo - 1, d, h, mi, se) - offMin * 60000 + 8 * 3600000);
+  return { y: u.getUTCFullYear(), mo: u.getUTCMonth() + 1, d: u.getUTCDate() };
+}
+
+/** 归周：返回 {key,start,end}；周一为键。无法解析返回 null。 */
+function weekOf(iso) {
+  const p = shanghaiDate(iso);
+  if (!p) return null;
+  const ms = Date.UTC(p.y, p.mo - 1, p.d);
+  const back = (new Date(ms).getUTCDay() + 6) % 7;   // 回退到周一
+  const startMs = ms - back * 86400000;
+  const endMs = startMs + 6 * 86400000;
+  const fmt = (t) => {
+    const u = new Date(t);
+    return u.getUTCFullYear() + '-' + String(u.getUTCMonth() + 1).padStart(2, '0')
+      + '-' + String(u.getUTCDate()).padStart(2, '0');
+  };
+  return { key: fmt(startMs), start: fmt(startMs), end: fmt(endMs) };
+}
+
+/** 周标题：`2026.11.16–11.22`；跨年 `2026.12.28–2027.1.3`（始终能辨识年份）。 */
+function mineWeekLabel(w) {
+  const s = String(w.start || '').split('-').map(Number);
+  const e = String(w.end || '').split('-').map(Number);
+  const head = s[0] + '.' + s[1] + '.' + s[2];
+  const tail = (s[0] === e[0] ? '' : e[0] + '.') + e[1] + '.' + e[2];
+  return head + '–' + tail;
+}
+
+function buildMineWeek(w) {
+  const el = document.createElement('section');
+  el.className = 'rc-myweek';
+  el.dataset.week = w.key;
+  const open = openMineWeeks.has(w.key);
+  const bodyId = 'mwb-' + (w.key === 'unknown' ? 'x' : w.key);
+  el.innerHTML =
+    '<button class="rc-myweek-h" type="button" aria-expanded="' + (open ? 'true' : 'false')
+    + '" aria-controls="' + bodyId + '"><span class="rc-myweek-t"></span>'
+    + '<span class="rc-myweek-n"></span></button>'
+    + '<div class="rc-myweek-b" id="' + bodyId + '"' + (open ? '' : ' hidden') + '></div>';
+  el.querySelector('.rc-myweek-t').textContent = w.unknown ? '时间待确认' : mineWeekLabel(w);
+  w.el = el;
+  w.btn = el.querySelector('.rc-myweek-h');
+  w.body = el.querySelector('.rc-myweek-b');
+  w.countEl = el.querySelector('.rc-myweek-n');
+  w.countEl.textContent = '已加载 0 条';
+  return el;
+}
+
+function paintMineWeek(w) {
+  if (w && w.countEl) w.countEl.textContent = '已加载 ' + w.recs.length + ' 条';
+}
+
+function firstMineWeek() {
+  for (const w of mineWeeks.values()) if (w.recs.length) return w;
+  return null;
+}
+
+/** 折叠播放中的周：**暂停并保留进度**，不自动切到别的周（docs/08 §8.4）。 */
+function pauseAudioIn(box) {
+  if (playingAudio && box && box.contains(playingAudio)) playingAudio.pause();
+}
+
+function setWeekOpen(w, open) {
+  if (!w || !w.body) return;
+  w.body.hidden = !open;
+  w.btn.setAttribute('aria-expanded', String(open));
+  if (open) openMineWeeks.add(w.key);
+  else { openMineWeeks.delete(w.key); pauseAudioIn(w.body); }
+}
+
+/** 只给本轮新增的卡播入场，不重播已有卡片。 */
+function revealNew(nodes) {
+  if (!nodes.length) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  nodes.forEach((n, i) => {
+    if (reduce) { n.classList.add('in'); return; }
+    setTimeout(() => n.classList.add('in'), 20 + Math.min(i, 4) * 35);
+  });
+}
+
+function appendMineRows(rows) {
+  const host = byId('list');
+  if (!host) return;
+  const fresh = [];
+  for (const r of rows) {
+    const id = String(r.id);
+    if (mineSeen.has(id)) continue;         // 跨页 / 重复响应：按 id 去重
+    mineSeen.add(id);
+    mineLoaded++;
+    const wk = weekOf(r.uploadedAt) || { key: 'unknown', unknown: true };
+    let w = mineWeeks.get(wk.key);
+    if (!w) {
+      w = { key: wk.key, start: wk.start, end: wk.end, unknown: !!wk.unknown, recs: [] };
+      mineWeeks.set(wk.key, w);
+      host.appendChild(buildMineWeek(w));
+    }
+    w.recs.push(r);
+    const c = card(r);
+    w.body.appendChild(c);
+    fresh.push(c);
+    paintMineWeek(w);
+  }
+  revealNew(fresh);
+}
+
+function paintMineFoot() {
+  const foot = byId('mine-foot');
+  const more = byId('mine-more');
+  const done = byId('mine-done');
+  const cnt = byId('mine-count');
+  if (!foot || !more || !cnt) return;
+  const show = mineTotal > 0 || mineLoaded > 0 || !!mineFail;
+  foot.hidden = !show;
+  if (!show) return;
+  cnt.textContent = mineTotal
+    ? '已加载 ' + mineLoaded + ' / 共 ' + mineTotal + ' 条'
+    : '已加载 ' + mineLoaded + ' 条';
+  more.hidden = mineDone && !mineFail;
+  // 到 total 或服务器明确无更多：撤掉按钮并**明说**已加载全部（docs/08 §8.4 #263）
+  if (done) done.hidden = !(mineDone && !mineFail && mineLoaded > 0);
+  more.disabled = mineLoading;
+  more.textContent = mineLoading ? '正在加载…' : (mineFail ? '重试' : '加载更早录音');
+  let err = foot.querySelector('.rc-mine-err');
+  if (mineFail) {
+    if (!err) { err = document.createElement('p'); err.className = 'rc-mine-err'; foot.appendChild(err); }
+    err.textContent = mineFail;
+  } else if (err) err.remove();
+}
+
+function focusMineWeek(key) {
+  if (!key) return;
+  mineFocusWeek = null;
+  const w = mineWeeks.get(key);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (w) {
+    setWeekOpen(w, true);
+    w.el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    return;
+  }
+  // 该周被删空：定位到相邻有效内容（第一周，或「加载更早」区）
+  const first = firstMineWeek();
+  if (first) first.el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+  else { const foot = byId('mine-foot'); if (foot) foot.scrollIntoView({ block: 'nearest' }); }
+}
+
+async function fetchMinePage() {
+  if (!me || mineLoading) return;
+  const gen = mineGen;
+  mineLoading = true;
+  mineFail = '';
+  paintMineFoot();
+  try {
+    const d = await BAND.must('/api/recordings?memberId=' + me.id + '&page=' + minePage + '&size=' + MINE_PAGE);
+    if (gen !== mineGen) return;
+    const rows = Array.isArray(d.list) ? d.list : [];
+    const total = Number(d.total) || 0;
+    // 翻页期间别处增删过：重建本轮列表并提示，不沿旧水位瞎拼
+    if (minePage > 1 && total !== mineTotal) {
+      BAND.toast('录音有变动，已重新加载');
+      return loadMine({ reset: true, focusWeek: mineFocusWeek });
+    }
+    mineTotal = total;
+    appendMineRows(rows);
+    minePage++;
+    if (!rows.length || mineLoaded >= mineTotal) mineDone = true;
+    if (mineAutoOpen) {
+      const first = firstMineWeek();
+      if (first) { openMineWeeks.add(first.key); setWeekOpen(first, true); }
+      mineAutoOpen = false;
+    }
+    const empty = byId('empty');
+    if (empty) empty.classList.toggle('show', mineTotal === 0);
+    byId('rc-count').textContent = '我的 ' + mineTotal + ' 条';
+    sweepWaveRecords();
+    if (mineFocusWeek) focusMineWeek(mineFocusWeek);
+  } catch (e) {
+    if (gen === mineGen) mineFail = '加载失败，请重试';
+  } finally {
+    if (gen === mineGen) mineLoading = false;
+    paintMineFoot();
+  }
+}
+
+/**
+ * #263 入口。`reset:true` = 从头拉第一页（上传 / 删除 / 视图过期）；
+ * `reset:false` = 保留已加载的周与位置（两屏返回、mine↔manage 切回）。
+ */
+async function loadMine({ reset = true, focusWeek = null } = {}) {
+  if (!me) return;
+  if (reset) {
+    mineGen++;
+    // ⚠️ 上一轮请求可能还在飞：代际已经推进，它的响应会被丢弃，但它的 finally 也不会再清
+    //    `mineLoading`（gen 对不上）。这里**必须先解开**，否则本次 fetchMinePage 会在门口
+    //    `if (mineLoading) return` 直接返回，列表空着、按钮永远停在「正在加载…」（R263-04 死锁）。
+    mineLoading = false;
+    minePage = 1;
+    mineTotal = 0;
+    mineLoaded = 0;
+    mineDone = false;
+    mineFail = '';
+    mineStale = false;
+    mineSeen.clear();
+    mineWeeks.clear();
+    stopPlaying();                 // 旧节点马上要被丢掉，先停声
+    const host = byId('list');
+    if (host) host.innerHTML = '';
+    const empty = byId('empty');
+    if (empty) empty.classList.remove('show');
+    if (!openMineWeeks.size) mineAutoOpen = true;
+    mineFocusWeek = focusWeek || null;
+    await fetchMinePage();
+    return;
+  }
+  if (!mineWeeks.size && !mineTotal) { await fetchMinePage(); return; }
+  paintMineFoot();                 // 有数据：只重画计数 / 按钮，不重拉、不丢位置
+}
+
+async function loadManage() {
+  const gen = ++manageGen;   // #242：旧响应晚到就别回盖新周
+  // #263：切到管理视图后，还在飞的「我的录音」分页响应同样作废——它不能把周标题
+  // 追加进已经隐藏的录音墙，更不能在切回时冒充"用户刚加载的那一页"（R263-04）。
+  mineGen++;
+  mineLoading = false;
+  stopPlaying();
+  byId('rc-count').textContent = '';
+  const d = await BAND.must('/api/recordings/manage');
+  if (gen !== manageGen) return;
+  manageData = d;
+  renderManage();
+  ensureWeeks(d.weekStart);
+  if (!sections.length) await loadSections();
+  fillAssignSection();
+}
+
+function card(r, opts = {}) {
+  const el = document.createElement('article');
+  // ⚠️ 只有「我的录音」会把 `.ar` 翻成 `.in`（#263 由 `revealNew()` 只给本轮新增的卡播）；
+  //    管理视图的卡片是嵌在 `.rm-sec` / `.rm-person` 的错峰动画里的，
+  //    **再加 `.ar` 就永远停在 opacity:0**（整块看不见）。
+  el.className = 'rc-rec' + (opts.compact ? ' rc-rec-compact' : ' ar');
+  el.dataset.id = String(r.id);
+
+  // 紧凑模式（管理视图按人归组）：人名 / 声部 已经在上面的行里，不再重复；
+  // 有作业标签时曲目也已写进标签，避免同一行出现两次。
+  const base = opts.compact ? (opts.tag ? [] : [r.pieceTitle])
+    : [r.memberName, r.sectionName, r.pieceTitle];
+  const bits = base.concat([
+    r.durationSec ? Math.round(r.durationSec) + ' 秒' : null,
+    BAND.sizeText(r.sizeBytes), BAND.stamp(r.uploadedAt)]).filter(Boolean);
+
+  // #256：标题 / 元信息在上、轻操作靠右；播放区另起一行（播放钮 + 声波 + 独立进度 + 时间）。
+  el.innerHTML =
+    `<div class="rc-rec-head">
+       <div class="rc-body">
+         <div class="rc-title"><b></b></div>
+         <div class="rc-meta"></div>
+         <div class="rc-tags"></div>
+       </div>
+       <div class="rc-ops">
+         <button class="rc-opt rc-tp" type="button" aria-expanded="false"></button>
+         <button class="rc-opt rc-del" type="button">删除</button>
+       </div>
+     </div>
+     <div class="rc-player">
+       <button class="rc-play" type="button" aria-pressed="false" aria-label="播放"></button>
+       <div class="rc-stage">
+         <div class="rc-wave" aria-hidden="true" style="pointer-events:none"></div>
+         <div class="rc-seek-wrap">
+           <span class="rc-float" aria-hidden="true">0:00</span>
+           <div class="rc-seek">
+             <span class="rc-bar"><i class="rc-fill"></i></span>
+             <input class="rc-range" type="range" min="0" max="0" step="0.01" value="0" aria-label="播放进度" disabled>
+           </div>
+         </div>
+         <div class="rc-time"><span class="rc-cur">0:00</span><span class="rc-total"></span></div>
+       </div>
+     </div>
+     <div class="rc-thread" hidden></div>`;
+  el.querySelector('.rc-title b').textContent = r.title || '（未命名）';
+  el.querySelector('.rc-meta').innerHTML = bits.map(escHtml).join('<span class="sep">·</span>');
+  if (opts.tag) el.querySelector('.rc-tags').innerHTML = opts.tag;
+  else el.querySelector('.rc-tags').remove();
+  const tpBtn = el.querySelector('.rc-tp');
+  tpBtn.textContent = `点评（${r.commentCount}）`;
+  const play = el.querySelector('.rc-play');
+  play.innerHTML = ICON_PLAY;
+
+  // 播放：**必须走 blob**（裸 <audio src="/api/files/id"> 不带 Authorization 头，永远 401）。
+  // ⚠️ #226：**渲染时不取流**；点播放才取，取到的 URL 留在页面内缓存里复用（刷新列表也不重下）。
+  const audio = document.createElement('audio');
+  audio.className = 'rc-audio';
+  audio.preload = 'metadata';
+  el.appendChild(audio);
+  const fill = el.querySelector('.rc-fill');
+  const totalTime = el.querySelector('.rc-total');
+  const seek = wireSeekPlayer(audio, {
+    range: el.querySelector('.rc-range'), fill,
+    cur: el.querySelector('.rc-cur'), total: totalTime,
+    float: el.querySelector('.rc-float'), fallback: r.durationSec,
+  });
+  attachWave(audio, el.querySelector('.rc-wave'));
+  const key = cacheKey(r.fileId);
+
+  // ⭐ 互斥（#112）：这条一开始播，就把"上一个在播的"**显式**停掉并归零（不靠 `pause` 事件推状态）。
+  audio.addEventListener('play', () => {
+    if (playingAudio && playingAudio !== audio) {
+      playingAudio.pause();
+      playingAudio.currentTime = 0;
+    }
+    playingAudio = audio;
+    playingKey = key;
+  });
+
+  const toPaused = () => { play.innerHTML = ICON_PLAY; play.setAttribute('aria-pressed', 'false'); };
+  audio.addEventListener('play',  () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-pressed', 'true'); });
+  audio.addEventListener('pause', () => { toPaused(); seek.repaint(); });
+  audio.addEventListener('ended', () => {
+    toPaused();
+    audio.currentTime = 0;
+    if (playingKey === key) playingKey = null;
+    seek.repaint();
+  });
+
+  const startPlay = () => {
+    const p = audio.play();
+    if (p && p.catch) p.catch(() => {
+      // 取流已经成功（src 已设好），只是浏览器这次不认手势：提示再点一次，下一次秒开
+      if (el.isConnected) BAND.toast('再点一次播放');
+      seek.repaint();
+    });
+  };
+
+  play.addEventListener('click', async () => {
+    if (!audio.paused) { audio.pause(); return; }
+    if (audio.__loading) return;   // 双击只发一次请求
+    const hit = audioCache.get(key);
+    if (hit && hit.url) {
+      if (audio.src !== hit.url) audio.src = hit.url;
+      startPlay();
+      return;
+    }
+    audio.__loading = true;
+    play.setAttribute('aria-busy', 'true');
+    if (totalTime) totalTime.textContent = '载入中…';
+    try {
+      const url = await cachedUrl(r.fileId);
+      if (!el.isConnected) return;
+      audio.src = url;
+      startPlay();
+    } catch (e) {
+      // `BAND.fileBlob` 对 HTTP 失败**已经 toast 过一次**，这里只补网络类失败，别叠两条
+      if (el.isConnected && !/^HTTP /.test((e && e.message) || '')) {
+        BAND.toast('这段录音没载下来，再点一次试试');
+      }
+      seek.repaint();
+    } finally {
+      audio.__loading = false;
+      play.removeAttribute('aria-busy');
+    }
+  });
+
+  tpBtn.addEventListener('click', () => toggleThread(r, el, tpBtn));
+
+  // 删除按钮只在"我可能就是有权限的人"时显示；真权限由服务端判（403 会 toast）。
+  // ⚠️ **团长 / 指挥不在名单里**：他们能"听全部"但**不能删任何人的录音**（docs/02 §2.3 矩阵 + docs/08 §8.3，
+  //    2026-09-23 由 ✅ 收窄为 ❌）。`r.memberId === me.id` 那一支要留着——删**自己上传的**那条仍合法。
+  const del = el.querySelector('.rc-del');
+  del.hidden = !(r.memberId === me.id || ['ADMIN', 'SECTION_LEADER'].includes(me.role));
+  del.addEventListener('click', async () => {
+    if (!await BAND.confirm({ title: '删掉这段录音？', body: r.title || '' })) return;
+    await BAND.must(`/api/recordings/${r.id}`, { method: 'DELETE' });
+    dropCache(r.fileId);   // 删除即回收这条的 blob URL，别等 LRU 淘汰
+    BAND.toast('已删除', 'success');
+    if (opts.onChanged) opts.onChanged();
+    else if (view === 'mine') {
+      // #263：删除后更新该周的已加载数；空周移除并定位到相邻有效内容
+      const wk = weekOf(r.uploadedAt);
+      loadMine({ reset: true, focusWeek: wk ? wk.key : null }).catch(() => {});
+    } else {
+      mineStale = true;          // 管理视图删的可能是本人录音：切回「我的录音」要重建
+      load().catch(() => {});
+    }
+  });
+  attachPlayerSize(el);
+  return el;
+}
+
+/* ============================================================
+   录音管理视图（#225）：本周概览 / 布置 / 未交 / 本周录音 / 以前的周
+   ============================================================ */
+const CHEV = '<svg class="rm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+
+function weekLabel(start, end) {
+  const md = (s) => {
+    const p = String(s || '').split('-');
+    return p.length === 3 ? Number(p[1]) + ' 月 ' + Number(p[2]) + ' 日' : String(s || '');
+  };
+  return md(start) + ' – ' + md(end);
+}
+
+function sumDur(recs) {
+  const sec = recs.reduce((n, r) => n + (Number(r.durationSec) || 0), 0);
+  return sec > 0 ? fmtClock(sec) : '—';
+}
+
+function stateChip(m) {
+  if (!m.state) return '';
+  const cls = m.state === 'DONE' ? 'done' : isPartState(m.state) ? 'part' : 'miss';
+  const label = m.state === 'DONE' ? '已交' : isPartState(m.state) ? '部分' : '未交';
+  return `<span class="rm-st ${cls}"><i class="dot ${cls}" aria-hidden="true"></i>${label} ${m.doneCount}/${m.totalCount}</span>`;
+}
+
+function manageTag(r, hasAssignments) {
+  if (!hasAssignments) return '';
+  if (r.assignmentId) {
+    return `<span class="rec-tag">${escHtml(r.assignmentTitle || '本周作业')}`
+      + (r.pieceTitle ? ' · ' + escHtml(r.pieceTitle) : '') + '</span>';
+  }
+  return '<span class="rec-tag unlinked">未关联作业 · 不计完成度</span>';
+}
+
+function historyTag(r) {
+  return r.assignmentTitle
+    ? `<span class="rec-tag">${escHtml(r.assignmentTitle)}${r.pieceTitle ? ' · ' + escHtml(r.pieceTitle) : ''}</span>`
+    : '';
+}
+
+function renderHero(d) {
+  const host = byId('rm-hero');
+  const scopeName = me.role === 'SECTION_LEADER' ? '本声部' : '全团';
+  const recs = d.sections.reduce((n, s) => n + s.members.reduce((k, m) => k + m.recordings.length, 0), 0);
+  const label = weekLabel(d.weekStart, d.weekEnd);
+
+  if (!d.assignments.length) {
+    const secN = d.sections.filter((s) => s.members.some((m) => m.recordings.length)).length;
+    host.innerHTML = `
+      <div class="rm-hero-top">
+        <div>
+          <div class="rm-kicker">录音管理 · 本周</div>
+          <div class="rm-week">${escHtml(label)}</div>
+          <div class="rm-scope">${scopeName} · 本周未布置曲目</div>
+        </div>
+      </div>
+      <div class="rm-nostats">本周已收 <b>${recs}</b> 条录音 · <b>${secN}</b> 个声部有录音</div>`;
+    return;
+  }
+
+  const assignedSections = new Set(d.assignments.map((a) => a.sectionId));
+  let expected = 0, done = 0, part = 0, miss = 0;
+  for (const sec of d.sections) {
+    if (!assignedSections.has(sec.sectionId)) continue;
+    for (const m of sec.members) {
+      if (!m.state) continue;
+      expected++;
+      if (m.state === 'DONE') done++;
+      else if (isPartState(m.state)) part++;
+      else miss++;
+    }
+  }
+  const pct = (n) => (expected ? (n / expected * 100).toFixed(1) : 0);
+  host.innerHTML = `
+    <div class="rm-hero-top">
+      <div>
+        <div class="rm-kicker">录音管理 · 本周</div>
+        <div class="rm-week">${escHtml(label)}</div>
+        <div class="rm-scope">${scopeName} · 本周已收 <b>${recs}</b> 条</div>
+      </div>
+      <div class="rm-stats" aria-label="本周完成情况">
+        <div class="stat"><div class="n">${expected}</div><div class="l">应交</div></div>
+        <div class="stat"><div class="n">${miss}</div><div class="l">未交</div></div>
+        <div class="stat"><div class="n">${part}</div><div class="l">部分交</div></div>
+        <div class="stat"><div class="n">${done}</div><div class="l">已交</div></div>
+      </div>
+    </div>
+    <div class="rm-bar" aria-hidden="true">
+      <i class="b-done" style="width:${pct(done)}%"></i>
+      <i class="b-part" style="width:${pct(part)}%"></i>
+      <i class="b-miss" style="width:${pct(miss)}%"></i>
+    </div>
+    <div class="rm-legend">
+      <span><i class="dot done"></i>已交 ${done}</span>
+      <span><i class="dot part"></i>部分交 ${part}</span>
+      <span><i class="dot miss"></i>未交 ${miss}</span>
+    </div>`;
+}
+
+function renderAssignments(d) {
+  const host = byId('as-body');
+  byId('as-sub').textContent = d.assignments.length ? d.assignments.length + ' 条 · 按声部' : '';
+  if (!d.assignments.length) {
+    host.innerHTML = `
+      <div class="as-empty">
+        <div class="grow"><b>本周未布置曲目</b><span>没有作业就不生成未交名单；本周录音照常展示。</span></div>
+        <button class="rc-btn rc-btn-line rc-btn-sm" type="button" data-open-assign>去布置</button>
+      </div>`;
+    return;
+  }
+  const groups = [];
+  const bySec = new Map();
+  for (const a of d.assignments) {
+    let g = bySec.get(a.sectionId);
+    if (!g) { g = { id: a.sectionId, name: a.sectionName || '未分声部', list: [] }; bySec.set(a.sectionId, g); groups.push(g); }
+    g.list.push(a);
+  }
+  host.innerHTML = `<div class="as-grid">${groups.map((g, i) => `
+    <div class="as-sec" style="--rm-d:${i * 55}ms">
+      <span class="as-sec-name">${escHtml(g.name)}</span>
+      <div class="as-chips">
+        ${g.list.map((a) => `
+          <span class="as-chip" data-chip="${a.id}">
+            <span class="as-chip-main"><b>${escHtml(a.title)}</b>
+              <em>${a.pieceTitle ? escHtml(a.pieceTitle) : '基本功 · 无曲目'}</em></span>
+            <span class="as-chip-ops">
+              <button class="as-op" type="button" data-rename="${a.id}">改名</button>
+              <button class="as-op danger" type="button" data-del-as="${a.id}"${a.canDelete ? ''
+                : ` disabled title="已有 ${a.submittedCount} 人提交，不能删除"`}>删除</button>
+            </span>
+          </span>`).join('')}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+function renderMissing(d) {
+  const block = byId('rm-miss');
+  const host = byId('miss-body');
+  if (!d.assignments.length) { block.hidden = true; host.innerHTML = ''; return; }
+  block.hidden = false;
+  const assignedSections = new Set(d.assignments.map((a) => a.sectionId));
+  const groups = [];
+  let missN = 0, partN = 0;
+  for (const sec of d.sections) {
+    if (!assignedSections.has(sec.sectionId)) continue;
+    const rows = sec.members.filter((m) => m.state === 'MISS' || isPartState(m.state));
+    missN += rows.filter((m) => m.state === 'MISS').length;
+    partN += rows.filter((m) => isPartState(m.state)).length;
+    rows.sort((a, b) => (a.state === b.state ? a.memberId - b.memberId : (a.state === 'MISS' ? -1 : 1)));
+    if (rows.length) groups.push({ sec, rows });
+  }
+  byId('miss-sub').textContent = groups.length
+    ? `未交 ${missN} · 部分交 ${partN} · 点人名定位` : '';
+  if (!groups.length) {
+    host.innerHTML = '<div class="all-done"><span class="dot done" aria-hidden="true"></span>本周全员交齐，没漏人。</div>';
+    return;
+  }
+  host.innerHTML = `<div class="miss-grid">${groups.map((g, i) => `
+    <div class="miss-sec" style="--rm-d:${i * 55 + 30}ms">
+      <div class="miss-sec-h"><span>${escHtml(g.sec.sectionName || '未分声部')}</span>
+        <span class="cnt">${g.rows.length}</span></div>
+      <div class="miss-names">
+        ${g.rows.map((m) => `
+          <button class="miss-name" type="button" data-jump="${g.sec.sectionId}:${m.memberId}"
+                  title="定位到 ${escHtml(m.name)} 本周的录音">
+            <i class="dot ${m.state === 'MISS' ? 'miss' : 'part'}" aria-hidden="true"></i>
+            <b>${escHtml(m.name)}</b>
+            <em>${m.state === 'MISS' ? '未交' : '部分'} ${m.doneCount}/${m.totalCount}${m.unlinkedCount ? ' · 未关联 ' + m.unlinkedCount : ''}</em>
+          </button>`).join('')}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/* 声部 → 人 → 录音；本周与历史共用（历史没有状态 chip / 进度条） */
+function buildWeekBlock(sec, opts) {
+  const members = sec.members.filter((m) => m.recordings.length);
+  if (!members.length) return null;
+  const sid = sec.sectionId;
+  const secBodyId = `${opts.prefix}-${sid}`;
+  const recN = members.reduce((n, m) => n + m.recordings.length, 0);
+  const expected = sec.members.filter((m) => m.state);
+  const doneN = expected.filter((m) => m.state === 'DONE').length;
+  // 历史周的声部 id 与本周相同，但折叠状态不能共用（否则本周收起会把历史周也带收）
+  const open = opts.historic || !closedSections.has(String(sid));
+  const pct = expected.length ? Math.round(doneN / expected.length * 100) : 0;
+
+  const block = document.createElement('section');
+  block.className = 'rm-sec';
+  block.style.setProperty('--rm-d', (opts.delay || 0) + 'ms');
+  block.innerHTML = `
+    <button class="rm-sec-toggle" type="button" data-sec-toggle="${sid}"
+            aria-expanded="${open}" aria-controls="${secBodyId}">
+      <span class="rm-sec-name">${escHtml(sec.sectionName || '未分声部')}</span>
+      <span class="rm-sec-meta">${members.length} 人 · ${recN} 条</span>
+      ${opts.historic || !expected.length ? '' : `<span class="rm-sec-bar" aria-hidden="true"><i style="--w:${pct}%"></i></span>
+        <span class="rm-sec-state">${doneN}/${expected.length} 已交</span>`}
+      ${CHEV}
+    </button>
+    <div class="rm-sec-body" id="${secBodyId}" ${open ? '' : 'hidden'}></div>`;
+  const body = block.querySelector('.rm-sec-body');
+
+  members.forEach((m, i) => {
+    const mid = m.memberId;
+    const bodyId = `${opts.personPrefix}-${sid}-${mid}`;
+    const pOpen = openPersons.has(bodyId);
+    const recs = m.recordings.slice().sort((a, b) => b.id - a.id);
+    const person = document.createElement('div');
+    person.className = 'rm-person';
+    person.style.setProperty('--rm-d', (i * 40 + 70) + 'ms');
+    person.innerHTML = `
+      <button class="rm-p-btn" type="button" data-ptoggle="${bodyId}"
+              aria-expanded="${pOpen}" aria-controls="${bodyId}">
+        <span class="rm-av" aria-hidden="true">${escHtml((m.name || '?').slice(0, 1))}</span>
+        <span class="rm-name">${escHtml(m.name || '已离团成员')}</span>
+        ${opts.historic ? '' : stateChip(m)}
+        <span class="rm-p-meta">${recs.length} 条 · ${sumDur(recs)}${m.unlinkedCount && opts.hasAssignments ? ' · 未关联 ' + m.unlinkedCount : ''}</span>
+        ${CHEV}
+      </button>
+      <div class="rm-body" id="${bodyId}" ${pOpen ? '' : 'hidden'}></div>`;
+
+    const list = document.createElement('div');
+    list.className = 'rc-recs rm-recs';
+    for (const r of recs) {
+      list.appendChild(card(r, {
+        compact: true,
+        tag: opts.historic ? historyTag(r) : manageTag(r, opts.hasAssignments),
+        onChanged: opts.onChanged,
+      }));
+    }
+    person.querySelector('.rm-body').appendChild(list);
+    body.appendChild(person);
+  });
+  return block;
+}
+
+function renderWeek(d) {
+  const host = byId('week-sections');
+  host.innerHTML = '';
+  const hasAssignments = d.assignments.length > 0;
+  let blocks = 0, total = 0;
+  for (const sec of d.sections) {
+    const n = sec.members.reduce((k, m) => k + m.recordings.length, 0);
+    if (!n) continue;
+    const el = buildWeekBlock(sec, {
+      prefix: 'wk-sec',
+      personPrefix: 'wk-p',
+      historic: false,
+      hasAssignments,
+      delay: blocks * 55,
+      onChanged: () => { loadManage().catch(() => {}); },
+    });
+    if (el) { host.appendChild(el); blocks++; total += n; }
+  }
+  byId('week-sub').textContent = blocks ? `${blocks} 个声部 · ${total} 条录音` : '';
+  if (!blocks) {
+    host.innerHTML = `
+      <div class="as-empty">
+        <div class="grow"><b>本周还没有录音</b><span>等第一条传上来，这里会按声部和人自动归组。</span></div>
+      </div>`;
+  }
+}
+
+function renderHistory() {
+  const host = byId('weeks');
+  if (!weeksData) {
+    byId('history-sub').textContent = '';
+    host.innerHTML = '<div class="wk-skel"></div><div class="wk-skel"></div>';
+    return;
+  }
+  byId('history-sub').textContent = weeksData.length ? `${weeksData.length} 周` : '';
+  if (!weeksData.length) {
+    host.innerHTML = '<div class="rm-note">以前还没有录音。</div>';
+    return;
+  }
+  host.innerHTML = weeksData.map((w, i) => {
+    // #242：展开状态的键是 weekStart，不是数组下标——新周插到顶部后下标会整体后移
+    const open = openWeeks.has(w.weekStart);
+    return `
+      <div class="wk" style="--rm-d:${i * 55}ms">
+        <button class="wk-row" type="button" data-week-toggle="${escHtml(w.weekStart)}"
+                aria-expanded="${open}" aria-controls="wb-${i}">
+          <span class="wk-range">${escHtml(weekLabel(w.weekStart, w.weekEnd))}</span>
+          <span class="wk-count">${w.count} 条 · ${w.sectionCount} 个声部</span>
+          ${CHEV}
+        </button>
+        <div class="wk-body" id="wb-${i}" ${open ? '' : 'hidden'}></div>
+      </div>`;
+  }).join('');
+  weeksData.forEach((w) => { if (openWeeks.has(w.weekStart)) hydrateWeek(w.weekStart); });
+}
+
+function ensureWeeks(weekStart) {
+  // #242：缓存必须绑定「拉取时的服务器本周」，不能只判"有没有拉过"
+  if (weeksData && weeksFor === weekStart) return;
+  // 同一周的在飞请求合并；不同周不拦——新请求会取代旧请求的结果
+  if (weeksLoadingFor === weekStart) return;
+
+  if (weeksData) {           // 跨周：旧列表立即作废，先回骨架
+    weeksData = null;
+    weeksFor = null;
+    renderHistory();
+  }
+
+  const forWeek = weekStart;
+  weeksLoadingFor = weekStart;
+  BAND.must('/api/recordings/manage/weeks')
+    .then((list) => {
+      if (weeksLoadingFor !== forWeek) return;   // 旧响应晚到：已被更新周的请求取代，丢弃
+      weeksData = Array.isArray(list) ? list : [];
+      weeksFor = forWeek;
+      weeksLoadingFor = null;
+      renderHistory();
+    })
+    .catch(() => { if (weeksLoadingFor === forWeek) weeksLoadingFor = null; });
+}
+
+async function hydrateWeek(key) {
+  const i = weeksData ? weeksData.findIndex((w) => w.weekStart === key) : -1;
+  const body = i >= 0 ? byId('wb-' + i) : null;
+  if (!body) return;
+  let d = weekManage.get(key);
+  if (!d) {
+    body.innerHTML = '<div class="wk-skel"></div><div class="wk-skel"></div><div class="wk-skel"></div>';
+    try {
+      d = await BAND.must('/api/recordings/manage?weekStart=' + encodeURIComponent(key));
+      weekManage.set(key, d);
+    } catch (e) {
+      body.innerHTML = '<div class="rm-note">这一周没载下来，收起重开再试一次。</div>';
+      return;
+    }
+  }
+  // 注意：**不能因为有缓存就提前 return**——切视图会重建整段 DOM，
+  // 早退会留下一个"展开但空白"的周。缓存里有数据就重铺一遍（不再发请求）。
+  body.innerHTML = '';
+  let blocks = 0;
+  for (const sec of d.sections) {
+    const el = buildWeekBlock(sec, {
+      prefix: `hb-${key}-sec`,
+      personPrefix: `hb-${key}-p`,
+      historic: true,
+      hasAssignments: false,
+      delay: blocks * 55,
+      onChanged: () => { weekManage.delete(key); hydrateWeek(key); },
+    });
+    if (el) { body.appendChild(el); blocks++; }
+  }
+  if (!blocks) body.innerHTML = '<div class="rm-note">这一周没有录音。</div>';
+}
+
+function renderManage() {
+  if (!manageData) return;
+  renderHero(manageData);
+  renderAssignments(manageData);
+  renderMissing(manageData);
+  renderWeek(manageData);
+  renderHistory();
+  sweepWaveRecords();
+}
+
+function openAssignPanel(open) {
+  byId('as-panel').hidden = !open;
+  byId('as-open').setAttribute('aria-expanded', String(open));
+  if (open) {
+    fillAssignSection();
+    fillAssignPiece();
+    byId('as-title').value = '';
+    byId('as-piece').value = '';
+    byId('as-sec').focus();
+  }
+}
+
+function fillAssignPiece() {
+  const sel = byId('as-piece');
+  if (!sel) return;
+  const keep = sel.value;
+  BAND.fillSelect(sel, pieces.map((p) => ({ value: p.id, label: p.title })), '基本功 · 无曲目');
+  if (keep && pieces.some((p) => String(p.id) === keep)) sel.value = keep;
+}
+
+function fillAssignSection() {
+  const sel = byId('as-sec');
+  if (!sel) return;
+  let list = sections;
+  if (me.role === 'SECTION_LEADER') {
+    list = sections.filter((s) => s.id === me.sectionId);
+    sel.disabled = true;   // 声部长只能给自己声部布置（服务端再判一次）
+  } else {
+    sel.disabled = false;
+  }
+  const keep = sel.value;
+  BAND.fillSelect(sel, list.map((s) => ({ value: s.id, label: s.name })));
+  if (keep && list.some((s) => String(s.id) === keep)) sel.value = keep;
+}
+
+async function loadSections() {
+  try { sections = await BAND.must('/api/sections'); }
+  catch (e) { sections = []; }
+  fillAssignSection();
+}
+
+function findAssignment(id) {
+  return (manageData && manageData.assignments || []).find((a) => String(a.id) === String(id));
+}
+
+async function reloadManage() {
+  try { await loadManage(); } catch (e) { /* BAND.must 已提示 */ }
+}
+
+async function createAssignment() {
+  const sectionId = Number(byId('as-sec').value);
+  const title = byId('as-title').value.trim();
+  const pieceValue = byId('as-piece').value;
+  if (!sectionId) { BAND.toast('先选声部', 'warning'); return; }
+  if (!title) { BAND.toast('作业名不能为空', 'warning'); byId('as-title').focus(); return; }
+  const btn = byId('as-save');
+  btn.disabled = true;
+  try {
+    await BAND.must('/api/recordings/assignments', {
+      method: 'POST',
+      body: { sectionId, title, pieceId: pieceValue ? Number(pieceValue) : null },
+    });
+    BAND.toast('已布置', 'success');
+    openAssignPanel(false);
+    await refreshAssignments();
+    await reloadManage();
+  } catch (e) {
+    /* BAND.must 已提示 */
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteAssignment(a) {
+  if (!a) return;
+  if (!a.canDelete) { BAND.toast(`已有 ${a.submittedCount} 人提交，不能删除`, 'warning'); return; }
+  if (!await BAND.confirm({ title: '删掉这条作业？', body: a.title })) return;
+  try {
+    await BAND.must(`/api/recordings/assignments/${a.id}`, { method: 'DELETE' });
+    BAND.toast('已删除', 'success');
+    await refreshAssignments();
+    await reloadManage();
+  } catch (e) { /* BAND.must 已提示 */ }
+}
+
+function startRename(chip, a) {
+  if (!chip || !a || chip.dataset.editing) return;
+  chip.dataset.editing = '1';
+  chip.innerHTML = `<span class="as-chip-main">
+      <input class="as-rename" maxlength="64" aria-label="作业名" value="${escHtml(a.title)}">
+    </span>
+    <span class="as-chip-ops">
+      <button class="as-op" type="button" data-rename-save>保存</button>
+      <button class="as-op" type="button" data-rename-cancel>取消</button>
+    </span>`;
+  const input = chip.querySelector('input');
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const next = input.value.trim();
+    if (!save || !next || next === a.title) { renderAssignments(manageData); return; }
+    try {
+      await BAND.must(`/api/recordings/assignments/${a.id}`, {
+        method: 'PUT',
+        body: { title: next, pieceId: a.pieceId },
+      });
+      BAND.toast('已改名', 'success');
+      await refreshAssignments();
+      await reloadManage();
+    } catch (e) {
+      renderAssignments(manageData);
+    }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  chip.querySelector('[data-rename-save]').addEventListener('mousedown', (e) => e.preventDefault());
+  chip.querySelector('[data-rename-save]').addEventListener('click', (e) => { e.preventDefault(); finish(true); });
+  chip.querySelector('[data-rename-cancel]').addEventListener('mousedown', (e) => e.preventDefault());
+  chip.querySelector('[data-rename-cancel]').addEventListener('click', (e) => { e.preventDefault(); finish(false); });
+  input.focus();
+  input.select();
+}
+
+function jumpToPerson(sid, mid) {
+  closedSections.delete(String(sid));
+  const bodyId = `wk-p-${sid}-${mid}`;
+  openPersons.add(bodyId);
+  const secBody = byId(`wk-sec-${sid}`);
+  const secBtn = document.querySelector(`[data-sec-toggle="${sid}"]`);
+  if (secBody) secBody.hidden = false;
+  if (secBtn) secBtn.setAttribute('aria-expanded', 'true');
+  const pbody = byId(bodyId);
+  if (pbody) pbody.hidden = false;
+  const row = document.querySelector(`[data-ptoggle="${bodyId}"]`);
+  if (!row) {
+    // 零录音的人不渲染人名行（样张同款）：给个提示，别让点击像"没反应"
+    const sec = (manageData?.sections || []).find((s) => String(s.sectionId) === String(sid));
+    const m = sec && sec.members.find((x) => String(x.memberId) === String(mid));
+    BAND.toast(`${m ? m.name : '这位成员'} 本周还没有上传录音`, 'warning');
+    return;
+  }
+  row.setAttribute('aria-expanded', 'true');
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.focus({ preventScroll: true });
+}
+
+/* —— 上传表单的「关联本周作业」+ 本周练习卡（#238）—— */
+async function refreshAssignments() {
+  if (!me) return;
+  renderWeekCard();
+  if (me.role === 'HONORARY') return;
+  const gen = ++assignGen;
+  assignStatus = 'loading';
+  renderWeekCard();
+  try {
+    const list = await BAND.must('/api/recordings/assignments/current');
+    if (gen !== assignGen) return;             // 旧响应晚到：丢弃
+    currentAssignments = Array.isArray(list) ? list : [];
+    assignStatus = 'ok';
+  } catch (e) {
+    if (gen !== assignGen) return;
+    assignStatus = 'error';                    // 失败**不当空态**：旧数据保留
+  }
+  syncAssignSelect();
+  renderWeekCard();
+}
+
+function syncAssignSelect() {
+  const sel = byId('u-assign');
+  const hint = byId('u-hint');
+  if (!sel) return;
+  const keep = sel.value;
+  if (assignStatus === 'error' && !currentAssignments.length) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '本周作业加载失败；可直接录普通练习，稍后再试。';
+    hint.hidden = false;
+    return;
+  }
+  BAND.fillSelect(sel,
+    currentAssignments.map((a) => ({ value: a.id, label: a.title + (a.pieceTitle ? ' · ' + a.pieceTitle : ' · 基本功') })),
+    '不关联本周作业');
+  if (!me.sectionId) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '你没有所属声部，不参与本周作业。';
+    hint.hidden = false;
+  } else if (!currentAssignments.length) {
+    sel.disabled = true;
+    sel.value = '';
+    hint.textContent = '本周未布置作业，按普通录音上传即可。';
+    hint.hidden = false;
+  } else {
+    sel.disabled = false;
+    const pick = currentAssignments.find((a) => String(a.id) === keep)
+      || currentAssignments.find((a) => !a.linked);
+    sel.value = pick ? String(pick.id) : '';
+    syncAssignPiece();
+    if (!pick) {
+      hint.textContent = '本周作业都已关联过，可再传一条补充。';
+      hint.hidden = false;
+    }
+  }
+  // #264：批量编辑中刷新作业列表，不能把**当前项**已选的关联改掉（重填选项后要回写草稿值）
+  const active = (typeof activeFileItem === 'function') ? activeFileItem() : null;
+  if (active) {
+    const want = (active.d && active.d.assignId) || '';
+    if (Array.from(sel.options).some((o) => o.value === want)) sel.value = want;
+  }
+}
+
+/* —— #238 本周练习卡：只读 `current` 接口；日期范围接口没有，本轮不显示 —— */
+function weekRow(a) {
+  const row = document.createElement('div');
+  row.className = 'rc-week-row' + (a.linked ? ' is-done' : '');
+  const dot = document.createElement('span');
+  dot.className = 'rc-week-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const tx = document.createElement('span');
+  tx.className = 'rc-week-tx';
+  const t = document.createElement('b');
+  t.className = 'rc-week-t';
+  t.textContent = a.title;
+  const p = document.createElement('span');
+  p.className = 'rc-week-p';
+  p.textContent = a.pieceId ? (a.pieceTitle || '曲目') : '基本功 · 无曲目';
+  tx.append(t, p);
+  const st = document.createElement('span');
+  st.className = 'rc-week-st';
+  st.textContent = a.linked ? '已交' : '未交';
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'rc-btn rc-btn-line rc-btn-sm rc-week-go';
+  go.dataset.weekGo = String(a.id);
+  go.textContent = a.linked ? '再录一条' : '去录音';
+  row.append(dot, tx, st, go);
+  return row;
+}
+
+function renderWeekCard() {
+  const card = byId('week-card');
+  if (!card) return;
+  const show = !!me && me.role !== 'HONORARY' && view === 'mine';
+  card.hidden = !show;
+  if (!show) return;
+  const host = byId('week-list');
+  const sum = byId('week-sum');
+  const note = byId('week-note');
+  host.textContent = '';
+  sum.textContent = '';
+  note.textContent = '';
+  note.hidden = true;
+  if (me.status === 'PAUSED') {
+    note.textContent = '休团期间免交录音作业';
+    note.hidden = false;
+    return;
+  }
+  if (!me.sectionId) {
+    note.textContent = '你没有所属声部，不参与本周作业。';
+    note.hidden = false;
+    return;
+  }
+  if (assignStatus === 'error' && !currentAssignments.length) {
+    note.textContent = '本周练习加载失败。';
+    note.hidden = false;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'rc-btn rc-btn-line rc-btn-sm rc-week-retry';
+    retry.textContent = '重试';
+    retry.addEventListener('click', () => { refreshAssignments(); });
+    note.appendChild(retry);
+    return;
+  }
+  if (!currentAssignments.length) {
+    note.textContent = assignStatus === 'loading' ? '正在加载本周练习…' : '本周未布置作业。';
+    note.hidden = false;
+    return;
+  }
+  const done = currentAssignments.filter((a) => a.linked).length;
+  sum.textContent = done + ' / ' + currentAssignments.length + ' 项已提交';
+  for (const a of currentAssignments) host.appendChild(weekRow(a));
+  if (assignStatus === 'error') {
+    note.textContent = '更新失败，显示的是上一次的练习。';
+    note.hidden = false;
+  }
+}
+
+byId('week-card').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-week-go]');
+  if (!btn) return;
+  const a = currentAssignments.find((x) => String(x.id) === btn.dataset.weekGo);
+  if (!a) return;
+  if (recState !== 'idle' || pendingTake || uploading || probing || (batch && batch.items.length)) {
+    BAND.toast('先完成或丢弃当前这条录音');
+    return;
+  }
+  setScreen('detail');
+  const sel = byId('u-assign');
+  sel.value = String(a.id);
+  assignTouched = true;          // 从作业明确进入：这批文件可带同一个作业作初值（#264）
+  syncAssignPiece();
+  if (nameMode === 'auto') applyAutoName();
+  byId('upload-box').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  byId('u-title').focus({ preventScroll: true });
+});
+
+function syncAssignPiece() {
+  const sel = byId('u-assign');
+  const pieceSel = byId('u-piece');
+  const hint = byId('u-hint');
+  const a = currentAssignments.find((x) => String(x.id) === sel.value);
+  if (!a) {
+    pieceSel.disabled = false;
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+  if (a.pieceId) {
+    pieceSel.value = String(a.pieceId);
+    pieceSel.disabled = true;
+    hint.textContent = '曲目由作业决定：' + (a.pieceTitle || '');
+  } else {
+    pieceSel.value = '';
+    pieceSel.disabled = true;
+    hint.textContent = '这条作业是基本功，不关联曲目。';
+  }
+  hint.hidden = false;
+}
+
+/* ============================================================
+   #250 录音自动命名（行为以 docs/08 §8.4「录音自动命名」为准）
+   ------------------------------------------------------------
+   - 站内只认一个主名称：输入 / 试听 / 上传快照 / 实际列表同名；
+     原文件名只收在「查看录音来源」里，不再是第二个可见名称。
+   - 自动建议 = `曲目或练习内容 · 小节或段落 · 速度`（` · ` 连接，空段省略）。
+   - 本机文件两种依据：沿用文件名 / 按练习信息；页面录音固定按练习信息。
+   - 自动 / 手动是 UI 投影：手写即关自动；重新开自动 = 明确覆盖、按当前依据重算。
+   - 速度是名称注记，不是音频处理；「写入名称」是独立开关。
+   ============================================================ */
+const AUDIO_EXT_RE = /\.(m4a|mp3|wav)$/i;
+let nameErr = { badRange: false, badSpeed: false };
+
+function fileBaseName(name) {
+  const base = String(name || '').trim().replace(AUDIO_EXT_RE, '').trim();
+  return base || '录音';
+}
+
+/** 纯整数 / 整数范围统一成「17–32小节」；已有文字 / 段落原意保留；起点大于终点保留原文并提示。 */
+function normSection(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { text: '', badRange: false };
+  let m = s.match(/^(\d+)\s*[-–—~～]\s*(\d+)$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    return a <= b
+      ? { text: `${a}–${b}小节`, badRange: false }
+      : { text: s, badRange: true };
+  }
+  m = s.match(/^(\d+)$/);
+  if (m) return { text: `${Number(m[1])}小节`, badRange: false };
+  return { text: s, badRange: false };
+}
+
+/** 连续去重：80,80,100,80 → 80→100（名称片段由调用方补 BPM）。 */
+function bpmSeqText(list) {
+  const seq = [];
+  for (const raw of (list || [])) {
+    const n = Math.round(Number(raw));
+    if (!n) continue;
+    if (!seq.length || seq[seq.length - 1] !== n) seq.push(n);
+  }
+  return seq.join('→');
+}
+
+function recordBpm(v) {
+  if (recState !== 'recording') return;      // 暂停中调速不计（恢复时再记当前值）
+  const n = Math.round(Number(v));
+  if (!n) return;
+  if (!recBpms.length || recBpms[recBpms.length - 1] !== n) recBpms.push(n);
+}
+
+/** 速度注记校验：正整数或 → 分隔序列，各值 30–240；空值 = 不注明。 */
+function normSpeed(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { text: '', bad: false };
+  const parts = s.split('→').map((x) => x.trim());
+  if (parts.some((p) => !/^\d+$/.test(p))) return { text: s, bad: true };
+  const values = parts.map(Number);
+  return { text: values.join('→'), bad: values.some((n) => n < 30 || n > 240) };
+}
+
+/** 业务控件提供的「曲目或练习内容」：作业实际曲名 → 基本功作业标题 → 选中曲目。 */
+function currentNameSource() {
+  const sel = byId('u-assign');
+  const a = sel && sel.value ? currentAssignments.find((x) => String(x.id) === sel.value) : null;
+  if (a) return a.pieceId ? (a.pieceTitle || a.title || '') : (a.title || '');
+  const pieceSel = byId('u-piece');
+  if (pieceSel && pieceSel.value) {
+    const opt = pieceSel.options[pieceSel.selectedIndex];
+    return opt ? opt.textContent.trim() : '';
+  }
+  return '';
+}
+
+/** 页面录音 / 未选来源时固定按练习信息；只有本机文件才有「命名依据」二选一。 */
+function effectiveBasis() {
+  const t = activeTake();
+  return t && t.source === 'file' ? nameBasis : 'practice';
+}
+
+function suggestRecName() {
+  const t = activeTake();
+  if (effectiveBasis() === 'file' && t && t.source === 'file') {
+    return { name: fileBaseName(t.name), badRange: false, badSpeed: false };
+  }
+  const parts = [];
+  let content = currentNameSource();
+  if (!content) content = byId('u-content').value.trim();
+  if (!content) content = '自由练习';
+  parts.push(content);
+
+  const sec = normSection(byId('u-section').value);
+  if (sec.text) parts.push(sec.text);
+
+  let badSpeed = false;
+  if (includeSpeed) {
+    const sp = normSpeed(byId('u-speed').value);
+    if (sp.text) parts.push(sp.text + ' BPM');
+    badSpeed = sp.bad;
+  }
+  return { name: parts.join(' · '), badRange: sec.badRange, badSpeed };
+}
+
+function paintNameCount() {
+  const c = byId('u-name-count');
+  if (c) c.textContent = byId('u-title').value.length + ' / 64';
+}
+
+function paintNameMode(animate) {
+  const state = byId('u-name-state');
+  if (!state) return;
+  state.textContent = nameMode === 'manual' ? '手动命名' : '自动命名';
+  state.classList.toggle('manual', nameMode === 'manual');
+  // 回显一律走共用开关的接口：直接写 checked 不触发 change，弹簧内部目标会停在旧值。
+  // animate 只在「用户手写把自动关掉」时传，其余回显（初始化 / 复位）直接归位，不演戏。
+  BAND.switch(byId('u-name-auto'))?.setChecked(nameMode === 'auto', { animate: !!animate });
+  paintNameCount();
+}
+
+function paintTitleNote(badRange, badSpeed, tooLong) {
+  const note = byId('u-name-note');
+  if (!note) return;
+  const msgs = [];
+  if (tooLong) msgs.push('名称最多 64 字，请缩短后上传');
+  if (badRange) msgs.push('小节范围的起点大于终点，已按原文保留');
+  if (badSpeed) msgs.push('速度注记只收 30–240 的整数，多速用 → 分隔');
+  if (msgs.length) {
+    note.textContent = msgs.join('；');
+    note.classList.add('warn');
+  } else {
+    note.textContent = nameMode === 'manual'
+      ? '已保留当前名称；开启自动命名会按当前信息重算并替换它。'
+      : '按当前信息自动补名；直接改名会切换为手动。';
+    note.classList.remove('warn');
+  }
+  note.hidden = false;
+}
+
+/** 来源折叠：本机文件给完整原文件名（只用于核对），页面录音只标来源类别。 */
+function paintSource() {
+  const box = byId('u-src');
+  if (!box) return;
+  const t = activeTake();
+  if (!t) { box.hidden = true; box.open = false; return; }
+  box.hidden = false;
+  const name = byId('u-src-name');
+  const note = byId('u-src-note');
+  if (t.source === 'file') {
+    name.textContent = '原文件：' + (t.name || '');
+    if (note) note.hidden = false;
+  } else {
+    name.textContent = '来源：页面内录音';
+    if (note) note.hidden = true;
+  }
+}
+
+/** 试听卡主名称 = 当前待提交标题（空 → “未命名”）；来源只标类别。 */
+function paintPreviewName() {
+  const rvName = byId('rv-name');
+  if (!rvName) return;
+  rvName.textContent = byId('u-title').value.trim() || '未命名';
+  const src = byId('rv-src');
+  const t = activeTake();
+  if (src) src.textContent = t
+    ? (t.source === 'file' ? '本机文件' : '页面内录音')
+    : '';
+  paintSource();
+}
+
+function syncNamingSwitches() {
+  BAND.switch(byId('u-name-auto'))?.setChecked(nameMode === 'auto');
+  BAND.switch(byId('u-speed-include'))?.setChecked(includeSpeed);
+  document.querySelectorAll('input[name="u-basis"]').forEach((r) => {
+    r.checked = r.value === nameBasis;
+  });
+}
+
+/** 依据 / 辅助字段的显隐：只按来源与依据，不丢任何已填草稿。 */
+function syncNamingFields() {
+  const t = activeTake();
+  const fileTake = !!(t && t.source === 'file');
+  const basis = effectiveBasis();
+  const box = byId('u-basis');
+  if (box) box.hidden = !fileTake;
+  const extra = byId('u-extra');
+  if (extra) extra.hidden = basis !== 'practice';
+  const contentField = byId('u-content-field');
+  // 练习内容只在「按练习信息命名」且没有作业 / 曲目提供内容时出现
+  if (contentField) contentField.hidden = basis !== 'practice' || !!currentNameSource();
+  syncNamingSwitches();
+  paintSource();
+}
+
+/** 自动模式才写标题；force=true 是用户重新打开「自动命名」（明确覆盖意图）。 */
+function applyAutoName(force) {
+  if (nameMode === 'manual' && !force) { paintNameMode(); paintPreviewName(); syncQueueTitle(); return; }
+  nameMode = 'auto';
+  const s = suggestRecName();
+  byId('u-title').value = s.name;               // 建议可以超 64：显示全量 + 就近提示，上传前拦截
+  nameErr = { badRange: s.badRange, badSpeed: s.badSpeed };
+  paintTitleNote(nameErr.badRange, nameErr.badSpeed, s.name.length > 64);
+  paintNameMode();
+  paintPreviewName();
+  syncQueueTitle();                             // #264：清单行的站内名称跟着自动名一起变
+}
+
+function resetNameMeta() {
+  nameMode = 'auto';
+  nameBasis = 'file';
+  includeSpeed = true;
+  speedManual = false;
+  recBpms = [];
+  nameErr = { badRange: false, badSpeed: false };
+  byId('u-title').value = '';
+  byId('u-content').value = '';
+  byId('u-section').value = '';
+  byId('u-speed').value = '';
+  syncNamingFields();
+  paintNameMode();
+  paintTitleNote(false, false, false);
+  paintPreviewName();
+}
+
+byId('u-title').addEventListener('input', () => {
+  nameMode = 'manual';                          // 手写优先：之后任何来源变化都不覆盖
+  paintNameMode(true);                          // 开关跟着滑到左边，与手点它同一套弹簧
+  paintTitleNote(false, false, byId('u-title').value.length > 64);
+  paintPreviewName();
+  syncQueueTitle();                             // #264：清单行标题实时跟着当前项
+});
+byId('u-name-auto').addEventListener('change', () => {
+  if (byId('u-name-auto').checked) {
+    applyAutoName(true);                        // 重新打开 = 按当前来源与依据真正重算替换
+  } else {
+    nameMode = 'manual';                        // 关闭只改模式：逐字保留当前名称
+    paintNameMode();
+    paintTitleNote(false, false, byId('u-title').value.length > 64);
+    paintPreviewName();
+  }
+});
+document.querySelectorAll('input[name="u-basis"]').forEach((r) => {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;                     // 选中已选中的依据：状态不变
+    nameBasis = r.value;
+    syncNamingFields();
+    if (nameMode === 'auto') applyAutoName();
+  });
+});
+for (const id of ['u-content', 'u-section']) {
+  byId(id).addEventListener('input', () => { if (nameMode === 'auto') applyAutoName(); });
+}
+byId('u-speed').addEventListener('input', () => {
+  speedManual = true;                           // 人工注明优先：快照 / 后台刷新不再替换
+  if (nameMode === 'auto') applyAutoName();
+});
+byId('u-speed-include').addEventListener('change', () => {
+  includeSpeed = byId('u-speed-include').checked;
+  if (nameMode === 'auto') applyAutoName();     // 只控制速度片段，不代切自动命名
+});
+byId('u-piece').addEventListener('change', () => {
+  if (nameMode === 'auto') applyAutoName();
+  syncNamingFields();                           // 曲目 → 练习内容字段的显隐
+  saveActiveDraft();
+});
+
+/* ---- 点评线（就地展开，平铺按时间，不做父子嵌套 —— docs/08 §8.4） ---- */
+async function drawComments(r, box) {
+  const d = await BAND.must(`/api/recordings/${r.id}`);
+  box.innerHTML = '';
+  if (d.comments.length) {
+    for (const c of d.comments) {
+      const div = document.createElement('div');
+      div.className = 'rc-th-item';
+      const who = document.createElement('span'); who.className = 'rc-th-who'; who.textContent = c.authorName;
+      const tx = document.createElement('span'); tx.className = 'rc-th-tx'; tx.textContent = c.content;
+      div.append(who, tx);
+      box.appendChild(div);
+    }
+  } else {
+    const none = document.createElement('div');
+    none.className = 'rc-th-none'; none.textContent = '还没有点评';
+    box.appendChild(none);
+  }
+  const ip = document.createElement('div');
+  ip.className = 'rc-th-in';
+  const input = document.createElement('input');
+  input.maxLength = 200;
+  input.placeholder = '说点什么（能听到这段录音的人都能说）';
+  input.setAttribute('aria-label', '点评');
+  const send = document.createElement('button');
+  send.className = 'rc-btn rc-btn-primary rc-btn-sm';
+  send.type = 'button';
+  send.textContent = '发送';
+  send.addEventListener('click', async () => {
+    const v = input.value.trim();
+    if (!v) return;
+    await BAND.must(`/api/recordings/${r.id}/comments`, { method: 'POST', body: { content: v } });
+    input.value = '';
+    await drawComments(r, box);
+    const cardEl = box.closest('.rc-rec');
+    if (cardEl) cardEl.querySelector('.rc-tp').textContent = `点评（${box.querySelectorAll('.rc-th-item').length}）`;
+  });
+  ip.append(input, send);
+  box.appendChild(ip);
+}
+
+function toggleThread(r, el, btn) {
+  const box = el.querySelector('.rc-thread');
+  const open = !box.hidden;                       // 同一时刻只展开一条
+  qsa('.rc-thread').forEach((b) => { b.hidden = true; });
+  qsa('.rc-tp').forEach((b) => { b.setAttribute('aria-expanded', 'false'); b.classList.remove('on'); });
+  if (!open) {
+    box.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    btn.classList.add('on');
+    drawComments(r, box);
+  }
+}
+
+/* ============================================================
+   屏二 · 录音台
+   ============================================================ */
+/* ---- 录音状态机（docs/08 §8.4 ②）----
+   ⚠️ 秒数**只算真正录进去的时间**：`recordedMs` 是已结算的段，`segStart` 是当前段起点。
+      暂停时把当前段结算进 `recordedMs` 并把 `segStart` 置空 ⇒ 时间自然冻结，不必重排定时器。
+   ⚠️ 200ms ticker **只读不写**（不累加计数，只重画 `liveMs()`），暂停时它照跑也画不出增长。
+   ⚠️ 「录音停」不等于「节拍器停」：这里绝不碰节拍器的任何状态。 */
+let rdTimer = null;
+let recState = 'idle';      // idle | recording | paused | stopping
+let recordedMs = 0;
+let segStart = null;
+let recStream = null;
+let recUsable = true;       // 浏览器支持 audio/mp4 录音
+
+const recNow = () => (segStart == null ? 0 : performance.now() - segStart);
+const liveMs = () => recordedMs + recNow();
+function clockMs(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function recDemoStart() {
+  recordedMs = 0;
+  segStart = performance.now();
+  recState = 'recording';
+  recBpms = [];                   // 新录音：重开速度序列，不沿用上一条
+  recordBpm(metro.bpm);
+  if (!speedManual) byId('u-speed').value = String(metro.bpm);   // 开录前按当前设定预览注记
+  byId('rec-prep').hidden = true;      // #265：开始录音后收起准备区，只看计时 / 暂停 / 停止
+  byId('recdemo').classList.add('on');
+  byId('recdemo').classList.remove('paused');
+  byId('rd-time').textContent = '0:00';
+  byId('rd-note').textContent = '正在录…';
+  const pauseBtn = byId('rd-pause');
+  pauseBtn.textContent = '暂停';
+  pauseBtn.setAttribute('aria-pressed', 'false');
+  pauseBtn.disabled = false;
+  const wave = byId('rd-wave');
+  wave.innerHTML = '';
+  for (let i = 0; i < 24; i++) {
+    const b = document.createElement('i');
+    b.style.height = (22 + Math.random() * 70) + '%';
+    b.style.animationDelay = (i * 0.05).toFixed(2) + 's';
+    wave.appendChild(b);
+  }
+  clearInterval(rdTimer);
+  rdTimer = setInterval(() => {
+    const ms = liveMs();
+    byId('rd-time').textContent = clockMs(ms);
+    if (recState === 'recording' && ms >= MAX_SECONDS * 1000) {
+      BAND.toast('已达 8:00 上限，已自动停止');
+      stopTake();
+    }
+  }, 200);
+}
+
+function recDemoStop() {
+  clearInterval(rdTimer); rdTimer = null;
+  byId('recdemo').classList.remove('on', 'paused');
+  byId('rd-pause').disabled = false;
+  byId('rec-prep').hidden = false;     // #265：停止后准备区回来（可再录一条）
+}
+
+function setPausedUI(paused) {
+  byId('recdemo').classList.toggle('paused', paused);
+  const btn = byId('rd-pause');
+  btn.textContent = paused ? '继续' : '暂停';
+  btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  byId('rd-note').textContent = paused ? '已暂停 · 节拍器照常' : '正在录…';
+}
+
+/* 暂停能力探测：老浏览器没有 `pause()`、或调了状态没变 ⇒ **只禁用按钮，录音继续、不丢内容**。 */
+function pauseUnsupported() {
+  const btn = byId('rd-pause');
+  btn.disabled = true;
+  btn.textContent = '不支持暂停';
+  BAND.toast('本机浏览器不支持暂停录音，这条只能连续录');
+}
+
+function togglePause() {
+  if (recState === 'recording') {
+    try {
+      if (!recorder || typeof recorder.pause !== 'function') throw new Error('no pause');
+      recorder.pause();
+    } catch (e) {
+      pauseUnsupported();
+      return;
+    }
+    if (recorder.state !== 'paused') { pauseUnsupported(); return; }
+    recordedMs += recNow();
+    segStart = null;
+    recState = 'paused';
+    setPausedUI(true);
+    return;
+  }
+  if (recState === 'paused') {
+    try {
+      recorder.resume();
+    } catch (e) {
+      BAND.toast('继续录音失败，请点「停止」保存这一段');
+      return;
+    }
+    if (recorder.state !== 'recording') {
+      BAND.toast('继续录音失败，请点「停止」保存这一段');
+      return;
+    }
+    segStart = performance.now();
+    recState = 'recording';
+    recordBpm(metro.bpm);            // 暂停中调过的速度从“恢复录音”这一刻才计入
+    setPausedUI(false);
+    const note = byId('rd-note');
+    note.textContent = '继续录音…';
+    setTimeout(() => { if (recState === 'recording') note.textContent = '正在录…'; }, 1200);
+  }
+}
+
+function stopStream() {
+  if (recStream) { recStream.getTracks().forEach((t) => t.stop()); recStream = null; }
+}
+
+function stopTake() {
+  if (recState === 'stopping' || recState === 'idle') return;
+  if (!recorder) { recState = 'idle'; stopStream(); recDemoStop(); return; }
+  const wasPaused = recState === 'paused';
+  recState = 'stopping';
+  clearInterval(rdTimer); rdTimer = null;
+  // 暂停中停止：先 resume 再 stop —— 部分浏览器在 paused 态直接 stop 会丢最后一段
+  if (wasPaused) {
+    try { recorder.resume(); } catch (e) { /* 继续不了也要停：停是主诉求 */ }
+  }
+  try {
+    recorder.stop();
+  } catch (e) {
+    recorder = null;
+    recState = 'idle';
+    recordedMs = 0;
+    segStart = null;
+    chunks = [];
+    stopStream();
+    recDemoStop();
+    BAND.toast('这段录音没能保存，请重录一次');
+  }
+}
+
+/* 录音失败的原因分流（docs/08 §8.4 / docs/18 §18.12）：
+   拒绝/占用/没有设备/非安全上下文要分开说——统一一句「拿不到麦克风权限」会让用户不知道去哪儿开。
+   常见名字一律翻成中文并给出**具体设置路径**；未知错误才回落成通用建议，不把英文名丢给用户。 */
+const REC_HINT_DEFAULT = '两条路，自己挑：对着手机现录，或者把本机已经录好的文件传上来。传上来之后声部长可以点评。';
+const REC_FAIL_HINTS = {
+  NotAllowedError: '麦克风被拦下了：点地址栏左侧的站点图标 → 麦克风 → 允许；若已允许，再到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风」打开，然后重新点「页面内录音」。',
+  PermissionDeniedError: '麦克风被拦下了：点地址栏左侧的站点图标 → 麦克风 → 允许；若已允许，再到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风」打开，然后重新点「页面内录音」。',
+  NotReadableError: '系统没把麦克风交给浏览器：到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风 → 仅在使用时允许」，回来重新点「页面内录音」。',
+  TrackStartError: '系统没把麦克风交给浏览器：到「设置 → 应用 → 当前浏览器 → 权限 → 麦克风 → 仅在使用时允许」，回来重新点「页面内录音」。',
+  NotFoundError: '没找到可用的麦克风：确认没有别的 App 占着麦克风，或换一台设备再试。',
+  DevicesNotFoundError: '没找到可用的麦克风：确认没有别的 App 占着麦克风，或换一台设备再试。',
+  SecurityError: '当前地址不是安全连接（https），浏览器禁止录音。请用 https 地址打开本站。',
+  NoMediaDevices: '这个浏览器不支持网页录音：请换 Chrome 打开本站，或改用「选择本机文件」上传。',
+};
+const REC_FAIL_FALLBACK = '麦克风没启动成功：请换 Chrome 或手机自带浏览器再试，或改用「选择本机文件」上传。';
+
+/* 桌面快捷方式 / WebView 环境自检（只做推断，不断言）：
+   - 自带浏览器建的快捷方式多半是受限 WebView：可能拦掉 getUserMedia，也可能根本没实现文件选择器；
+   - 国产内核的 UA 不一定带 `wv` 标记，所以面板**始终可见**，不能只靠自动判断。
+   - 网页不能替宿主授权、也不能强制它弹选择器 ⇒ 这里只负责说清原因并给出去 Chrome 的出路。 */
+let envWired = false;
+function envSnapshot() {
+  const ua = navigator.userAgent;
+  const appMatch = /ForBandApp\/([\d.]+)/i.exec(ua);
+  const nativeApp = !!appMatch;
+  const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches)
+    || navigator.standalone === true;
+  const webview = /;\s*wv\)/i.test(ua);
+  return {
+    ua,
+    standalone,
+    webview,
+    nativeApp,
+    appVersion: appMatch ? appMatch[1] : '',
+    // 官方 App 自己实现了麦克风与文件选择器，不能把它当成受限快捷方式
+    shellSuspected: /Android/i.test(ua) && !nativeApp && (standalone || webview),
+    secure: window.isSecureContext === true,
+    mic: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+    mp4: !!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')),
+  };
+}
+
+function envRow(dl, label, value) {
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  if (value && value.nodeType === 1) dd.appendChild(value);
+  else dd.textContent = value;
+  dl.append(dt, dd);
+}
+
+function initEnvPanel() {
+  if (envWired) return;
+  envWired = true;
+  const env = envSnapshot();
+  const list = byId('rc-env-list');
+  list.textContent = '';
+  envRow(list, '打开方式', env.nativeApp
+    ? '山水乐团 App'
+    : (env.standalone ? '独立窗口（桌面快捷方式）' : '浏览器标签页'));
+  if (env.nativeApp) envRow(list, 'App 版本', env.appVersion);
+  envRow(list, '安全连接', env.secure ? '是（https）' : '否');
+  envRow(list, '麦克风接口', env.mic ? '可用' : '不可用');
+  envRow(list, '网页录音格式', env.mp4 ? '支持 m4a' : '不支持');
+  envRow(list, 'WebView 标记', env.webview ? '检测到' : '未检测到');
+  const code = document.createElement('code');
+  code.textContent = env.ua;
+  envRow(list, '浏览器标识', code);
+  byId('rc-env-warn').hidden = !env.shellSuspected;
+  byId('rc-copy-url').addEventListener('click', copySiteUrl);
+}
+
+function copySiteUrl() {
+  const url = location.origin + location.pathname;
+  const fallback = () => {
+    const box = byId('rc-env-url');
+    box.value = url;
+    box.hidden = false;
+    byId('rc-env').open = true;
+    box.focus();
+    box.select();
+    BAND.toast('复制失败：请长按下面的网址手动复制');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => BAND.toast('网址已复制，粘贴到 Chrome 地址栏打开', 'success'))
+      .catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+function recHint(text, warn) {
+  const hint = byId('rec-hint');
+  if (!hint) return;
+  hint.textContent = text;
+  hint.classList.toggle('warn', !!warn);
+}
+function recFail(name) {
+  const env = envSnapshot();
+  let text = REC_FAIL_HINTS[name] || REC_FAIL_FALLBACK;
+  if (env.nativeApp && (name === 'NotAllowedError' || name === 'PermissionDeniedError')) {
+    // App 内没有地址栏，权限在系统设置里；不要沿用浏览器那条路径
+    text = '麦克风被拦下了：请到「设置 → 应用 → 山水乐团 → 权限 → 麦克风 → 仅在使用时允许」，'
+         + '再回来重新点「页面内录音」。';
+  } else if (env.nativeApp && (name === 'NotReadableError' || name === 'TrackStartError')) {
+    text = '系统没把麦克风交给 App：请到「设置 → 应用 → 山水乐团 → 权限 → 麦克风 → 仅在使用时允许」，'
+         + '并确认没有别的 App 占着麦克风，再重新点「页面内录音」。';
+  } else if (env.nativeApp && name === 'NoMediaDevices') {
+    text = '系统 WebView 不支持网页录音：请改用「选择本机文件」上传；'
+         + '也可更新系统的「Android System WebView」，再重启 App 试试。';
+  } else if (env.nativeApp && !REC_FAIL_HINTS[name]) {
+    text = '麦克风没启动成功：请改用「选择本机文件」上传，或退出 App 重进再试。';
+  } else if (env.shellSuspected && (name === 'NotAllowedError' || name === 'PermissionDeniedError')) {
+    // 快捷方式没有地址栏，原来的「点站点图标」路径不存在；直接指到应用权限，并给 Chrome 重装这条兜底
+    text = '麦克风被拦下了：这个桌面快捷方式多半来自手机自带浏览器，没有地址栏可改站点权限。'
+         + '请到「设置 → 应用 → 安装这个快捷方式的浏览器 → 权限 → 麦克风 → 仅在使用时允许」；'
+         + '找不到或仍不行，就删掉桌面图标，到「安装到手机」页下载官方 App（推荐），或用 Chrome 重新安装。';
+  }
+  recHint(text, true);
+  BAND.toast('麦克风没启动成功，原因见上方提示');
+}
+
+/**
+ * 录音：**先试 audio/mp4**——规格的音频白名单是 m4a/mp3/wav，而 Chrome 的 MediaRecorder 默认产出 webm（不在白名单）。
+ * 不支持就直接退回"选本地文件"，并**明说一句**，不许静默失败。
+ */
+async function startRecording() {
+  // ⚠️ #264：批量文件队列也算「已有未完成内容」——录音与批次互斥，不能让两条上下文并存。
+  if (recState !== 'idle' || pendingTake || (batch && batch.items.length)) return;
+  // 非 https / 老浏览器里 `mediaDevices` 整个不存在：直接说清楚，别等 getUserMedia 抛 TypeError
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    recFail('NoMediaDevices');
+    return;
+  }
+  // ⚠️ **"录音停"不等于"节拍器停"**（docs/08 §8.4）：两者各管各的——节拍器由用户自己按才停。
+  try {
+    // ⚠️ **必须显式关掉浏览器的语音处理**（docs/08 §8.4）：裸写 `{audio:true}` 会把回声消除 / 降噪 /
+    //    自动增益**全打开** —— 那三样是**为语音通话调的**：自动增益来回压电平、降噪把**乐器的弱音尾巴当噪声掐掉**、
+    //    回声消除连带压平乐器。给乐器录音，这是缺陷不是保守。代价（有意的取舍）：关掉回声消除 ⇒
+    //    **外放时节拍声必然进录音** ⇒ 所以要戴耳机。
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    // 等权限弹窗期间另一条已经进了试听卡 / 选了一批文件：这条不能再开（两条并存会让状态收敛不了）
+    if (pendingTake || recState !== 'idle' || (batch && batch.items.length)) {
+      stream.getTracks().forEach((t) => t.stop());
+      BAND.toast('先上传或丢弃这条');
+      return;
+    }
+    recHint(REC_HINT_DEFAULT, false);   // 权限已拿到：把上一次的失败指引收回去
+    chunks = [];
+    recStream = stream;
+    recorder = new MediaRecorder(stream, { mimeType: 'audio/mp4' });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const ms = liveMs();          // ⚠️ 先算秒数再清状态：清完就没了
+      recorder = null;
+      stopStream();
+      recDemoStop();
+      recState = 'idle';
+      recordedMs = 0;
+      segStart = null;
+      const blob = new Blob(chunks, { type: 'audio/mp4' });
+      chunks = [];
+      if (!blob.size) { BAND.toast('这段没录到声音，请重录一次'); return; }
+      const seconds = Math.min(MAX_SECONDS, Math.max(1, Math.round(ms / 1000)));
+      stageTake({
+        file: new File([blob], `take-${Date.now()}.m4a`, { type: 'audio/mp4' }),
+        url: URL.createObjectURL(blob),
+        seconds,
+        source: 'rec',
+        name: (byId('u-title').value.trim() || '未命名') + '.m4a',
+        bpms: recBpms.slice(),      // 停下这一刻的速度快照；之后再调节拍器不影响这条
+      });
+    };
+    recorder.start();
+    recDemoStart();
+    // 自动模式：开录前就给出按当前字段 + 当前速度的建议（手改过就不碰）
+    if (nameMode === 'auto') applyAutoName();
+  } catch (e) {
+    // 按 err.name 分流：站内拒绝 / 系统未授权 / 没有设备 / 非安全上下文，处理路径完全不同
+    recFail(e && e.name);
+  }
+}
+
+function setupRecorder() {
+  const btn = byId('pick-record');
+  const startBtn = byId('rec-start');
+  const supported = window.MediaRecorder && MediaRecorder.isTypeSupported('audio/mp4');
+  if (!supported) {
+    recUsable = false;
+    btn.disabled = true;
+    startBtn.disabled = true;
+    btn.querySelector('.rc-pick-s').textContent =
+      '这个浏览器不能直接录音（它录出来的格式系统不收）——请用手机录音机录好，再选本地文件上传。';
+    return;
+  }
+  // #265：入口只进入准备区，**不在这里请求麦克风**；按「开始录音」才走原流程。
+  btn.addEventListener('click', enterRecMode);
+  startBtn.addEventListener('click', () => startRecording());
+  byId('rd-stop').addEventListener('click', stopTake);
+  byId('rd-pause').addEventListener('click', togglePause);
+}
+
+/* ============================================================
+   #264 / #265 录音上传：页面录音（单条）+ 本机文件（批量队列）
+   ------------------------------------------------------------
+   规格：docs/08 §8.4「本机录音文件批量上传」；布局：docs/14 §14.6.4「上传录音工作区重排」。
+
+   三条硬约束（改这块之前先读）：
+   1. **一次只允许一个上下文**：页面录音 `pendingTake`（单条）或本机批次 `batch`，二选一。
+   2. **本页只有一个提交入口** `#rv-up`；多文件时它就叫「上传 N 条」，每行不另放上传按钮。
+   3. **上传并发为 1、按选择顺序逐项执行**；成功项不再重传，失败项保留草稿与已知 fileId。
+   ⚠️ 保存记录这一步**没有幂等键**：请求断线 ⇒ 结果待确认，**不许自动再 POST**，
+      只能用本人列表按 fileId 核对（`recheckUnknown`）。
+   ============================================================ */
+/* —— 工作区模式（#265）：来源入口 → 页面内录音 / 本机文件分支 —— */
+let wsMode = null;          // null = 来源入口 | 'rec' 页面内录音 | 'file' 本机文件批次
+let batch = null;           // {items:[], active:qid, seq, running, init}
+let appendFor = null;       // #268：本次「继续添加」点开时对应的批次对象（迟到选择防复活旧批）
+let assignTouched = false;  // 用户**主动**选过关联作业（不含 syncAssignSelect 的自动预选）
+
+function activeFileItem() {
+  return batch ? (batch.items.find((i) => i.qid === batch.active) || null) : null;
+}
+
+/** 当前编辑 / 试听的那一条：本机批次取当前项，录音分支取 pendingTake。 */
+function activeTake() {
+  if (wsMode === 'file') {
+    const it = activeFileItem();
+    return it ? { source: 'file', name: it.name, seconds: it.seconds } : null;
+  }
+  return pendingTake;
+}
+
+function hasDraft() {
+  // #268：全部成功且清单还留着时**没有未提交内容**——离开不该再弹「还没上传」；
+  // 但失败 / 待确认 / 待上传项仍算（它们必须被处理或显式关闭）。
+  return !!pendingTake || recState !== 'idle'
+    || !!(batch && batch.items.some((i) => i.status !== 'done'));
+}
+
+const rvAudio = byId('rv-audio');
+const rvPlay = byId('rv-play');
+const upMotion = BAND.dots(byId('rv-up'), {
+  busy: '正在上传', stage2: '正在保存记录', success: '已上传', error: '上传失败',
+}) || { start: () => true, stage() {}, setIdle() {}, success: () => Promise.resolve(), fail() {}, cancel() {} };
+const rvSeek = wireSeekPlayer(rvAudio, {
+  range: byId('rv-range'),
+  fill: byId('rv-fill'),
+  cur: byId('rv-cur'),
+  total: byId('rv-total'),
+  float: byId('rv-float'),
+  fallback: () => {
+    const t = activeTake();
+    return t && t.seconds ? t.seconds : 0;
+  },
+});
+attachWave(rvAudio, byId('rv-wave'));
+attachPlayerSize(byId('rc-review'));
+let probing = false;
+
+/* —— 工作区布局切换 + 按自身有效宽度适配（docs/14 §14.6.4 尺寸表，不看浏览器视口） —— */
+let wsRO = null;
+function attachWsWidth() {
+  const box = byId('upload-box');
+  if (!box) return;
+  const sync = () => {
+    const w = box.clientWidth;
+    if (w > 0) box.classList.toggle('narrow', w <= 650);
+  };
+  sync();
+  if (wsRO || typeof ResizeObserver === 'undefined') return;
+  wsRO = new ResizeObserver(sync);
+  wsRO.observe(box);
+}
+
+function applyWsMode() {
+  const src = byId('ws-sources');
+  const rec = byId('ws-rec');
+  const files = byId('ws-files');
+  if (src) src.hidden = wsMode !== null;
+  if (rec) rec.hidden = wsMode !== 'rec';
+  if (files) files.hidden = wsMode !== 'file';
+  const change = byId('ws-change');
+  if (change) change.hidden = wsMode === null;
+  const metro = byId('metro-card');
+  if (metro) metro.hidden = wsMode === 'file';     // 本机分支不展示无关节拍器
+  const slot = wsMode === 'file' ? byId('rv-slot-file') : byId('rv-slot-rec');
+  const review = byId('rc-review');
+  if (slot && review && review.parentElement !== slot) slot.appendChild(review);
+  // 命名 / 关联表单和试听卡一样是**两种来源共用**的：录音停止后也要能改名（#265）。
+  // 本机分支留在编辑列原位（试听槽之前）；页面内录音分支挪进它的槽位，排在试听卡前面。
+  const nameForm = byId('name-form');
+  if (nameForm) {
+    if (wsMode === 'rec' && slot) {
+      slot.insertBefore(nameForm, review);
+    } else {
+      const edit = byId('ws-edit');
+      const filSlot = byId('rv-slot-file');
+      if (edit && filSlot && nameForm.parentElement !== edit) edit.insertBefore(nameForm, filSlot);
+    }
+  }
+  const showOps = !!pendingTake || !!batch;
+  const ops = byId('ws-ops');
+  if (ops) ops.hidden = !showOps;
+  const note = byId('ws-note');
+  if (note) note.hidden = !showOps;
+  if (wsMode === 'file') renderQueue();
+  paintSubmit();
+  attachWsWidth();
+}
+
+/** 入口只进入准备区，**不请求麦克风**（docs/14 §14.6.4 #265）。 */
+function enterRecMode() {
+  if (recState !== 'idle') return;
+  if (pendingTake) { BAND.toast('先上传或丢弃这条'); return; }
+  if (batch) { BAND.toast('先上传或丢弃这批文件'); return; }
+  wsMode = 'rec';
+  applyWsMode();
+  const start = byId('rec-start');
+  if (start && !start.disabled) start.focus({ preventScroll: true });
+}
+
+function setPicksLocked(on) {
+  const picks = byId('ws-sources');
+  if (picks) {
+    picks.classList.toggle('busy', on);
+    picks.setAttribute('aria-disabled', on ? 'true' : 'false');
+  }
+  const recBtn = byId('pick-record');
+  if (recBtn) recBtn.disabled = on || !recUsable;
+  const fileIn = byId('u-file');
+  if (fileIn) fileIn.disabled = on;
+  const hint = byId('rc-pending-hint');
+  if (hint) hint.hidden = !on;
+}
+
+/** 上传中冻结本条命名 / 关联输入，避免实际 body 与按下时的预览漂移（#250）。 */
+function setNamingLocked(on) {
+  ['u-title', 'u-name-auto', 'u-speed-include', 'u-speed', 'u-section', 'u-content', 'u-assign', 'u-piece']
+    .forEach((id) => { const el = byId(id); if (el) el.disabled = on; });
+  document.querySelectorAll('input[name="u-basis"]').forEach((r) => { r.disabled = on; });
+  if (!on) { syncAssignSelect(); syncAssignPiece(); }   // 恢复作业 / 声部原有的禁用条件，不一刀切全开
+}
+
+/* ============================================================
+   页面录音分支：单条 take（#226 的 pendingTake 约束继续有效）
+   ============================================================ */
+function stageTake(take) {
+  const prevSource = pendingTake ? pendingTake.source : null;
+  if (pendingTake) releasePending();   // 兜底：正常路径入口已锁，到不了这里
+  upMotion.cancel();                    // 新一条录音：上传按钮回到待机文案，别留着上一条的勾
+  pendingTake = take;
+  if (take.source === 'file') {
+    // 重选 / 从页面录音转入：清掉上一来源的速度快照与人工注记；手写名称仍保留
+    if (prevSource) { byId('u-speed').value = ''; speedManual = false; }
+    if (nameMode === 'auto') applyAutoName();   // 依据 file → 去扩展名基名；practice → 练习信息
+  } else {
+    take.bpms = (take.bpms || []).slice();
+    wsMode = 'rec';
+    // 未人工覆盖时，把本条真正录下的速度快照写进注记字段（冻结在这一条）
+    if (!speedManual) byId('u-speed').value = bpmSeqText(take.bpms);
+    if (nameMode === 'auto') applyAutoName();
+  }
+  applyWsMode();
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();                       // 清掉上一条的缓冲，别让旧 metadata 混进来
+  rvAudio.src = take.url;
+  byId('rc-review').classList.add('on');
+  setPicksLocked(true);
+  paintPreviewName();
+  syncNamingFields();
+  paintSubmit();
+  rvSeek.repaint();
+}
+
+function releasePending() {
+  if (!pendingTake) return;
+  const url = pendingTake.url;
+  pendingTake = null;
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();
+  if (url) URL.revokeObjectURL(url);
+  byId('rc-review').classList.remove('on');
+  setPicksLocked(false);
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  syncNamingFields();
+  paintPreviewName();
+  paintSubmit();
+  rvSeek.repaint();
+}
+
+function dropTake() {
+  if (!pendingTake) return;
+  releasePending();
+  resetNameMeta();                     // 主动丢弃：标题 / 手改标记 / 速度快照 / 小节 / 练习内容一并清
+  BAND.toast('已丢弃');
+}
+
+function againTake() {
+  if (!pendingTake) return;
+  const source = pendingTake.source;
+  releasePending();
+  // 明确重录 / 重选才清掉上一条的录速快照与人工速度注记（手写整名保留）
+  byId('u-speed').value = '';
+  speedManual = false;
+  // 必须在用户手势内重新进入：录音直接开；本机文件回到来源入口重新选
+  if (source === 'rec') startRecording();
+  else { wsMode = null; applyWsMode(); }
+}
+
+/* ============================================================
+   本机文件分支：批量队列（#264）
+   ------------------------------------------------------------
+   队列项的 `d` 是**该项自己的草稿**；全局表单只是「当前项的编辑器」，
+   切项时先 saveActiveDraft() 再 loadActiveDraft()，A 的手写不串到 B。
+   ============================================================ */
+/**
+ * 一项的初值。`seed` = **批次创建时记录的共同初值**（#268）：
+ * 追加进来的新项只能沿用它（或没有关联），**不能**拿当前编辑项 A 的关联 / 手写标题冒充。
+ */
+function defaultDraft(file, seed) {
+  const init = seed || {
+    assignId: assignTouched ? (byId('u-assign').value || '') : '',
+    pieceId: assignTouched ? (byId('u-piece').value || '') : '',
+  };
+  return {
+    nameMode: 'auto', nameBasis: 'file', includeSpeed: true, speedManual: false,
+    title: fileBaseName(file.name), content: '', section: '', speed: '',
+    // ⚠️ 批量默认**不关联作业**：只有用户主动选过（或从「去录音」进入）才作共同初值。
+    assignId: init.assignId || '',
+    pieceId: init.pieceId || '',
+  };
+}
+
+function newFileItem(file, seed) {
+  return {
+    qid: 'q' + (++batch.seq),
+    file,
+    name: file.name,
+    url: null,
+    seconds: null,
+    probed: false,
+    probeGen: 0,
+    status: 'ready',      // ready | uploading | saving | done | failed | unknown
+    err: '',
+    fileId: null,         // 文件已落库、记录没存成功时保留，重试不再传文件
+    recordingId: null,
+    weekKey: null,
+    d: defaultDraft(file, seed),
+  };
+}
+
+function saveActiveDraft() {
+  const it = activeFileItem();
+  if (!it) return;
+  it.d = {
+    nameMode, nameBasis, includeSpeed, speedManual,
+    title: byId('u-title').value,
+    content: byId('u-content').value,
+    section: byId('u-section').value,
+    speed: byId('u-speed').value,
+    assignId: byId('u-assign').value,
+    pieceId: byId('u-piece').value,
+  };
+}
+
+function applyDraftToForm(it) {
+  const d = it.d || {};
+  nameMode = d.nameMode === 'manual' ? 'manual' : 'auto';
+  nameBasis = d.nameBasis === 'practice' ? 'practice' : 'file';
+  includeSpeed = d.includeSpeed !== false;
+  speedManual = !!d.speedManual;
+  nameErr = { badRange: false, badSpeed: false };
+  byId('u-title').value = d.title || '';
+  byId('u-content').value = d.content || '';
+  byId('u-section').value = d.section || '';
+  byId('u-speed').value = d.speed || '';
+  syncAssignSelect();                       // 先按当前作业数据重建选项（keep 会保留旧值）
+  const sel = byId('u-assign');
+  const want = d.assignId || '';
+  sel.value = Array.from(sel.options).some((o) => o.value === want) ? want : '';
+  syncAssignPiece();
+  const pieceSel = byId('u-piece');
+  const wantPiece = d.pieceId || '';
+  pieceSel.value = Array.from(pieceSel.options).some((o) => o.value === wantPiece) ? wantPiece : '';
+  syncNamingFields();
+  paintNameMode();
+  paintTitleNote(false, false, (d.title || '').length > 64);
+  paintPreviewName();
+}
+
+/** 列表行上的站内名称跟着当前项输入实时更新（不整表重画，免得抢焦点）。 */
+function syncQueueTitle() {
+  if (wsMode !== 'file' || !batch) return;
+  const it = activeFileItem();
+  if (!it) return;
+  it.d.title = byId('u-title').value;
+  const host = byId('ws-list');
+  const row = host ? host.querySelector('[data-qid="' + it.qid + '"] .rc-qi-t') : null;
+  if (row) row.textContent = byId('u-title').value.trim() || '（未命名）';
+}
+
+function statusText(it) {
+  switch (it.status) {
+    case 'uploading': return '正在上传文件…';
+    case 'saving': return '正在保存记录…';
+    case 'done': return '已上传';
+    case 'failed': return '失败 · ' + (it.err || '可重试');
+    case 'unknown': return '结果待确认';
+    default: return it.seconds == null ? '待上传 · 时长待确认' : '待上传';
+  }
+}
+
+function renderQueue() {
+  const host = byId('ws-list');
+  if (!host || !batch) return;
+  // 清单会整块重画（切项 / 状态变化 / 迟到探测结果都会触发）：把焦点留在原来的清单项上，
+  // 别让键盘用户每点一次就被丢回 body（docs/14 §14.6.4「焦点仍在点击项」）。
+  const focused = host.contains(document.activeElement)
+    ? document.activeElement.closest('[data-qid]') : null;
+  const keepQid = focused ? focused.dataset.qid : null;
+  host.innerHTML = '';
+  for (const it of batch.items) {
+    const row = document.createElement('div');
+    row.className = 'rc-qi';
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'rc-qi-main';
+    main.dataset.qid = it.qid;
+    main.setAttribute('aria-pressed', String(it.qid === batch.active));
+    const t = document.createElement('span');
+    t.className = 'rc-qi-t';
+    t.textContent = (it.d && it.d.title ? it.d.title.trim() : '') || '（未命名）';
+    const m = document.createElement('span');
+    m.className = 'rc-qi-m';
+    const st = document.createElement('span');
+    st.className = 'rc-qi-st ' + it.status;
+    st.textContent = statusText(it);
+    m.append(BAND.sizeText(it.file.size) + ' · ', st);
+    main.append(t, m);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'rc-qi-x';
+    x.dataset.remove = it.qid;
+    x.setAttribute('aria-label', '从本批移除 ' + it.name);
+    x.textContent = '×';
+    x.disabled = !!(batch.running) || ['uploading', 'saving', 'done'].includes(it.status);
+    row.append(main, x);
+    host.appendChild(row);
+  }
+  const n = byId('ws-count');
+  if (n) n.textContent = '（' + batch.items.length + ' 条）';
+  if (keepQid) {
+    const row = host.querySelector('[data-qid="' + keepQid + '"]');
+    if (row) row.focus({ preventScroll: true });
+  }
+  paintSubmit();
+}
+
+function paintSubmit() {
+  // 命名 / 关联表单只在**有未提交内容**时出现（无草稿首屏直接给两个来源入口）
+  const nameForm = byId('name-form');
+  if (nameForm) nameForm.hidden = !(pendingTake || batch);
+  if (!activeTake() && !batch) {
+    const ops = byId('ws-ops');
+    if (ops) ops.hidden = true;
+  }
+  if (wsMode === 'file' && batch) {
+    const items = batch.items;
+    const readyN = items.filter((i) => i.status === 'ready').length;
+    const failedN = items.filter((i) => i.status === 'failed').length;
+    const unknownN = items.filter((i) => i.status === 'unknown').length;
+    const doneN = items.filter((i) => i.status === 'done').length;
+    const sendN = readyN + failedN;
+    // 统一提交文案（#268）：只新增 →「上传 N 条」；只失败 →「重试失败 M 条」；
+    // 两者都有 →「上传并重试 K 条」（K = N + M），旁边再写清新增 / 重试各几条。
+    let label = '上传这条';
+    if (readyN && failedN) label = '上传并重试 ' + sendN + ' 条';
+    else if (readyN > 1) label = '上传 ' + readyN + ' 条';
+    else if (readyN === 0 && failedN > 0) label = '重试失败 ' + failedN + ' 条';
+    else if (sendN === 0 && unknownN) label = '重新核对';
+    else if (sendN === 0) label = '已上传';
+    upMotion.setIdle(label);
+    const msgs = [];
+    if (readyN && failedN) msgs.push('新增 ' + readyN + ' 条 · 失败重试 ' + failedN + ' 条');
+    if (doneN) msgs.push('已上传 ' + doneN + ' / ' + items.length);
+    if (failedN) msgs.push('失败 ' + failedN);
+    if (unknownN) msgs.push('待确认 ' + unknownN);
+    const msg = byId('ws-msg');
+    if (msg && !batch.running) msg.textContent = msgs.join(' · ');
+    const again = byId('rv-again');
+    if (again) again.hidden = true;
+    const drop = byId('rv-drop');
+    if (drop) {
+      // 全部成功但清单仍留着（#268）：这颗按钮变成「关闭清单」，关了之后才算这批结束
+      const allDone = doneN === items.length;
+      drop.textContent = allDone ? '关闭清单' : '丢弃未上传项';
+      drop.hidden = false;
+    }
+    const up = byId('rv-up');
+    // ⚠️ 执行中不许藏按钮：成勾动画就画在这颗按钮上
+    if (up) up.hidden = !batch.running && sendN === 0 && !unknownN;
+  } else {
+    upMotion.setIdle('上传这条');
+    const again = byId('rv-again');
+    if (again) {
+      again.hidden = false;
+      again.textContent = (pendingTake && pendingTake.source === 'rec') ? '重录' : '重选';
+    }
+    const drop = byId('rv-drop');
+    if (drop) { drop.hidden = false; drop.textContent = '丢弃'; }
+    const up = byId('rv-up');
+    if (up) up.hidden = false;
+    const msg = byId('ws-msg');
+    if (msg) msg.textContent = '';
+  }
+  paintAppendEntry();
+}
+
+/** #268：清单旁的「继续添加文件」只在**本机批次存在**时出现；执行 / 开麦 / 待处理单条时禁用并说明。 */
+function paintAppendEntry() {
+  const lab = byId('ws-add');
+  const input = byId('u-file-more');
+  const note = byId('ws-add-note');
+  const inFile = wsMode === 'file' && !!batch;
+  const busy = inFile && (batch.running || recState !== 'idle' || !!pendingTake);
+  if (lab) {
+    lab.hidden = !inFile;
+    lab.setAttribute('aria-disabled', inFile && !busy ? 'false' : 'true');
+  }
+  if (input) input.disabled = !inFile || busy;
+  if (note) note.hidden = !busy;
+}
+
+/** 探时长：4 秒内拿不到就交 null，**不阻断试听与上传**；结果绑定队列项与代际。 */
+function probeSeconds(url) {
+  return new Promise((resolve) => {
+    const a = document.createElement('audio');
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      a.removeAttribute('src');
+      try { a.load(); } catch (e) { /* 探测用节点，回收失败也无妨 */ }
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(null), 4000);
+    a.preload = 'metadata';
+    a.addEventListener('loadedmetadata', () => {
+      const d = a.duration;
+      finish(isFinite(d) && d > 0 ? Math.max(1, Math.round(d)) : null);
+    });
+    a.addEventListener('error', () => finish(null));
+    a.src = url;
+  });
+}
+
+async function probeItem(it) {
+  const gen = ++it.probeGen;
+  const url = URL.createObjectURL(it.file);   // 探测用独立 URL：切项释放试听 URL 不影响它
+  const seconds = await probeSeconds(url);
+  URL.revokeObjectURL(url);
+  if (gen !== it.probeGen) return;            // 项被移除 / 重新探测：迟到结果不串项
+  it.probed = true;
+  it.seconds = seconds;
+  if (activeFileItem() === it) {
+    renderQueue();
+    rvSeek.repaint();
+  }
+}
+
+/** 切项时只动当前编辑区：短距离（约 6px）位移 + 淡入 260ms（docs/14 §14.6.4「视觉与动效」）。 */
+function swapEditIn() {
+  const box = byId('ws-edit');
+  if (!box || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  box.classList.remove('rc-swap');
+  void box.offsetWidth;               // 重启动画：连续切项也要重新播
+  box.classList.add('rc-swap');
+}
+
+/** 切到某一项：先回存上一项草稿、释放上一项 URL，再加载目标项（不上传、不丢标题）。 */
+function activateItem(qid, opts = {}) {
+  if (!batch) return;
+  const prev = activeFileItem();
+  const switching = !!prev && prev.qid !== qid;
+  if (switching) {
+    saveActiveDraft();
+    if (prev.url) { URL.revokeObjectURL(prev.url); prev.url = null; }   // 按需创建、按项释放
+  }
+  batch.active = qid;
+  const it = activeFileItem();
+  if (!it) return;
+  if (!it.url) it.url = URL.createObjectURL(it.file);
+  applyDraftToForm(it);
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();
+  rvAudio.src = it.url;
+  byId('rc-review').classList.add('on');
+  rvSeek.repaint();
+  renderQueue();
+  if (switching) swapEditIn();
+  // 清单重画会换掉节点：用户点的那一项要把焦点还回去（docs/14 §14.6.4「焦点仍在点击项」）
+  if (opts.focus) {
+    const host = byId('ws-list');
+    const row = host && host.querySelector('[data-qid="' + qid + '"]');
+    if (row) row.focus({ preventScroll: true });
+  }
+  if (it.seconds == null && !it.probed) probeItem(it);
+  paintSubmit();
+}
+
+function removeItem(qid) {
+  if (!batch || batch.running) return;
+  const it = batch.items.find((i) => i.qid === qid);
+  if (!it) return;
+  if (it.status === 'done') {          // 已成功项：不能借「移除队列」暗中删服务器记录
+    BAND.toast('这条已经上传成功，要删请到录音墙');
+    return;
+  }
+  const idx = batch.items.indexOf(it);
+  const wasActive = batch.active === qid;
+  if (wasActive) batch.active = null;    // 先置空：避免 saveActiveDraft 写回已删项
+  if (it.url) { URL.revokeObjectURL(it.url); it.url = null; }
+  batch.items.splice(idx, 1);
+  if (!batch.items.length) { closeBatch(); BAND.toast('已移除本批文件'); return; }
+  if (wasActive) activateItem(batch.items[Math.min(idx, batch.items.length - 1)].qid);
+  else renderQueue();
+  paintSubmit();
+}
+
+/** 丢弃本批未上传项：只清本地，不删除已成功的服务器录音。 */
+function dropBatch() {
+  if (!batch || batch.running) return;
+  const hadDone = batch.items.some((i) => i.status === 'done');
+  const hadPending = batch.items.some((i) => i.status !== 'done');
+  for (const it of batch.items) {
+    if (it.status !== 'done' && it.url) URL.revokeObjectURL(it.url);
+  }
+  closeBatch();
+  if (!hadPending) BAND.toast('已关闭清单；已上传的录音保留');
+  else BAND.toast(hadDone ? '已丢弃未上传项；已上传的录音保留' : '已丢弃本批文件');
+}
+
+function closeBatch() {
+  if (batch) {
+    for (const it of batch.items) if (it.url) URL.revokeObjectURL(it.url);
+  }
+  batch = null;
+  appendFor = null;          // #268：关闭后迟到的选择不得复活旧批
+  wsMode = null;
+  byId('rc-review').classList.remove('on');
+  rvAudio.pause();
+  rvAudio.removeAttribute('src');
+  rvAudio.load();
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  const rej = byId('ws-rejects');
+  if (rej) { rej.hidden = true; rej.textContent = ''; }
+  resetNameMeta();
+  assignTouched = false;
+  applyWsMode();
+  rvSeek.repaint();
+}
+
+function renderRejects(bad) {
+  const box = byId('ws-rejects');
+  if (!box) return;
+  box.textContent = '';
+  if (!bad || !bad.length) { box.hidden = true; return; }
+  const b = document.createElement('b');
+  b.textContent = bad.length + ' 个文件没有加入本批';
+  const ul = document.createElement('ul');
+  for (const x of bad) {
+    const li = document.createElement('li');
+    li.textContent = x.name + '：' + x.why;
+    ul.appendChild(li);
+  }
+  box.append(b, ul);
+  box.hidden = false;
+}
+
+/* —— #268 同一批次空闲追加：首次选择与追加共用预检 / 入队，只有「新建 batch」与「往末尾 push」的区别 —— */
+function partitionFiles(files) {
+  const ok = [];
+  const bad = [];
+  for (const f of files) {                   // 按 FileList 返回顺序
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!FILE_EXTS.includes(ext)) bad.push({ name: f.name, why: '格式不支持（只收 m4a / mp3 / wav）' });
+    else if (f.size > MAX_FILE_BYTES) bad.push({ name: f.name, why: '超过 20 MB' });
+    else ok.push(f);
+    // 合格项**不建 objectURL**：等成为当前项再建（按需创建）
+  }
+  return { ok, bad };
+}
+
+/** 批次创建时的「共同初值」：只有用户主动选过关联（或从作业进入）才带出去（#264 / #268）。 */
+function batchSeed() {
+  return {
+    assignId: assignTouched ? (byId('u-assign').value || '') : '',
+    pieceId: assignTouched ? (byId('u-piece').value || '') : '',
+  };
+}
+
+function beginBatch(ok) {
+  batch = { items: [], active: null, seq: 0, running: false, init: batchSeed() };
+  for (const f of ok) batch.items.push(newFileItem(f, batch.init));
+  wsMode = 'file';
+  applyWsMode();
+  activateItem(batch.items[0].qid);
+}
+
+/**
+ * 追加到现有批次末尾（#268）：**不重建 batch**——旧项的顺序 / qid / fileId / 状态 / 草稿 /
+ * 试听进度全部保留；新项只拿批次共同初值，不继承当前编辑项 A 的标题与关联。
+ */
+function appendFiles(ok) {
+  if (!batch || !ok.length) return;
+  saveActiveDraft();                         // 打开选择器前 / 追加前都回存当前项
+  const host = byId('ws-list');
+  const scrolled = host ? host.scrollTop : 0;
+  for (const f of ok) batch.items.push(newFileItem(f, batch.init));
+  renderQueue();
+  if (host) host.scrollTop = scrolled;       // 清单滚动不跳
+  if (!batch.active) activateItem(batch.items[0].qid);   // 无当前项时才选第一条新项
+  paintAppendEntry();
+}
+
+function onPickedFiles(files, append, target) {
+  if (!files.length) return;                 // 取消选择：零上传、零清队列
+  if (recState !== 'idle') { BAND.toast('先停止录音，再选文件'); return; }
+  if (pendingTake) { BAND.toast('先上传或丢弃这条'); return; }
+  if (batch && batch.running) { BAND.toast('上传结束后可以继续添加'); return; }
+  if (append) {
+    // 点开选择器后批次可能已被关闭 / 丢弃 / 换掉：迟到的 FileList **不许复活旧批**
+    if (!target || batch !== target || wsMode !== 'file') {
+      BAND.toast('这份清单已经结束，请重新选择文件');
+      return;
+    }
+    if (batch.running) { BAND.toast('上传结束后可以继续添加'); return; }
+  }
+  const p = partitionFiles(files);
+  renderRejects(p.bad);
+  if (!p.ok.length) {
+    BAND.toast('没有可上传的文件' + (p.bad.length ? '：全部未通过检查' : ''), 'warning');
+    return;
+  }
+  const adding = append || !!batch;          // 批次已存在时一律追加，绝不重建
+  if (adding) appendFiles(p.ok);
+  else beginBatch(p.ok);
+  BAND.toast((adding ? '已添加 ' : '已选 ') + p.ok.length + ' 条'
+    + (p.bad.length ? '，' + p.bad.length + ' 条未通过检查' : ''));
+}
+
+// 录音进行中不弹文件框：否则挑完文件会盖掉正在录的这条
+byId('u-file').addEventListener('click', (e) => {
+  if (recState !== 'idle') { e.preventDefault(); BAND.toast('先停止录音，再选文件'); }
+});
+
+byId('u-file').addEventListener('change', (e) => {
+  const files = Array.from((e.target.files) || []);
+  e.target.value = '';                       // 先清掉，方便再挑同一批文件
+  onPickedFiles(files, false, null);
+});
+
+/* #268：清单旁「继续添加文件」——点开时记住是哪个批次，回来时对象已换就丢弃这次选择 */
+byId('u-file-more').addEventListener('click', (e) => {
+  if (!batch || batch.running || recState !== 'idle' || pendingTake) { e.preventDefault(); return; }
+  saveActiveDraft();          // 打开选择器前回存当前项（取消选择也不丢编辑）
+  appendFor = batch;
+});
+
+byId('u-file-more').addEventListener('change', (e) => {
+  const files = Array.from((e.target.files) || []);
+  e.target.value = '';
+  const target = appendFor;
+  appendFor = null;
+  onPickedFiles(files, true, target);
+});
+
+/* —— 提交前校验：先定位错误项，不先传一半再改名（docs/08 §8.4 #264） —— */
+function validateDraft(d) {
+  const title = String((d && d.title) || '').trim();
+  if (title.length > 64) return { field: 'u-title', msg: '名称最多 64 字，请缩短后上传' };
+  const autoPractice = d.nameMode === 'auto' && d.nameBasis === 'practice';
+  if (autoPractice) {
+    if (normSection(d.section).badRange) return { field: 'u-section', msg: '小节范围的起点大于终点，请先修正' };
+    if (d.includeSpeed && normSpeed(d.speed).bad) return { field: 'u-speed', msg: '速度注记只收 30–240 的整数' };
+  }
+  return null;
+}
+
+function snapshotItem(it) {
+  const d = it.d || {};
+  return {
+    file: it.file,
+    title: String(d.title || '').trim() || null,
+    assignmentId: d.assignId ? Number(d.assignId) : null,
+    pieceId: d.pieceId ? Number(d.pieceId) : null,
+    durationSec: it.seconds == null ? null : Math.round(it.seconds),
+  };
+}
+
+/**
+ * 保存录音记录。**必须自己判「服务器到底答没答」**：
+ * - 明确业务错误 → 可以重试（definite）
+ * - 请求没拿到回应 / 5xx → 结果待确认（unknown），不能自动重传
+ * - 401 → 停掉后续（auth）
+ */
+async function saveRecording(body) {
+  let res;
+  try {
+    res = await fetch('/api/recordings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + BAND.token() },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw { kind: 'unknown', message: '保存请求没拿到回应' };
+  }
+  let env = null;
+  try { env = await res.json(); } catch (e) { env = null; }
+  if (res.ok && env && env.code === 0) return env.data;
+  if (res.status === 401) {
+    BAND.clearToken();
+    if (!location.pathname.endsWith('/login.html')) location.href = '/login.html';
+    throw { kind: 'auth', message: '登录已失效' };
+  }
+  if (!env || res.status >= 500) throw { kind: 'unknown', message: 'HTTP ' + res.status };
+  throw { kind: 'definite', message: env.message || ('错误码 ' + env.code) };
+}
+
+function weekKeyOf(iso) {
+  const w = weekOf(iso);
+  return w ? w.key : null;
+}
+
+async function refreshAfterUpload(focusWeek) {
+  mineStale = true;
+  try { await loadMine({ reset: true, focusWeek }); } catch (e) { /* 刷新失败不反判上传失败 */ }
+  try { await refreshAssignments(); } catch (e) { /* 同上 */ }
+}
+
+/* ⭐ 本页**唯一**的提交入口（docs/08 §8.4）：本机批次与页面录音共用这一颗按钮。 */
+async function uploadBatch() {
+  if (!batch || batch.running) return;
+  saveActiveDraft();
+  const sendable = batch.items.filter((i) => i.status === 'ready' || i.status === 'failed');
+  const unknown = batch.items.filter((i) => i.status === 'unknown');
+  if (!sendable.length) {
+    if (unknown.length) return recheckUnknown();
+    return;
+  }
+  // 一次把全部待发送项校验完：定位错误项，不先传一半
+  for (const it of sendable) {
+    const bad = validateDraft(it.d);
+    if (bad) {
+      activateItem(it.qid);
+      const el = byId(bad.field);
+      if (el) el.focus({ preventScroll: false });
+      BAND.toast(bad.msg);
+      return;
+    }
+  }
+  if (!upMotion.start()) return;
+  batch.running = true;
+  setNamingLocked(true);
+  setPicksLocked(true);
+  paintAppendEntry();                        // #268：执行中「继续添加文件」禁用（可见说明同步出现）
+  byId('rv-again').disabled = true;
+  byId('rv-drop').disabled = true;
+  let doneN = 0, failN = 0, unknownN = 0;
+  let abort = false;
+  let lastWeek = null;
+  try {
+    for (let k = 0; k < sendable.length; k++) {
+      if (abort) break;
+      const it = sendable[k];
+      const snap = snapshotItem(it);          // 冻结快照：不读后来切到别的行的全局输入
+      try {
+        if (!it.fileId) {
+          it.status = 'uploading';
+          renderQueue();
+          const msg = byId('ws-msg');
+          if (msg) msg.textContent = '正在上传文件 ' + (k + 1) + ' / ' + sendable.length + '…';
+          const uploaded = await BAND.uploadFile(snap.file);
+          it.fileId = uploaded.id;
+        }
+        it.status = 'saving';
+        renderQueue();
+        upMotion.stage('正在保存记录');
+        const created = await saveRecording({
+          fileId: it.fileId,
+          assignmentId: snap.assignmentId,
+          pieceId: snap.pieceId,
+          title: snap.title,
+          durationSec: snap.durationSec,
+        });
+        it.status = 'done';
+        it.recordingId = created && created.id != null ? created.id : null;
+        it.weekKey = created && created.uploadedAt ? weekKeyOf(created.uploadedAt) : null;
+        if (it.weekKey) lastWeek = it.weekKey;
+        doneN++;
+      } catch (e) {
+        if (e && e.kind === 'auth') { abort = true; it.status = 'failed'; it.err = '登录已失效'; failN++; }
+        else if (e && e.kind === 'unknown') { it.status = 'unknown'; it.err = e.message || ''; unknownN++; }
+        else { it.status = 'failed'; it.err = (e && (e.message || e.err)) || ''; failN++; }
+      }
+      renderQueue();
+      paintSubmit();
+    }
+  } finally {
+    batch.running = false;
+    setNamingLocked(false);
+    setPicksLocked(false);
+    paintAppendEntry();
+    byId('rv-again').disabled = false;
+    byId('rv-drop').disabled = false;
+  }
+  // 稳定结束后**统一刷新**一次，不每成功一项就刷新
+  await refreshAfterUpload(lastWeek);
+
+  if (abort) {
+    upMotion.fail();
+    BAND.toast('登录已失效，剩余项已停止；请重新登录后再处理', 'danger');
+    return;
+  }
+  if (failN || unknownN) {
+    upMotion.fail();
+    // 「上传失败」先亮一下，随后回到动作名（「重试失败项」/「重新核对」）——
+    // 否则按钮停在形容词上，用户看不出再点一次会发生什么。
+    setTimeout(paintSubmit, 1200);
+    const parts = [];
+    if (doneN) parts.push('已上传 ' + doneN + ' 条');
+    if (failN) parts.push('失败 ' + failN + ' 条');
+    if (unknownN) parts.push('待确认 ' + unknownN + ' 条');
+    BAND.toast(parts.join('，') + '；可修改失败项后重试', 'warning');
+    return;
+  }
+  await upMotion.success();
+  BAND.toast('已上传 ' + doneN + ' 条', 'success');
+  // #268：本轮全部成功后**清单仍留着**——旧成功勾保留、可以「继续添加文件」，
+  // 也留一颗「关闭清单」显式结束；下一批从这里关闭后再选，走正常新批次。
+  paintSubmit();
+  paintAppendEntry();
+}
+
+/** 结果待确认：只用本人列表按 fileId 核对，**不自动再 POST**。 */
+async function recheckUnknown() {
+  if (!batch || batch.running) return;
+  const pending = batch.items.filter((i) => i.status === 'unknown');
+  if (!pending.length) return;
+  let rows = [];
+  try {
+    const d = await BAND.must('/api/recordings?memberId=' + me.id + '&page=1&size=50');
+    rows = (d && d.list) || [];
+  } catch (e) {
+    BAND.toast('核对失败，请到录音墙看看这条在不在');
+    return;
+  }
+  let found = 0;
+  for (const it of pending) {
+    const hit = rows.find((r) => String(r.fileId) === String(it.fileId));
+    if (hit) { it.status = 'done'; it.recordingId = hit.id; it.err = ''; found++; }
+  }
+  renderQueue();
+  paintSubmit();
+  const left = batch.items.filter((i) => i.status === 'unknown').length;
+  if (left) BAND.toast('还没在录音墙找到，可能还没落库；点「重新核对」或到录音墙看看', 'warning');
+  else { BAND.toast('已核对到记录，无需重传', 'success'); if (found) await refreshAfterUpload(null); }
+}
+
+/* —— 页面录音的单条上传（原「上传这条」逻辑，保持不变）—— */
+async function uploadPending() {
+  if (!pendingTake || uploading) return;
+  // ⚠️ 超长 / 自动建议里的非法辅助值都在**传文件之前**拦截（docs/08 §8.4 #250）
+  const rawTitle = byId('u-title').value.trim();
+  if (rawTitle.length > 64) {
+    paintTitleNote(false, false, true);
+    byId('u-title').focus();
+    BAND.toast('名称最多 64 字，请缩短后上传');
+    return;
+  }
+  // 只有「自动命名 + 按练习信息 + 写入速度」时，小节 / 速度才参与标题并阻断上传；
+  // 手动名称或沿用文件名时，无关的辅助字段不卡上传。
+  const autoPractice = nameMode === 'auto' && effectiveBasis() === 'practice';
+  const sec = autoPractice ? normSection(byId('u-section').value) : { badRange: false };
+  const sp = autoPractice && includeSpeed ? normSpeed(byId('u-speed').value) : { bad: false };
+  if (sec.badRange || sp.bad) {
+    paintTitleNote(sec.badRange, sp.bad, false);
+    BAND.toast(sec.badRange ? '小节范围的起点大于终点，请先修正' : '速度注记只收 30–240 的整数');
+    (sec.badRange ? byId('u-section') : byId('u-speed')).focus();
+    return;
+  }
+  const againBtn = byId('rv-again');
+  const dropBtn = byId('rv-drop');
+  const motion = upMotion;
+  if (!motion.start()) return;
+  uploading = true;
+  setNamingLocked(true);
+  // 上传按钮自己不原生禁用：圆点要看得见，重复提交由 motion.start() + uploading 挡住
+  const ops = [againBtn, dropBtn];
+  ops.forEach((b) => { b.disabled = true; });
+  const take = pendingTake;
+  try {
+    const title = rawTitle || null;
+    const pieceValue = byId('u-piece').value;
+    const assignValue = byId('u-assign').value;
+    const uploaded = await BAND.uploadFile(take.file);
+    motion.stage('正在保存记录');
+    const created = await BAND.must('/api/recordings', {
+      method: 'POST',
+      body: {
+        fileId: uploaded.id,
+        // 关联作业时曲目以服务端的作业为准（这里传过去也会被忽略）
+        assignmentId: assignValue ? Number(assignValue) : null,
+        pieceId: pieceValue ? Number(pieceValue) : null,
+        title,
+        durationSec: take.seconds == null ? null : Math.round(take.seconds),
+      },
+    });
+    const done = motion.success();
+    BAND.toast('已上传', 'success');
+    // 让成勾真的被看见再收走试听卡；reduced 时 Promise 立即落定，不额外等待
+    await done;
+    releasePending();
+    resetNameMeta();                   // 上传成功：标题 / 手改标记 / 速度快照 / 辅助字段一并清
+    assignTouched = false;
+    // 上传已经成功；刷新失败不能反过来报「上传失败」
+    // #263：刷新后展开新录音所在周（按服务器返回的 uploadedAt，别按设备当前周）
+    const weekKey = created && created.uploadedAt ? weekKeyOf(created.uploadedAt) : null;
+    try { await refreshAfterUpload(weekKey); } catch (e) { /* 下次进页面会重新拉 */ }
+  } catch (e) {
+    // 失败**保留 pending**：录音还在、秒数还在，可直接重试，不必重录
+    motion.fail();
+    BAND.toast('上传失败，这条还在，可以再点一次');
+  } finally {
+    uploading = false;
+    setNamingLocked(false);
+    ops.forEach((b) => { b.disabled = false; });
+  }
+}
+
+rvPlay.innerHTML = ICON_PLAY;
+rvAudio.addEventListener('play', () => {
+  if (playingAudio && playingAudio !== rvAudio) {
+    playingAudio.pause();
+    playingAudio.currentTime = 0;
+  }
+  playingAudio = rvAudio;
+  playingKey = null;                   // 试听音频不在列表缓存里，别让它挡住淘汰
+  rvPlay.innerHTML = ICON_PAUSE;
+  rvPlay.setAttribute('aria-pressed', 'true');
+});
+rvAudio.addEventListener('pause', () => {
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  rvSeek.repaint();
+});
+rvAudio.addEventListener('ended', () => {
+  rvPlay.innerHTML = ICON_PLAY;
+  rvPlay.setAttribute('aria-pressed', 'false');
+  if (playingAudio === rvAudio) playingAudio = null;
+  rvAudio.currentTime = 0;
+  rvSeek.repaint();
+});
+rvPlay.addEventListener('click', () => {
+  if (!activeTake()) return;
+  if (!rvAudio.paused) { rvAudio.pause(); return; }
+  const p = rvAudio.play();
+  if (p && p.catch) p.catch(() => BAND.toast('再点一次播放'));
+});
+byId('rv-up').addEventListener('click', () => {
+  if (wsMode === 'file') uploadBatch();
+  else uploadPending();
+});
+byId('rv-drop').addEventListener('click', () => {
+  if (wsMode === 'file') dropBatch();
+  else dropTake();
+});
+byId('rv-again').addEventListener('click', againTake);
+
+/* 队列事件代理：切换当前项 / 从本批移除（行内不另放上传按钮） */
+byId('ws-list').addEventListener('click', (e) => {
+  const rm = e.target.closest('[data-remove]');
+  if (rm) { removeItem(rm.dataset.remove); return; }
+  const main = e.target.closest('[data-qid]');
+  if (main && batch && main.dataset.qid !== batch.active) activateItem(main.dataset.qid, { focus: true });
+});
+
+/* 「更换添加方式」：只返回来源入口态；有未完成内容时挡住，不偷偷丢弃 / 上传 */
+byId('ws-change').addEventListener('click', () => {
+  if (recState !== 'idle') { BAND.toast('先停止录音'); return; }
+  if (pendingTake) { BAND.toast('先上传或丢弃这条录音'); return; }
+  if (batch) { BAND.toast('先上传或丢弃这批文件'); return; }
+  wsMode = null;
+  applyWsMode();
+  byId('pick-record').focus({ preventScroll: true });
+});
+
+/* 待上传的内容还没落库：关页/刷新前必须问一句（docs/08 §8.4）。
+   ⚠️ 回收要放 `pagehide`：`beforeunload` 里 revoke 会让"取消离开"后的试听卡变哑。
+   ⚠️ pagehide 也可能来自 bfcache，恢复时把 `cacheReleased` 拨回来。 */
+window.addEventListener('beforeunload', (e) => {
+  if (hasDraft() && !uploading) { e.preventDefault(); e.returnValue = ''; }
+});
+window.addEventListener('pagehide', () => {
+  cacheClear();
+  if (pendingTake) { URL.revokeObjectURL(pendingTake.url); pendingTake = null; }
+  if (batch) {
+    for (const it of batch.items) if (it.url) URL.revokeObjectURL(it.url);
+    batch = null;
+  }
+});
+window.addEventListener('pageshow', () => { cacheReleased = false; });
+
+/* ============================================================
+   节拍器（圆弧拍点版；`recordings.html` 与 `metronome.html` **共用同一份**）
+   ⭐ 整块功能存在的唯一理由（docs/08 §8.4）：团员原先"手机录音机 + 另一个节拍器 App"，而录音机一启动就抢走
+      音频焦点、把节拍器静音。网页里 `MediaRecorder` 抓的是麦克风流、**不会静音页面自己的音频输出**
+      ⇒ 所以它必须在**录音进行中一直响**（这才是它的价值）。
+   ⚠️ 规则写死：**不受 `band_sound` 约束**（显式例外）、**"录音停"不等于"节拍器停"**（各管各的）、
+      **切到后台必须明说**（不许静默哑掉）。
+   ⚠️ 走 `BAND.tick` / `BAND._ac`（**全页唯一 AudioContext**）；**绝不自建第二个 `AudioContext`**。
+   ⚠️ 键名 `band_metronome_*`：bpm 字符串、beats=`num/den`、sub、accents=`0100`（两页**统一**这套编码）。
+   ⚠️ reduced-motion 下只降级视觉、**绝不静音**（docs/14 §14.6.6）。
+   ============================================================ */
+const BPM_MIN = 30, BPM_MAX = 240, LOOKAHEAD_S = 0.1, TICK_MS = 25;
+const MK = { bpm: 'band_metronome_bpm', beats: 'band_metronome_beats', sub: 'band_metronome_sub', acc: 'band_metronome_accents' };
+const ARC = { cx: 110, cy: 76, R: 62 };
+const DEN = [2, 4, 8, 16];
+const SUB_LABEL = { 1: '每拍 1 击', 2: '每拍 2 击（八分）', 3: '每拍 3 击（三连）', 4: '每拍 4 击（十六分）' };
+
+const metro = { on: false, bpm: 80, num: 4, den: 4, sub: 1, step: 0, beat: 0, next: 0,
+                accents: [true, false, false, false], timer: null, epoch: 0 };
+// ⚠️ 可读钩子：探针读**实际排出去的拍**（别让探针逐帧采样 —— Windows 上 rAF 会被饿死，见 debug_log）
+window.__metro = { on: false, ticks: [], mode: 'webaudio' };
+let tapTimes = [];
+let MT_BASE_HINT = '';
+let startSeq = 0;                                  // 防「await 音频期间又点一次 / 改设置重起」造成双启动
+let compatNextAt = 0;                              // 兼容模式绝对目标时刻（performance.now() 毫秒）
+const DIAG = new URLSearchParams(location.search).get('diag') === '1';
+
+const mEl = (id) => document.getElementById(id);
+const mClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const mStore = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式 */ } },
+};
+
+function tempoTerm(b) {
+  if (b < 40)  return '庄板 · Grave';
+  if (b < 60)  return '广板 · Largo';
+  if (b < 66)  return '慢板 · Adagio';
+  if (b < 76)  return '行板 · Andante';
+  if (b < 108) return '中板 · Moderato';
+  if (b < 120) return '小快板 · Allegretto';
+  if (b < 168) return '快板 · Allegro';
+  if (b < 200) return '急板 · Presto';
+  return '最急板 · Prestissimo';
+}
+function arcPoint(deg) {
+  const t = deg * Math.PI / 180;
+  return [ARC.cx + ARC.R * Math.cos(t), ARC.cy - ARC.R * Math.sin(t)];
+}
+
+/* —— 画圆弧与拍点（几拍就几个点；点圆点＝设/取消那一拍的重音） —— */
+function renderArc() {
+  const n = metro.num;
+  const sw = n <= 1 ? 0 : Math.min(150, (n - 1) * 30);
+  const tL = 90 + sw / 2, tR = 90 - sw / 2;
+  const [xL, yL] = arcPoint(tL), [xR, yR] = arcPoint(tR);
+  mEl('m-arc-base').setAttribute('d',
+    'M ' + xL.toFixed(1) + ' ' + yL.toFixed(1) + ' A ' + ARC.R + ' ' + ARC.R + ' 0 0 1 ' + xR.toFixed(1) + ' ' + yR.toFixed(1));
+  const g = mEl('m-dots');
+  g.innerHTML = '';
+  const big = n <= 9, NS = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < n; i++) {
+    const deg = n <= 1 ? 90 : tL - sw * i / (n - 1);
+    const [x, y] = arcPoint(deg);
+    const acc = !!metro.accents[i];
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('class', 'mt-dot');
+    c.setAttribute('cx', x.toFixed(1));
+    c.setAttribute('cy', y.toFixed(1));
+    c.setAttribute('r', String(acc ? (big ? 8.5 : 7) : (big ? 7 : 5.5)));
+    c.dataset.i = String(i);
+    c.dataset.acc = acc ? '1' : '0';
+    g.appendChild(c);
+  }
+  paintBeat();
+}
+function paintBeatDot(beat) {
+  const dots = mEl('m-dots').children;
+  for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === beat);
+}
+function paintBeat() { paintBeatDot(metro.on ? metro.beat : -1); }
+function paintSig() { mEl('m-sig').textContent = metro.num + ' / ' + metro.den + ' · ' + SUB_LABEL[metro.sub]; }
+function setHint(text, warn) {
+  const h = mEl('m-hint');
+  if (!h) return;
+  h.textContent = text;
+  h.classList.toggle('warn', !!warn);
+}
+
+const IS_APP_SHELL = /ForBandApp\//i.test(navigator.userAgent);
+const MT_RUN_HINT = IS_APP_SHELL
+  ? '节拍器运行中。听不见？先检查媒体音量 / 蓝牙耳机。'
+  : '节拍器运行中。听不见？先查媒体音量 / 蓝牙耳机；百度浏览器要在地址栏左侧锁图标 →「声音」里允许本站。';
+const MT_COMPAT_HINT = '节拍器运行中（兼容模式）。拍点精度略低于高精度模式；声音正常就保持，嫌不准可点「改用高精度模式」。';
+
+/** `?diag=1` 才显示：真机出问题让机主截这一行，比猜浏览器内核快。 */
+function diagSuffix() {
+  if (!DIAG) return '';
+  const ac = BAND._ac;
+  return ' ［诊断］AudioContext: ' + (ac ? ac.state : '未创建')
+    + ' · 音频模式: ' + ((window.__metro && window.__metro.mode) || '?')
+    + ' · UA: ' + navigator.userAgent;
+}
+
+function showMetroFailure(e) {
+  const msg = '节拍器启动失败（' + ((e && e.name) || '未知错误') + '），没有开始。'
+    + (IS_APP_SHELL
+      ? '请检查媒体音量 / 蓝牙耳机，退出 App 重进再试。'
+      : (BAND.isHarmonyNext()
+        ? '请点「改用兼容模式」再试；也可检查媒体音量 / 蓝牙耳机。'
+        : '请换用手机自带浏览器或 Chrome 再试。'));
+  setHint(msg + diagSuffix(), true);
+  BAND.toast(msg);
+}
+
+/* 视觉跟着**已排定的拍**走：延时按音频时钟算（音频时钟准，JS 定时器会漂）。`epoch` 防"停→重开"时点亮错的点。 */
+function queueVisual(beat, when, epoch) {
+  const ac = BAND._ac;
+  const delay = Math.max(0, (when - (ac ? ac.currentTime : 0)) * 1000);
+  setTimeout(() => { if (metro.on && metro.epoch === epoch) paintBeatDot(beat); }, delay);
+}
+
+/* lookahead 调度：**不用裸 `setInterval(60000/bpm)`**（会漂、怕标签页被节流）。细分拍 = 每拍拆 `sub` 步。 */
+function schedule() {
+  const ac = BAND._ac;
+  if (!ac || !metro.on) return;
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  let guard = 0;
+  while (metro.next < ac.currentTime + LOOKAHEAD_S) {
+    const accent = metro.step === 0 && !!metro.accents[metro.beat];
+    const t = BAND.tick(accent, metro.next);            // 按音频时钟排，不"到点才响"
+    if (t === null) { stopMetro(); setHint('这台设备出不了声（拿不到音频）。', true); return; }
+    window.__metro.ticks.push({ t: metro.next, accent: accent, beat: metro.beat, step: metro.step });
+    if (metro.step === 0) queueVisual(metro.beat, metro.next, metro.epoch);   // 只在小节拍**头一步**点灯
+    metro.step = (metro.step + 1) % metro.sub;
+    if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.num;
+    metro.next += stepSec;
+    if (++guard > 1000) break;                          // 兜底：万一 `next` 被改小，别死循环
+  }
+}
+
+function metroSetModeUi() {
+  const btn = mEl('m-mode');
+  if (!btn) return;
+  const compat = (window.__metro.mode || BAND.metroAudioMode()) === 'compat';
+  btn.textContent = compat ? '改用高精度模式' : '没声音？改用兼容模式';
+  btn.title = compat
+    ? '改用 Web Audio，拍点更准；华为浏览器可能没有声音'
+    : '改用 <audio> 播放点击音，兼容华为浏览器，精度略低';
+}
+
+function toggleMetroMode() {
+  const next = window.__metro.mode === 'compat' ? 'webaudio' : 'compat';
+  BAND.setMetroAudioMode(next);
+  window.__metro.mode = next;
+  metroSetModeUi();
+  if (metro.on) {
+    stopMetro();
+    startMetro().catch(showMetroFailure);
+  } else {
+    setHint((next === 'compat' ? '已选择兼容模式。' : '已选择高精度模式。') + diagSuffix(), false);
+  }
+}
+
+async function startMetro() {
+  if (metro.on) return;
+  const seq = ++startSeq;
+  const mode = BAND.metroAudioMode();
+  window.__metro.mode = mode;
+  metroSetModeUi();
+  if (mode === 'compat') {                              // 必须在任何 await 之前：第一次 play() 要在手势里
+    startMetroCompat();
+    return;
+  }
+  // ⚠️ 先确认音频**真的在跑**，再开始排拍。上下文挂着时 `currentTime` 不走 ⇒ 只会排出第一拍、
+  //    之后永远排不动；以前这里不核 state，页面看着"已开始"其实已经冻住，且全程不提示。
+  const ac = await BAND.ensureAudio();
+  if (seq !== startSeq) return;                         // 等音频期间被停止 / 改设置重起过
+  if (!ac) {
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
+    return;
+  }
+  metro.beat = 0;
+  metro.step = 0;
+  const t0 = BAND.tick(!!metro.accents[0], 0);          // 第一拍立刻响
+  if (t0 === null) {
+    BAND.setMetroAudioMode('compat');
+    startMetroCompat('网页音频启动不了，已改用兼容模式。');
+    return;
+  }
+  metro.on = true;
+  window.__metro.on = true;
+  window.__metro.mode = 'webaudio';
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintBeatDot(0);
+  const stepSec = (60 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;                           // ⚠️ 不是"beat = 1 % num"（那只在 `sub===1` 时对）
+  if (metro.step === 0) metro.beat = 1 % metro.num;
+  metro.next = t0 + stepSec;
+  metro.timer = setInterval(schedule, TICK_MS);
+  const btn = mEl('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('rc-btn-primary');
+  btn.classList.add('rc-btn-line');
+  const hint = mEl('m-hint');
+  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_RUN_HINT + diagSuffix(); }
+  metroSetModeUi();
+}
+
+/** 兼容模式：`<audio>` 播放预生成点击音，绕开“Web Audio 在跑但没声”的宿主。 */
+function startMetroCompat(notice) {
+  if (metro.on) return;
+  window.__metro.mode = 'compat';
+  metroSetModeUi();
+  BAND._audioIssue = null;
+  BAND.warmClickPool();
+  metro.beat = 0;
+  metro.step = 0;
+  const t0 = BAND.tickCompat(!!metro.accents[0]);       // 第一拍立刻响，且仍在点击手势里
+  if (t0 === null) {
+    const msg = BAND.audioIssueText();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  metro.on = true;
+  window.__metro.on = true;
+  metro.epoch++;
+  window.__metro.ticks.push({ t: t0, accent: !!metro.accents[0], beat: 0, step: 0 });
+  paintBeatDot(0);
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  metro.step = 1 % metro.sub;
+  if (metro.step === 0) metro.beat = 1 % metro.num;
+  compatNextAt = performance.now() + stepMs;
+  metro.timer = setTimeout(compatSchedule, stepMs);
+  const btn = mEl('m-toggle');
+  btn.textContent = '停止';
+  btn.classList.remove('rc-btn-primary');
+  btn.classList.add('rc-btn-line');
+  const hint = mEl('m-hint');
+  if (hint) {
+    hint.classList.remove('warn');
+    hint.textContent = (notice ? notice + ' ' : '') + MT_COMPAT_HINT + diagSuffix();
+  }
+}
+
+/** 兼容模式：把步/拍推进一格。 */
+function advanceCompatStep() {
+  metro.step = (metro.step + 1) % metro.sub;
+  if (metro.step === 0) metro.beat = (metro.beat + 1) % metro.num;
+}
+
+/** 兼容模式：按绝对时间网格排下一声；迟到超过一整拍才丢格，禁止补播一串。 */
+function scheduleCompatNext() {
+  const stepMs = (60000 / metro.bpm) / metro.sub;
+  compatNextAt += stepMs;
+  const now = performance.now();
+  let delay = compatNextAt - now;
+  if (delay < -stepMs) {
+    while (compatNextAt <= now) {
+      compatNextAt += stepMs;
+      advanceCompatStep();
+    }
+    delay = compatNextAt - now;
+  }
+  metro.timer = setTimeout(compatSchedule, Math.max(0, delay));
+}
+
+function compatSchedule() {
+  if (!metro.on) return;
+  if (BAND._audioIssue && BAND._audioIssue.kind === 'compat') {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  const accent = metro.step === 0 && !!metro.accents[metro.beat];
+  const t = BAND.tickCompat(accent);
+  if (t === null) {
+    const msg = BAND.audioIssueText();
+    stopMetro();
+    setHint(msg + diagSuffix(), true);
+    BAND.toast(msg);
+    return;
+  }
+  window.__metro.ticks.push({ t, accent, beat: metro.beat, step: metro.step });
+  if (metro.step === 0) paintBeatDot(metro.beat);
+  advanceCompatStep();
+  scheduleCompatNext();
+}
+
+function stopMetro() {
+  startSeq++;                                           // 让还在等音频的 startMetro 作废
+  if (metro.timer) clearTimeout(metro.timer);
+  metro.timer = null;
+  metro.on = false;
+  window.__metro.on = false;
+  metro.epoch++;
+  paintBeatDot(-1);
+  const btn = mEl('m-toggle');
+  btn.textContent = '开始';
+  btn.classList.remove('rc-btn-line');
+  btn.classList.add('rc-btn-primary');
+  const hint = mEl('m-hint');
+  if (hint) { hint.classList.remove('warn'); hint.textContent = MT_BASE_HINT + diagSuffix(); }
+}
+
+/** ⚠️ 规格写死：切到后台时**必须明确提示"节拍器已停"，不许静默**——无声无息地哑掉比报错更坏。 */
+function metroNotice(text) { setHint(text, true); BAND.toast(text); }
+
+/** 改设置：正在响时无缝重启（清旧排程、重起）。 */
+function metroRestart() { if (metro.on) { stopMetro(); startMetro().catch(showMetroFailure); } }
+
+function setBpm(v) {
+  metro.bpm = mClamp(Math.round(Number(v)) || 80, BPM_MIN, BPM_MAX);
+  const inp = mEl('m-bpm');
+  // 只在值真的变了才回写：边输入边回写会把光标顶掉、把用户正在敲的数字截断
+  if (inp && inp.value !== String(metro.bpm)) inp.value = String(metro.bpm);
+  mEl('m-bpm-big').textContent = String(metro.bpm);
+  mEl('m-term').textContent = tempoTerm(metro.bpm);
+  mStore.set(MK.bpm, String(metro.bpm));
+  recordBpm(metro.bpm);          // 录制中改速 ⇒ 记进本条（暂停中不记，恢复时补记）
+  metroRestart();
+}
+function setNum(v) {
+  metro.num = mClamp(Math.round(Number(v)) || 4, 1, 16);
+  const inp = mEl('m-num'); if (inp) inp.value = String(metro.num);
+  const a = metro.accents;
+  metro.accents = Array.from({ length: metro.num }, (_, i) => !!a[i]);
+  if (metro.accents.length && !metro.accents.some(Boolean)) metro.accents[0] = true;
+  paintSig();
+  persistAccents();
+  mStore.set(MK.beats, metro.num + '/' + metro.den);
+  metro.step = 0; metro.beat = 0;
+  renderArc();
+  metroRestart();
+}
+function setDen(v) {
+  metro.den = DEN.includes(Number(v)) ? Number(v) : 4;
+  const sel = mEl('m-den'); if (sel) sel.value = String(metro.den);
+  paintSig();
+  mStore.set(MK.beats, metro.num + '/' + metro.den);
+}
+function setSub(v) {
+  metro.sub = mClamp(Number(v) || 1, 1, 4);
+  const sel = mEl('m-sub'); if (sel) sel.value = String(metro.sub);
+  paintSig();
+  mStore.set(MK.sub, String(metro.sub));
+  metroRestart();
+}
+function persistAccents() { mStore.set(MK.acc, metro.accents.map((b) => b ? '1' : '0').join('')); }
+function toggleAccent(i) {
+  metro.accents[i] = !metro.accents[i];
+  persistAccents();
+  renderArc();
+}
+
+/* TAP 打拍：连点取平均，间隔 >2 秒作废重来。 */
+function tapHit() {
+  const now = performance.now();
+  if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+  tapTimes.push(now);
+  if (tapTimes.length > 6) tapTimes.shift();
+  if (tapTimes.length >= 2) {
+    const gaps = [];
+    for (let i = 1; i < tapTimes.length; i++) gaps.push(tapTimes[i] - tapTimes[i - 1]);
+    setBpm(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length));
+  }
+}
+
+function initMetro() {
+  const hintEl = mEl('m-hint');
+  MT_BASE_HINT = hintEl ? hintEl.textContent : '';
+  window.__metro.mode = BAND.metroAudioMode();
+  BAND.warmClickPool();                                  // 预加载点击音；真正播放仍要等用户点「开始」
+  if (hintEl && !mEl('m-mode')) {
+    const modeBtn = document.createElement('button');
+    modeBtn.type = 'button';
+    modeBtn.id = 'm-mode';
+    modeBtn.className = 'mt-mode';
+    hintEl.insertAdjacentElement('afterend', modeBtn);
+    modeBtn.addEventListener('click', toggleMetroMode);
+  }
+  metroSetModeUi();
+
+  const beats = String(mStore.get(MK.beats, '4/4')).split('/');
+  const accStr = mStore.get(MK.acc, null);
+  metro.bpm = mClamp(Number(mStore.get(MK.bpm, '80')) || 80, BPM_MIN, BPM_MAX);
+  metro.num = mClamp(Number(beats[0]) || 4, 1, 16);
+  metro.den = DEN.includes(Number(beats[1])) ? Number(beats[1]) : 4;
+  metro.sub = mClamp(Number(mStore.get(MK.sub, '1')) || 1, 1, 4);
+  metro.accents = (accStr && /^[01]+$/.test(accStr))
+    ? Array.from({ length: metro.num }, (_, i) => accStr[i] === '1')
+    : Array.from({ length: metro.num }, (_, i) => i === 0);
+  if (metro.accents.length && !metro.accents.some(Boolean)) metro.accents[0] = true;
+
+  mEl('m-bpm').value = String(metro.bpm);
+  mEl('m-bpm-big').textContent = String(metro.bpm);
+  mEl('m-term').textContent = tempoTerm(metro.bpm);
+  mEl('m-num').value = String(metro.num);
+  mEl('m-den').value = String(metro.den);
+  mEl('m-sub').value = String(metro.sub);
+  paintSig();
+  renderArc();
+
+  mEl('m-toggle').addEventListener('click', () => {
+    try {
+      if (metro.on) { stopMetro(); return; }
+      startMetro().catch(showMetroFailure);
+    } catch (e) { showMetroFailure(e); }     // 任何异常都落到提示行：不许"点了没反应"
+  });
+  mEl('m-tap').addEventListener('click', tapHit);
+  const bpmIn = mEl('m-bpm');
+  // 输入过程中只认**完整合法**的值（30..240），不 clamp、不回写——否则敲 "1" 会被立刻改成 30，
+  // 接着再敲就变成 302 → 240，数字只会在两端乱跳。越界/清空留给失焦或回车时统一收口。
+  const bpmTyped = () => {
+    const raw = bpmIn.value;
+    if (raw === '') return;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < BPM_MIN || n > BPM_MAX) return;
+    setBpm(n);
+  };
+  const bpmCommit = () => {
+    setBpm(bpmIn.value === '' ? metro.bpm : bpmIn.value);
+  };
+  bpmIn.addEventListener('input', bpmTyped);       // ⚠️ change 不够：探针/真机常只派 input
+  bpmIn.addEventListener('change', bpmCommit);
+  bpmIn.addEventListener('blur', bpmCommit);
+  const numIn = mEl('m-num');
+  const numHandler = () => { if (numIn.value !== '') setNum(numIn.value); };
+  numIn.addEventListener('input', numHandler);
+  numIn.addEventListener('change', numHandler);
+  mEl('m-den').addEventListener('change', () => setDen(mEl('m-den').value));
+  mEl('m-sub').addEventListener('change', () => setSub(mEl('m-sub').value));
+  mEl('m-dots').addEventListener('click', (e) => {
+    const c = e.target.closest('circle');
+    if (c && c.dataset.i != null) toggleAccent(Number(c.dataset.i));
+  });
+
+  // ⚠️ 浏览器在页面切到后台 / 锁屏时会**挂起音频**，节拍器当场哑掉 —— 这是"要听得见"最可能被破坏的地方。
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && metro.on) {
+      stopMetro();
+      metroNotice('节拍器已停：切到后台时浏览器会挂起音频。回到这一页后请重新按「开始」。');
+    }
+  });
+}
+
+/* ============================================================
+   两屏切换 / 外观控件（配色 + 深浅）/ 入场
+   ============================================================ */
+let listScrollY = 0;   // 录音墙的浏览锚点（#263：两屏返回不跳页首）
+function setScreen(s) {
+  const prev = document.body.dataset.rcscreen;
+  if (prev === 'list' && s !== 'list') listScrollY = window.scrollY;
+  document.body.dataset.rcscreen = s;
+  if (s !== 'detail' && metro.on) stopMetro();   // 离屏就别再响
+  // 进录音台：页首；退回录音墙：回到离开时的位置（已加载的周 / 位置都还在）
+  window.scrollTo(0, s === 'list' ? listScrollY : 0);
+}
+function playReveal() {
+  const nodes = qsa('.ar');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { nodes.forEach((n) => n.classList.add('in')); return; }
+  nodes.forEach((n, i) => setTimeout(() => n.classList.add('in'), 30 + i * 35));
+}
+
+/* 配色 / 深浅控件由 `BAND.appearance` 统一接线（band-core.js），`band-shell` 负责挂载（#239）。 */
+function renderToday() {
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  const d = new Date();
+  byId('today-txt').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* ============================================================
+   接线（顶层一次；节点被 shell 挪进 .mbody 时监听器随之保留）
+   ============================================================ */
+byId('go-record').addEventListener('click', () => setScreen('detail'));
+byId('dback').addEventListener('click', () => setScreen('list'));
+
+/* #263：加载更早（逐页追加；失败原位重试） */
+byId('mine-more').addEventListener('click', () => { fetchMinePage(); });
+
+/* #263：周标题是原生 button + aria-expanded；折叠播放中的周会暂停并留进度 */
+byId('list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.rc-myweek-h');
+  if (!btn) return;
+  const sec = btn.closest('.rc-myweek');
+  const w = sec ? mineWeeks.get(sec.dataset.week) : null;
+  if (!w) return;
+  setWeekOpen(w, w.body.hidden);      // hidden=true → 展开
+});
+byId('rc-view').addEventListener('click', (e) => {
+  const b = e.target.closest('.fchip');
+  if (!b || !canManage()) return;
+  const next = b.dataset.view;
+  if (next === view) return;
+  view = next;
+  qsa('#rc-view .fchip').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === view)));
+  load().catch(() => {});
+});
+byId('as-open').addEventListener('click', () => openAssignPanel(byId('as-panel').hidden));
+byId('as-cancel').addEventListener('click', () => openAssignPanel(false));
+byId('as-save').addEventListener('click', createAssignment);
+byId('u-assign').addEventListener('change', () => {
+  assignTouched = true;          // 用户主动选过：后续选文件时可作整批初值（#264）
+  syncAssignPiece();
+  if (nameMode === 'auto') applyAutoName();
+  saveActiveDraft();
+});
+
+/* 管理视图的节点每次都重画 → 用事件代理（当前视图与历史周共用一套 data-*） */
+byId('manage-pane').addEventListener('click', (e) => {
+  const t = e.target;
+
+  const open = t.closest('[data-open-assign]');
+  if (open) { openAssignPanel(true); return; }
+
+  const re = t.closest('[data-rename]');
+  if (re) { startRename(re.closest('.as-chip'), findAssignment(re.dataset.rename)); return; }
+
+  const del = t.closest('[data-del-as]');
+  if (del) { deleteAssignment(findAssignment(del.dataset.delAs)); return; }
+
+  const jump = t.closest('[data-jump]');
+  if (jump) {
+    const [sid, mid] = jump.dataset.jump.split(':');
+    jumpToPerson(sid, mid);
+    return;
+  }
+
+  const secBtn = t.closest('[data-sec-toggle]');
+  if (secBtn) {
+    const body = byId(secBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    secBtn.setAttribute('aria-expanded', String(open));
+    // 历史周的声部头与本周共用声部 id，但折叠状态是两套：只记本周的 `wk-sec-*`
+    if ((secBtn.getAttribute('aria-controls') || '').startsWith('wk-sec-')) {
+      const sid = secBtn.dataset.secToggle;
+      if (open) closedSections.delete(String(sid)); else closedSections.add(String(sid));
+    }
+    return;
+  }
+
+  const pBtn = t.closest('[data-ptoggle]');
+  if (pBtn) {
+    const body = byId(pBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    pBtn.setAttribute('aria-expanded', String(open));
+    if (open) openPersons.add(pBtn.dataset.ptoggle); else openPersons.delete(pBtn.dataset.ptoggle);
+    return;
+  }
+
+  const wkBtn = t.closest('[data-week-toggle]');
+  if (wkBtn) {
+    const key = wkBtn.dataset.weekToggle;
+    const body = byId(wkBtn.getAttribute('aria-controls'));
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    wkBtn.setAttribute('aria-expanded', String(open));
+    if (open) { openWeeks.add(key); hydrateWeek(key); } else openWeeks.delete(key);
+  }
+});
+/* ============================================================
+   启动
+   ============================================================ */
+renderToday();
+initMetro();
+applyWsMode();          // #265：初始 = 来源入口态（双来源、无预填文件、无提交区）
+syncNamingFields();
+paintNameMode();
+paintTitleNote(false, false, false);
+load().catch(() => {});
+</script>
+</body>
+</html>

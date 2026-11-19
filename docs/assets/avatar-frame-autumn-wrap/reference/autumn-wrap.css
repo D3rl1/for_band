@@ -1,0 +1,27 @@
+.band-autumn-wrap {
+  --band-autumn-avatar-size: 168px;
+  position: relative;
+  isolation: isolate;
+  width: var(--band-autumn-avatar-size);
+  height: var(--band-autumn-avatar-size);
+  flex: none;
+  overflow: visible;
+}
+.band-autumn-wrap__avatar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.band-autumn-wrap__avatar > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.band-autumn-wrap__art {
+  position: absolute;
+  width: 128.205128%;
+  height: 128.205128%;
+  left: -24.358974%;
+  top: -23.076923%;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+}

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>历史反馈 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 只读归档：旧「反馈信箱」的写入口已随 #227 退役，新问题一律去「问题讨论」公开栏。 -->
+<div class="ev-lhead">
+  <div class="sec"><h2>历史反馈</h2><span class="sub">只读归档</span></div>
+</div>
+
+<div class="ct-tabs" role="tablist" aria-label="反馈状态">
+  <button class="ct-tab" id="tab-open" type="button" role="tab" aria-selected="true" aria-controls="list">待处理<b id="tab-open-n"></b></button>
+  <button class="ct-tab" id="tab-handled" type="button" role="tab" aria-selected="false" aria-controls="list">已处理<b id="tab-handled-n"></b></button>
+  <button class="ct-tab" id="tab-migrated" type="button" role="tab" aria-selected="false" aria-controls="list">已迁入<b id="tab-migrated-n"></b></button>
+</div>
+<div id="list"></div>
+<p id="empty" class="ct-fb-empty" hidden></p>
+
+<script>
+'use strict';
+
+let status = 'OPEN';
+const SIZE = 50;
+
+const EMPTY = {
+  OPEN: '没有待处理的旧反馈。',
+  HANDLED: '还没有处理过的旧反馈。',
+  MIGRATED: '还没有迁入公开栏的旧反馈。',
+};
+
+function card(f) {
+  const el = document.createElement('article');
+  el.className = 'ct-fb' + (f.status === 'OPEN' ? '' : ' done');
+
+  const head = document.createElement('div');
+  head.className = 'ct-fb-head';
+  const who = document.createElement('b');
+  if (f.memberName) {
+    who.textContent = f.memberName;
+  } else {
+    // 已离团是「查无此人」的说明，不是错误——浅墨、不着红
+    who.textContent = '（已离团）';
+    who.classList.add('ct-offlist');
+  }
+  const when = document.createElement('span');
+  when.className = 'ct-when';
+  when.textContent = BAND.stamp(f.createdAt);
+  head.append(who, when);
+
+  const meta = document.createElement('p');
+  meta.className = 'ct-fb-meta';
+  meta.textContent = [f.sectionName, f.pagePath, f.device].filter(Boolean).join(' · ');
+
+  const body = document.createElement('p');
+  body.className = 'ct-fb-body';
+  body.textContent = f.content;
+
+  el.append(head, meta, body);
+
+  if (f.status === 'HANDLED') {
+    const done = document.createElement('p');
+    done.className = 'ct-fb-done';
+    done.textContent = `已处理${f.handledByName ? ' · ' + f.handledByName : ''}`
+      + (f.handledAt ? ' · ' + BAND.stamp(f.handledAt) : '')
+      + (f.adminNote ? ' · ' + f.adminNote : '');
+    el.appendChild(done);
+  } else if (f.status === 'MIGRATED') {
+    const done = document.createElement('p');
+    done.className = 'ct-fb-done';
+    if (f.migratedIssueId) {
+      done.textContent = '已迁入问题讨论 #' + f.migratedIssueId + ' · ';
+      const link = document.createElement('a');
+      link.className = 'is-link';
+      link.href = '/issue-detail.html?id=' + encodeURIComponent(f.migratedIssueId);
+      link.textContent = '去公开栏查看';
+      done.appendChild(link);
+    } else {
+      done.textContent = '已迁入问题讨论。';
+    }
+    el.appendChild(done);
+  }
+
+  return el;
+}
+
+/** 页签计数：各拉一条 size=1 只取 total，不为了数字多拉内容。 */
+async function loadCounts() {
+  const load = (s) => BAND.api(`/api/admin/feedback?status=${s}&page=1&size=1`);
+  const [open, handled, migrated] = await Promise.all([
+    load('OPEN'), load('HANDLED'), load('MIGRATED'),
+  ]);
+  if (open.code === 0) document.getElementById('tab-open-n').textContent = String(open.data.total);
+  if (handled.code === 0) document.getElementById('tab-handled-n').textContent = String(handled.data.total);
+  if (migrated.code === 0) document.getElementById('tab-migrated-n').textContent = String(migrated.data.total);
+}
+
+function syncTabs() {
+  document.getElementById('tab-open').setAttribute('aria-selected', String(status === 'OPEN'));
+  document.getElementById('tab-handled').setAttribute('aria-selected', String(status === 'HANDLED'));
+  document.getElementById('tab-migrated').setAttribute('aria-selected', String(status === 'MIGRATED'));
+}
+
+async function load() {
+  const me = await BAND.renderNav('admin-feedback.html');
+  if (!me) return;
+
+  syncTabs();
+  const d = await BAND.must(`/api/admin/feedback?status=${status}&page=1&size=${SIZE}`);
+  const host = document.getElementById('list');
+  host.textContent = '';
+  const empty = document.getElementById('empty');
+  empty.hidden = d.list.length > 0;
+  empty.textContent = EMPTY[status];
+  for (const f of d.list) host.appendChild(card(f));
+  loadCounts();
+}
+
+for (const tab of document.querySelectorAll('.ct-tab')) {
+  tab.addEventListener('click', () => {
+    status = tab.id.replace('tab-', '').toUpperCase();
+    load();
+  });
+}
+load();
+</script>
+</body>
+</html>

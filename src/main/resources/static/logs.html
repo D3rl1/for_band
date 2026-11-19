@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>操作日志 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 2026-10-18 精装：两枚 `p.chip` 保持纯文字（不并成药丸），内容列单行省略 + title 全文；
+     手机端时间/人一行、动作/对象/IP 一行、内容一行。仅管理员可见，403 整页静默。 -->
+<div class="chips" id="chips" hidden>
+  <!-- 存储用量（docs/08 §8.3/§8.5：后台显示用量、到阈值提醒）。**仅管理员渲染**；超阈值整行变朱砂。 -->
+  <p id="storage" class="chip" hidden></p>
+
+  <!-- 上次成功备份（docs/12 §12.5「⚡ 备份成败怎么让应用知道」③：顶部、与存储用量同一区域）。
+       **仅管理员渲染**；未知 / 从没成功过 / 超 48 小时 → 标红（读不到状态本身就是"备份情况不明"）。 -->
+  <p id="backup" class="chip" hidden></p>
+</div>
+
+<div class="table-card">
+  <table class="tb lg-table" id="logs-table">
+    <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>IP</th><th>内容</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="pager">
+  <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
+  <span id="pageinfo" class="pager-n"></span>
+  <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+</div>
+
+<script>
+// ⚠️ 新增 action 串时**记得在这里加中文名**，否则日志页会显示英文裸串（本次就补了一批）
+const actionLabels = {
+  ACCOUNT_CREATE: '建号', ACCOUNT_UPDATE: '修改账号', ACCOUNT_RESET_PASSWORD: '重置密码',
+  AVATAR_GRANT: '发放纪念头像', AVATAR_GRANT_REVOKE: '撤回纪念头像',
+  ACCOUNT_REVOKE_SESSIONS: '踢下线', ACCOUNT_EXPORT: '导出账号表',
+  EVENT_CREATE: '创建活动', EVENT_BATCH_CREATE: '批量生成活动', EVENT_UPDATE: '修改活动',
+  EVENT_CANCEL: '取消活动', EVENT_SET_PIECES: '设置活动曲目单',
+  ATTENDANCE_MARK_FOR: '代签', ATTENDANCE_SET_STATUS: '修改考勤状态',
+  ATTENDANCE_OVERRIDE_BY_LEAVE: '请假批准覆盖已有签到',
+  LEAVE_APPLY: '提交请假', LEAVE_DECIDE: '审批请假', LEAVE_CANCEL: '撤回请假',
+  PIECE_UPDATE: '修改曲目', PIECE_ATTACHMENT_DELETE: '删除曲目附件',
+  CONCERT_UPDATE: '修改演出档案', CONCERT_PHOTO_DELETE: '删除演出照片',
+  RECORDING_DELETE: '删除录音',
+  // 上任声部长的留言（docs/03 §3.5）：**写与改共用这一个串**（它是"留痕"，不区分新增/修改）
+  SECTION_NOTE_WRITE: '写上任声部长留言',
+  // 专场策展（docs/17）：⚠️ 这 6 个串是**实现方定的**，请规格侧登记进 docs/11 §11.3（交接单 §三）
+  SHOWCASE_CREATE: '开专场时间点', SHOWCASE_TOGGLE: '设为/取消专场',
+  SHOWCASE_PHOTO_ADD: '加入策展图', SHOWCASE_PHOTO_ORDER: '调整策展顺序',
+  SHOWCASE_PHOTO_NOTE: '改策展文案', SHOWCASE_PHOTO_DELETE: '移出策展图',
+  // ⚠️ 这两个 action **不由应用写**，而是服务器上的备份脚本 best-effort 直插 operation_log
+  //（docs/12 §12.5 ④）。脚本侧请**逐字**用这两个串，否则日志页会显示英文裸串。
+  BACKUP_RUN: '备份执行', BACKUP_FAILED: '备份失败',
+};
+let page = 1;
+
+function compact(json) {
+  if (!json) return '';
+  try {
+    const obj = JSON.parse(json);
+    return Object.entries(obj)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(' ')
+      .slice(0, 120);
+  } catch (e) {
+    return json.slice(0, 120);
+  }
+}
+
+/** 存储用量：**只有管理员**会渲染这一行；超阈值时标成醒目色（这就是"到阈值时提醒管理员"）。 */
+async function showStorage() {
+  const el = document.getElementById('storage');
+  const s = await BAND.api('/api/admin/storage');
+  if (s.code !== 0) {
+    return;   // 非管理员（403）→ 静默不显示：这是系统维护数据，不是人人都该看的
+  }
+  const d = s.data;
+  const kinds = d.byKind
+    .filter((k) => k.count > 0)
+    .map((k) => `${k.label} ${BAND.sizeText(k.bytes)}（${k.count}）`)
+    .join(' · ');
+  el.hidden = false;
+  document.getElementById('chips').hidden = false;
+  el.textContent = `文件存储：已用 ${BAND.sizeText(d.totalBytes)} / 警戒线 ${BAND.sizeText(d.thresholdBytes)}`
+    + `（共 ${d.totalCount} 个文件${kinds ? '：' + kinds : ''}）`
+    + (d.overThreshold ? ' —— 已超过警戒线，该清理一下了（系统不会自动删任何东西）' : '');
+  if (d.overThreshold) {
+    el.classList.add('warn');
+  }
+}
+
+/**
+ * 上次成功备份（docs/12 §12.5）：**只有管理员**渲染这一行。
+ * 标红的三条：读不到状态（未知）、从没成功过、距上次成功 > 48 小时。
+ * ⚠️ 「未知」也标红 —— 状态读不出来时**不能**显示成"一切正常"，那正是这条规格要防的静默失败。
+ */
+async function showBackup() {
+  const el = document.getElementById('backup');
+  const s = await BAND.api('/api/admin/backup-status');
+  if (s.code !== 0) {
+    return;   // 非管理员（403）→ 静默不显示：与存储用量同一档，都是系统维护数据
+  }
+  const d = s.data;
+  const stale = !d.known || !d.lastSuccessAt || d.staleHours > 48;
+  el.hidden = false;
+  document.getElementById('chips').hidden = false;
+  if (d.known && d.lastSuccessAt) {
+    const t = BAND.stamp(d.lastSuccessAt, 'sec');
+    el.textContent = `上次成功备份：${t}（${d.staleHours} 小时前）`;
+  } else {
+    el.textContent = '上次成功备份：未知';
+  }
+  if (d.ok === false && d.message) {
+    el.textContent += ` —— 最近一次失败：${d.message}`;
+  }
+  if (stale) {
+    el.classList.add('warn');
+  }
+}
+
+async function load() {
+  const me = await BAND.renderNav('logs.html');
+  if (!me) return;
+  showStorage();
+  showBackup();
+  // ⚠️ 本页仅管理员可见：403 要**整页静默**（docs/14 §17.3）。
+  // 用 BAND.api 而不是 BAND.must —— must 会 toast 并 throw，普通团员一进来就是一条错误提示
+  // 加一个没人接的 unhandled rejection。
+  const envelope = await BAND.api(`/api/operation-logs?page=${page}&size=20`);
+  if (envelope.code !== 0) {
+    document.querySelector('.table-card').style.display = 'none';
+    document.querySelector('.pager').style.display = 'none';
+    return;
+  }
+  const d = envelope.data;
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const log of d.list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="lg-time"></td><td class="lg-who"></td><td class="lg-act"></td>'
+      + '<td class="lg-obj"></td><td class="lg-ip"></td><td class="lg-detail"></td>';
+    tr.children[0].textContent = BAND.stamp(log.createdAt, 'sec');
+    tr.children[1].textContent = log.operatorName || log.operatorId;
+    tr.children[2].textContent = actionLabels[log.action] || log.action;
+    tr.children[3].textContent = (log.targetType || '') + (log.targetId ? ' #' + log.targetId : '');
+    tr.children[4].textContent = log.ip || '';
+    const detail = compact(log.after) || compact(log.before);
+    tr.children[5].textContent = detail;
+    // 内容列桌面单行省略；全文挂在 title 上，悬停可看（手机端整段换行显示，不丢内容）
+    tr.children[5].setAttribute('title', detail);
+    tbody.appendChild(tr);
+  }
+  BAND.alive(document.getElementById('logs-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  page = d.page || page;
+  const totalPages = Math.max(1, Math.ceil(d.total / d.size));
+  document.getElementById('pageinfo').textContent = `第 ${page}/${totalPages} 页 · 共 ${d.total} 条`;
+  document.getElementById('prev').disabled = page <= 1;
+  document.getElementById('next').disabled = page >= totalPages;
+}
+
+document.getElementById('prev').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+document.getElementById('next').addEventListener('click', () => { page++; load(); });
+
+load();
+</script>
+</body>
+</html>

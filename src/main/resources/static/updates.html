@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>更新日志 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 2026-10-18 精装：标题/日期/正文三层，正文纯文本 + 保留换行；除翻页外无任何入口（docs/14） -->
+<div class="upd-wrap">
+  <div id="list"></div>
+  <p id="empty" class="upd-empty" hidden>还没有更新公告——管理员发布之后，这里会按时间倒序列出来</p>
+  <div class="pager">
+    <button id="prev" class="go go-ghost go-sm" type="button">上一页</button>
+    <span id="pageinfo" class="pager-n"></span>
+    <button id="next" class="go go-ghost go-sm" type="button">下一页</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let page = 1;
+const SIZE = 10;
+
+function card(n) {
+  const el = document.createElement('article');
+  el.className = 'upd-card';
+  const title = document.createElement('h2');
+  title.className = 'upd-t';
+  title.textContent = n.title;
+  const when = document.createElement('p');
+  when.className = 'upd-d';
+  when.textContent = BAND.stamp(n.publishedAt)
+    + (n.publishedByName ? ' · ' + n.publishedByName : '');
+  const body = document.createElement('div');
+  body.className = 'upd-b';
+  // 正文**纯文本 + 保留换行**，绝不解析 HTML/markdown（docs/15 §15.2 + SECURITY.md C3）
+  body.textContent = n.content;
+  el.append(title, when, body);
+  return el;
+}
+
+async function load() {
+  const me = await BAND.renderNav('updates.html');
+  if (!me) return;
+  const d = await BAND.must(`/api/release-notes?page=${page}&size=${SIZE}`);
+  const host = document.getElementById('list');
+  host.innerHTML = '';
+  document.getElementById('empty').hidden = d.list.length > 0;
+  for (const n of d.list) host.appendChild(card(n));
+  // 成功渲染后才算已读（docs/15 §15.12）：第 1 页包含最新公告，写回本页最大 id；
+  // 翻到旧页**不降低水位**（markReleaseSeen 内部取 max），也只清铃铛/公告行，不动信封与讨论点。
+  if (page === 1) {
+    const maxId = d.list.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0);
+    if (maxId) BAND.markReleaseSeen(maxId);
+  }
+  const pages = Math.max(1, Math.ceil(d.total / SIZE));
+  document.getElementById('pageinfo').textContent = `第 ${page}/${pages} 页 · 共 ${d.total} 条`;
+  document.getElementById('prev').disabled = page <= 1;
+  document.getElementById('next').disabled = page >= pages;
+}
+
+document.getElementById('prev').addEventListener('click', () => { page--; load(); });
+document.getElementById('next').addEventListener('click', () => { page++; load(); });
+load();
+</script>
+</body>
+</html>

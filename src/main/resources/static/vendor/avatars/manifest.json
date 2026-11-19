@@ -1,0 +1,21 @@
+{
+  "_comment": "预置头像清单——唯一权威（docs/14 §14.6.4）。member.avatar 存的是这里 id，服务端校验 ∈ 本清单 ∪ {null}，前端也读本文件渲染网格；两边读同一份，别在别处再抄一遍。每条**必须显式写 file**（带后缀的保存文件名）——前端只读 file、**不留'拼 id + 后缀'的回退分支**（少一个分支就少一类'忘了同步'的 bug）。条目可带可选字符串 description（纯文本说明，#260）——文案必须在素材上传前人工定稿；没有定稿文案的条目省略该字段，前端只显示名称。",
+  "source": "microsoft/fluentui-emoji",
+  "style": "Color",
+  "avatars": [
+    { "id": "fluent-frog", "name": "青蛙", "file": "fluent-frog.svg" },
+    { "id": "fluent-cat", "name": "猫", "file": "fluent-cat.svg" },
+    { "id": "fluent-panda", "name": "熊猫", "file": "fluent-panda.svg" },
+    { "id": "fluent-rabbit", "name": "兔子", "file": "fluent-rabbit.svg" },
+    { "id": "fluent-tiger", "name": "老虎", "file": "fluent-tiger.svg" },
+    { "id": "fluent-fox", "name": "狐狸", "file": "fluent-fox.svg" },
+    { "id": "fluent-bear", "name": "熊", "file": "fluent-bear.svg" },
+    { "id": "fluent-tangerine", "name": "橘子", "file": "fluent-tangerine.svg" },
+    { "id": "fluent-violin", "name": "小提琴", "file": "fluent-violin.svg" },
+    { "id": "fluent-guitar", "name": "吉他", "file": "fluent-guitar.svg" },
+    { "id": "fluent-drum", "name": "鼓", "file": "fluent-drum.svg" },
+    { "id": "fluent-microphone", "name": "麦克风", "file": "fluent-microphone.svg" },
+    { "id": "band-chubby", "name": "黄胖胖", "file": "band-chubby.png", "description": "只是一只单纯的黄胖胖。" },
+    { "id": "band-sunlit-mountains", "name": "晴日云山", "file": "band-sunlit-mountains.webp", "stillFile": "band-sunlit-mountains-still.png", "animated": true, "description": "日光越过云海，远山依次醒来。" }
+  ]
+}

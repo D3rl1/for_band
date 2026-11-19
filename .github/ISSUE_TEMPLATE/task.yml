@@ -1,0 +1,48 @@
+name: 任务 / 实现项
+description: 已由用户分配交接单编号后使用
+title: "[#N] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        不要贴真实团员姓名、手机号、学号、密码、服务器 IP、密钥或真实截图。
+        编号只能由用户分配；没有编号不要开工。
+  - type: input
+    id: ledger
+    attributes:
+      label: 交接单编号
+      description: 由用户分配，例如 #244
+      placeholder: "#244"
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: 规格出处
+      placeholder: "docs/05 §5.4"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 要做什么（人话）
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收方式（可操作步骤）
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: 不要动什么
+      value: "不改 main、不改部署/密钥、不改 CI/权限/表结构（除非任务明确）"
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 安全检查
+      options:
+        - label: 内容不含真实团员数据、密码、密钥、服务器 IP
+          required: true

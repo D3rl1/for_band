@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>问题讨论 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="ev-lhead">
+  <div class="sec"><h2>问题讨论</h2><span class="sub" id="count"></span></div>
+  <button id="new-btn" class="go go-sm" type="button" data-band-ripple>发问题</button>
+</div>
+
+<div class="ev-filters band-filters" role="group" aria-label="筛选问题">
+  <fieldset class="band-segments"><legend class="visually-hidden">问题状态</legend>
+    <label class="band-choice"><input type="radio" name="issue-status" data-s="" value="" checked><span>全部</span></label>
+    <label class="band-choice"><input type="radio" name="issue-status" data-s="PENDING" value="PENDING"><span>待处理</span></label>
+    <label class="band-choice"><input type="radio" name="issue-status" data-s="PROCESSING" value="PROCESSING"><span>处理中</span></label>
+    <label class="band-choice"><input type="radio" name="issue-status" data-s="FIXED" value="FIXED"><span>已修复</span></label>
+    <label class="band-choice"><input type="radio" name="issue-status" data-s="REJECTED" value="REJECTED"><span>不处理</span></label>
+  </fieldset>
+  <label class="band-switch"><input id="mine-chip" type="checkbox" role="switch"><span>我提的问题</span></label>
+</div>
+
+<section id="form-wrap" class="is-form-wrap is-hidden" aria-label="发问题">
+  <form id="issue-form" class="is-form">
+    <div class="is-form-h">
+      <b>发问题</b>
+      <span class="is-form-note">公开可见，写清复现步骤更容易被处理</span>
+    </div>
+    <label class="is-label band-field-label" for="f-title">标题<span id="title-count" class="band-field-count">0 / 50</span></label>
+    <input id="f-title" class="inp band-input" maxlength="50" aria-describedby="title-count issue-form-error" required>
+    <label class="is-label band-field-label" for="f-content">正文<span id="content-count" class="band-field-count">0 / 2000</span></label>
+    <textarea id="f-content" class="inp band-input" rows="5" maxlength="2000" aria-describedby="content-count issue-form-error" required></textarea>
+    <label class="is-label band-field-label" for="f-device">运行环境<span id="device-count" class="band-field-count">0 / 100</span></label>
+    <input id="f-device" class="inp band-input" maxlength="100" aria-describedby="device-note device-count issue-form-error" placeholder="例如：小米 14 / Android 15" required>
+    <p class="is-hint" id="device-note">运行环境会按当前浏览器预填，可以改；空着不能提交。</p>
+    <p class="band-field-error" id="issue-form-error" role="alert" hidden></p>
+    <div class="is-form-act">
+      <button id="f-cancel" class="go go-ghost go-sm" type="button" data-band-ripple>取消</button>
+      <button id="f-save" class="go go-sm" type="submit" data-band-ripple>提交</button>
+    </div>
+  </form>
+</section>
+
+<div id="list" class="is-list"></div>
+<p id="empty" class="ev-empty"></p>
+
+<div class="pager" id="pager">
+  <button id="prev" class="go go-ghost go-sm" type="button" data-band-ripple>上一页</button>
+  <span id="pageinfo" class="pager-n"></span>
+  <button id="next" class="go go-ghost go-sm" type="button" data-band-ripple>下一页</button>
+</div>
+
+<script>
+'use strict';
+
+const STATUS = {
+  PENDING: ['待处理', 'pending'],
+  PROCESSING: ['处理中', 'processing'],
+  FIXED: ['已修复', 'fixed'],
+  REJECTED: ['不处理', 'rejected'],
+};
+
+let statusFilter = '';
+let mineOnly = false;
+let page = 1;
+let pages = 1;
+let loadGen = 0; // 筛选连点以最后状态为准，旧列表 / 快照不能覆盖新一轮。
+const SIZE = 20;
+
+const formWrap = document.getElementById('form-wrap');
+const form = document.getElementById('issue-form');
+const newBtn = document.getElementById('new-btn');
+const listHost = document.getElementById('list');
+const empty = document.getElementById('empty');
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function statusBadge(status) {
+  const meta = STATUS[status] || [status, ''];
+  return el('span', 'is-st is-st-' + meta[1], meta[0]);
+}
+
+/** 粗粒度 UA 预填：认不出就留空，让用户自己写（docs/15 §15.4）。 */
+function guessDevice() {
+  const ua = navigator.userAgent || '';
+  if (/Android/.test(ua)) {
+    const version = (ua.match(/Android\s([\d.]+)/) || [])[1];
+    let model = (ua.match(/;\s*([^;()]+?)\s+Build\//) || [])[1];
+    if (model) model = model.trim();
+    return [model, 'Android' + (version ? ' ' + version : '')].filter(Boolean).join(' / ');
+  }
+  if (/iPhone|iPad|iPod/.test(ua)) return 'iPhone / iOS';
+  if (/Windows/.test(ua)) return 'Windows';
+  if (/Macintosh/.test(ua)) return 'macOS';
+  if (/Linux/.test(ua)) return 'Linux';
+  return '';
+}
+
+function syncFilters() {
+  document.querySelectorAll('[data-s]').forEach((b) => {
+    b.checked = b.dataset.s === statusFilter;
+  });
+  BAND.switch(document.getElementById('mine-chip')).setChecked(mineOnly);
+}
+
+function syncIssueCounts() {
+  for (const [field, count] of [['f-title','title-count'],['f-content','content-count'],['f-device','device-count']]) {
+    const input = document.getElementById(field);
+    document.getElementById(count).textContent = input.value.length + ' / ' + input.maxLength;
+  }
+}
+form.addEventListener('input', (e) => {
+  syncIssueCounts();
+  if (e.target.validity && e.target.validity.valid && e.target.value.trim()) e.target.removeAttribute('aria-invalid');
+  if (!form.querySelector('[aria-invalid="true"]')) document.getElementById('issue-form-error').hidden = true;
+});
+form.addEventListener('invalid', (e) => {
+  e.target.setAttribute('aria-invalid', 'true');
+  const error = document.getElementById('issue-form-error');
+  error.textContent = '请填写标题、正文和运行环境，并检查字段长度。';
+  error.hidden = false;
+}, true);
+form.addEventListener('reset', () => {
+  form.querySelectorAll('[aria-invalid]').forEach((input) => input.removeAttribute('aria-invalid'));
+  document.getElementById('issue-form-error').hidden = true;
+  queueMicrotask(syncIssueCounts);
+});
+
+function setFormOpen(open) {
+  formWrap.classList.toggle('is-hidden', !open);
+  if (open) {
+    submitMotion.cancel();            // 重新发一条：按钮回到「提交」，别留着上一条的勾
+    if (!document.getElementById('f-device').value.trim()) {
+      document.getElementById('f-device').value = guessDevice();
+    }
+    document.getElementById('f-title').focus();
+    syncIssueCounts();
+  }
+}
+
+function card(it) {
+  const a = el('a', 'is-card');
+  a.href = '/issue-detail.html?id=' + encodeURIComponent(it.id);
+
+  const top = el('div', 'is-card-top');
+  top.append(el('h3', 'is-card-t', it.title), statusBadge(it.status));
+
+  const meta = el('p', 'is-meta',
+    (it.authorName || '（已离团）') + ' · ' + BAND.stamp(it.lastActivityAt) + ' 更新');
+  const foot = el('p', 'is-foot',
+    '回帖 ' + it.commentCount + ' · 我也遇到 ' + it.reactionCount);
+
+  a.append(top, meta, foot);
+  return a;
+}
+
+async function load() {
+  const gen = ++loadGen;
+  const me = await BAND.renderNav('issues.html');
+  if (!me || gen !== loadGen) return;
+  BAND.navigation.registerList({capture:()=>({statusFilter,mineOnly,page}),restore:s=>{if(s.statusFilter===''||Object.hasOwn(STATUS,s.statusFilter))statusFilter=s.statusFilter;if(typeof s.mineOnly==='boolean')mineOnly=s.mineOnly;if(Number.isInteger(s.page))page=s.page;syncFilters();}});
+
+  // 内容请求**前**先取动态快照；列表成功加载后才写回（docs/15 §15.12）。
+  // 快照或列表任一失败都保留原水位与红点，不提前消耗未读。
+  const snapshot = BAND.issueActivity();
+
+  newBtn.classList.toggle('is-hidden', me.role === 'HONORARY');
+  if (me.role === 'HONORARY') setFormOpen(false);
+
+  const q = new URLSearchParams({ page: String(page), size: String(SIZE) });
+  if (statusFilter) q.set('status', statusFilter);
+  if (mineOnly) q.set('mine', '1');
+  let d;
+  try {
+    d = await BAND.must('/api/issues?' + q.toString());
+  } catch (err) {
+    return;   // toast 已弹，不把旧列表刷成空白
+  }
+  const latest = await snapshot;
+  if (gen !== loadGen) return;
+  listHost.textContent = '';
+  for (const it of d.list) listHost.appendChild(card(it));
+  if (latest) BAND.markIssueSeen(latest);
+
+  const filtered = !!statusFilter || mineOnly;
+  const isEmpty = d.list.length === 0;
+  empty.classList.toggle('show', isEmpty);
+  empty.textContent = isEmpty
+    ? (filtered ? '这个筛选下还没有问题。'
+      : (me.role === 'HONORARY' ? '还没有人提问题。' : '还没有人提问题——你可以发第一条。'))
+    : '';
+
+  document.getElementById('count').textContent = '共 ' + d.total + ' 条';
+  pages = Math.max(1, Math.ceil(d.total / SIZE));
+  document.getElementById('pageinfo').textContent = '第 ' + page + '/' + pages + ' 页';
+  document.getElementById('prev').disabled = page <= 1;
+  document.getElementById('next').disabled = page >= pages;
+  document.getElementById('pager').hidden = d.total === 0;
+  syncFilters();
+  BAND.navigation.restoreScroll();
+}
+
+document.querySelectorAll('[data-s]').forEach((b) => {
+  b.addEventListener('change', () => {
+    if (!b.checked) return;
+    statusFilter = b.dataset.s;
+    page = 1;
+    load();
+  });
+});
+
+document.getElementById('mine-chip').addEventListener('change', (e) => {
+  mineOnly = e.target.checked;
+  page = 1;
+  load();
+});
+
+newBtn.addEventListener('click', () => {
+  setFormOpen(formWrap.classList.contains('is-hidden'));
+});
+
+document.getElementById('f-cancel').addEventListener('click', () => {
+  form.reset();
+  setFormOpen(false);
+});
+
+const submitMotion = BAND.dots(document.getElementById('f-save'), {
+  busy: '正在提交', success: '已提交', error: '提交失败',
+}) || { start: () => true, success: () => Promise.resolve(), fail() {} };
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  const deviceInfo = document.getElementById('f-device').value.trim();
+  if (!title || !content || !deviceInfo) {
+    const invalid = [['f-title',title],['f-content',content],['f-device',deviceInfo]].find((pair) => !pair[1]);
+    document.getElementById(invalid[0]).setAttribute('aria-invalid', 'true');
+    document.getElementById(invalid[0]).focus();
+    document.getElementById('issue-form-error').textContent = '标题、正文、运行环境都不能为空。';
+    document.getElementById('issue-form-error').hidden = false;
+    BAND.toast('标题、正文、运行环境都不能为空');
+    return;
+  }
+  if (!submitMotion.start()) return;
+  try {
+    await BAND.must('/api/issues', {
+      method: 'POST',
+      body: {
+        title,
+        content,
+        deviceInfo,
+        pagePath: location.pathname + location.search,
+      },
+    });
+  } catch (err) {
+    submitMotion.fail();              // toast 已弹，表单留着让人改
+    return;
+  }
+  const done = submitMotion.success();
+  BAND.toast('已提交，大家都能看到了', 'success');
+  form.reset();
+  statusFilter = '';
+  mineOnly = false;
+  syncFilters();
+  page = 1;
+  load();
+  // 让成勾末帧被看见再收起表单；reduced 时 success() 立即 resolve，不额外等待
+  done.then(() => setFormOpen(false));
+});
+
+document.getElementById('prev').addEventListener('click', () => {
+  if (page > 1) { page--; load(); }
+});
+document.getElementById('next').addEventListener('click', () => {
+  if (page < pages) { page++; load(); }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>团员管理 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 2026-10-18 精装：区块标题 → 表单卡 → 筛选行 → 一行一人表格。三块顺序固定。 -->
+<div class="adm-sec">
+  <h2>新建账号</h2>
+  <span class="meta">初始密码只显示一次，创建后立即发给本人</span>
+</div>
+
+<div class="adm-card">
+  <form id="create-form" class="form-grid">
+    <div class="fld">
+      <label for="c-name">姓名</label>
+      <input id="c-name" class="inp" placeholder="必填" required>
+    </div>
+    <div class="fld">
+      <label for="c-account">账号</label>
+      <input id="c-account" class="inp" placeholder="必填" required>
+    </div>
+    <div class="fld">
+      <label for="c-section">声部</label>
+      <select id="c-section" class="inp"></select>
+    </div>
+    <div class="fld">
+      <label for="c-role">角色</label>
+      <select id="c-role" class="inp">
+        <option value="MEMBER">团员</option>
+        <option value="SECTION_LEADER">声部长</option>
+        <option value="CONDUCTOR">指挥</option>
+        <option value="LEADER">团长</option>
+      </select>
+    </div>
+    <div class="fld">
+      <label for="c-instrument">乐器</label>
+      <input id="c-instrument" class="inp" placeholder="选填">
+    </div>
+    <div class="fld">
+      <label for="c-phone">手机号</label>
+      <input id="c-phone" class="inp" placeholder="选填">
+    </div>
+    <!-- 入团日期（docs/03 §3.4 上线迁移）：默认当天，可改成更早。它门控考勤，别乱填 -->
+    <div class="fld span2">
+      <label for="c-joined">入团日期</label>
+      <input type="date" id="c-joined" class="inp">
+    </div>
+    <div class="fld span2 form-actions">
+      <button class="go adm-submit" type="submit" data-band-ripple>创建并生成初始密码</button>
+    </div>
+  </form>
+</div>
+
+<div class="adm-sec">
+  <h2>成员</h2>
+  <span class="meta" id="m-count">入团日期就地可改</span>
+</div>
+
+<div class="adm-filters">
+  <div class="search">
+    <input id="m-search" class="inp" type="search" placeholder="搜索姓名 / 账号 / 声部 / 乐器" aria-label="搜索成员">
+  </div>
+  <!-- 「批量」开关（docs/14 §14.6.4 八·b，2026-09-30 #105）：`.bulk-toggle` 在桌面端不显示，
+       手机段才让出来（勾选列与底部操作条同样只在手机段的 CSS 里）。 -->
+  <button id="bulk-btn" class="go go-ghost go-sm bulk-toggle" type="button" aria-pressed="false" data-band-ripple>批量</button>
+  <button id="export-btn" class="go go-ghost go-sm" type="button" data-band-ripple>导出账号表 CSV</button>
+  <!-- #266 纪念头像发放：只给管理员（docs/02 §2.4）。默认 hidden，拿到 /api/auth/me 再决定是否显示。 -->
+  <button id="grant-btn" class="go go-ghost go-sm" type="button" data-band-ripple hidden>纪念头像发放</button>
+</div>
+
+<div class="table-card">
+  <!-- `t2` = 手机端走样张的**两行式**（docs/14 §14.6.4 八，`#105`）；桌面那 8 列一个字没动 -->
+  <table class="tb t2 adm-mb" id="admin-members-table">
+    <thead><tr><th>姓名</th><th>声部</th><th>角色</th><th>状态</th><th>账号</th><th>激活</th><th>入团日期</th><th class="act"></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<!-- 批量操作条（八·b）：`.tb.picking` 时才出现，`position: sticky` 贴底 -->
+<div class="bulkbar" id="bulkbar">
+  <span id="bulk-count">已选 0 人</span>
+  <button id="bulk-stop" type="button" disabled>设为休团</button>
+</div>
+
+<div class="modal fade" id="pw-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center">
+        <p id="pw-text" class="adm-pw"></p>
+        <p class="chip">初始密码只显示这一次，请立即发给本人</p>
+      </div>
+      <div class="modal-footer py-1"><button class="go go-sm" data-bs-dismiss="modal">我已保存</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="hon-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body">
+        <p id="hon-title" class="big my-2"></p>
+        <p class="chip">登录有效期，必填（默认毕业后 2 年，可改；过期后无法登录）</p>
+        <input type="date" id="hon-until" class="inp w-100" required>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
+        <button class="go go-sm" id="hon-save" data-band-ripple>保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="edit-modal">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-body">
+        <p id="edit-title" class="big my-2"></p>
+        <label class="chip mb-1" for="edit-role">角色</label>
+        <select id="edit-role" class="inp w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-section">声部</label>
+        <select id="edit-section" class="inp w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-status">状态</label>
+        <select id="edit-status" class="inp w-100 mb-2"></select>
+        <label class="chip mb-1" for="edit-instrument">乐器</label>
+        <input id="edit-instrument" class="inp w-100" maxlength="32" placeholder="选填">
+        <p class="chip mt-2">休团期间免出勤及录音作业，仍可登录并使用原角色功能。休团 / 恢复从操作当天生效，同日以最后一次状态为准；退团 / 普通毕业禁止登录，有效荣誉身份按有效期只读登录。</p>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" data-bs-dismiss="modal">取消</button>
+        <button class="go go-sm" id="edit-save" data-band-ripple>保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- #266 纪念头像发放（docs/02 §2.4、docs/14 §14.6.4）：选限定头像 → 勾人 → 发放；同面板看记录 / 撤回。
+     只授予使用资格，不自动替换任何人当前头像。 -->
+<div class="modal fade" id="grant-modal">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-1">
+        <h5 class="modal-title">纪念头像发放</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+      </div>
+      <div class="modal-body">
+        <div class="grant-sec">
+          <label class="chip mb-1" for="grant-avatar">限定头像</label>
+          <select id="grant-avatar" class="inp w-100 mb-2"></select>
+          <p id="grant-empty" class="grant-hint" hidden>清单里还没有限定头像。素材入库时在
+            <code>manifest.json</code> 该条目标 <code>"scope": "grant"</code> 后才会出现在这里。</p>
+          <div class="form-grid">
+            <div class="fld">
+              <label class="chip" for="grant-batch">纪念批次</label>
+              <input id="grant-batch" class="inp" maxlength="64" placeholder="选填，例如：十周年演出">
+            </div>
+            <div class="fld">
+              <label class="chip" for="grant-note">备注</label>
+              <input id="grant-note" class="inp" maxlength="200" placeholder="选填">
+            </div>
+          </div>
+        </div>
+        <div class="grant-sec">
+          <div class="grant-people-head">
+            <input id="grant-search" class="inp" type="search" placeholder="搜索姓名 / 账号 / 声部" aria-label="搜索发放对象">
+            <span id="grant-count" class="meta">已选 0 人</span>
+          </div>
+          <div id="grant-people" class="grant-people"></div>
+        </div>
+        <p id="grant-result" class="grant-result" hidden></p>
+        <div class="grant-sec">
+          <h6 class="grant-records-t">发放记录</h6>
+          <p class="grant-hint">撤回只用于纠正发错人，必须填理由；撤回不会删除记录。</p>
+          <div id="grant-records" class="grant-records"></div>
+        </div>
+      </div>
+      <div class="modal-footer py-1">
+        <button class="go go-ghost go-sm" type="button" data-bs-dismiss="modal">关闭</button>
+        <button class="go go-sm" id="grant-submit" type="button" data-band-ripple disabled>发放给所选成员</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let sections = [];
+async function load() {
+  const me = await BAND.renderNav('admin-members.html');
+  if (!me) return;
+  sections = await BAND.must('/api/sections');
+  BAND.fillSelect(document.getElementById('c-section'),
+    sections.map((s) => ({ value: s.id, label: s.name })), '无声部');
+  document.getElementById('c-joined').value = BAND.localDayKey();
+  await loadRows();
+  // #266：发放只给管理员（docs/02 §2.4）。团长能看本页也不能因此获得发放入口。
+  if (me.role === 'ADMIN') document.getElementById('grant-btn').hidden = false;
+}
+
+async function loadRows() {
+  // ⚠️ `includeLeft=true`（2026-09-30 `#109`）：名册的默认视图**不含退团的人**，
+  // 而管理端要能管理退团账号 ⇒ 显式要回来（不加这个参数，这里会凭空少人）。
+  const d = await BAND.must('/api/members?size=100&includeLeft=true');
+  rowsCache = d.list;                 // 批量设为休团要拿得到每人当前状态
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const m of d.list) {
+    const tr = document.createElement('tr');
+    tr.dataset.mid = m.id;
+    // 手机端两行式（`docs/14` §14.6.4 八，`#105`）的钩子：`.t-head` 头像+姓名 · `.t-meta` 声部·角色
+    //（新加的第 9 格）· `.t-st` 状态 / `.t-act2` 激活（右列上下两行）· `.t-date` 入团日期（单独一行）·
+    // `.t-acc` 账号（手机上不显示）· `.t-solo` 声部 / 角色（已并进 `.t-meta`）· `.t-pick` 勾选框（批量时才有）。
+    // ⚠️ 新加的两格**追加在行末**（靠 `grid-area` 摆位）⇒ 下面 `children[i]` 的取值顺序一个都没变。
+    tr.innerHTML = '<td class="t-head"></td><td class="t-solo"></td><td class="t-solo"></td>'
+      + '<td class="t-st"><span class="chip"></span></td><td class="t-acc"></td><td class="t-act2"></td>'
+      + '<td class="t-date"></td><td class="act"></td><td class="t-meta"></td><td class="t-pick"></td>';
+    // 头像 + 姓名 + 乐器（`docs/14` §14.6.4「名单里的头像」：走 `paintAvatar` 唯一入口）
+    const nameWrap = document.createElement('span');
+    nameWrap.className = 'av-name';
+    const avSlot = document.createElement('span');
+    avSlot.className = 'av-sm';
+    BAND.paintAvatar(avSlot, m);
+    const who = document.createElement('span');
+    who.className = 'adm-who';
+    const nameB = document.createElement('b');
+    nameB.textContent = m.name;
+    who.appendChild(nameB);
+    if (m.instrument) {
+      const inst = document.createElement('small');
+      inst.textContent = m.instrument;
+      who.appendChild(inst);
+    }
+    nameWrap.append(avSlot, who);
+    tr.children[0].appendChild(nameWrap);
+    tr.children[1].textContent = m.sectionName || '';
+    tr.children[2].textContent =
+      BAND.roleLabel(m.role) + (m.role === 'HONORARY' && m.honoraryUntil ? ` · 至 ${m.honoraryUntil}` : '');
+    const chip = tr.querySelector('.chip');
+    chip.textContent = BAND.statusLabel(m.status);
+    // 红只留给异常：在团＝浅松绿底、荣誉团员＝松绿描边，其余中性灰（样张里也一样）
+    if (m.role === 'HONORARY') chip.classList.add('honor');
+    else if (m.status === 'ACTIVE') chip.classList.add('on');
+    tr.children[4].textContent = m.account || '';
+    tr.children[5].textContent = m.activated ? '已激活' : '未激活';
+    tr.children[8].textContent =
+      [m.sectionName, tr.children[2].textContent].filter(Boolean).join(' · ');   // 左下那行（手机端）
+    // 搜索用的整行索引（姓名/账号/声部/角色/乐器），由 `applyMemberFilter` 过滤
+    tr.dataset.search = [m.name, m.account, m.sectionName, tr.children[2].textContent, m.instrument]
+      .filter(Boolean).join(' ').toLowerCase();
+    // 勾选框（批量选择，`docs/14` §14.6.4 八·b）：**默认就有这一格，只是手机段在非 `.picking` 时藏起来**
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.setAttribute('aria-label', '选 ' + m.name);
+    cb.addEventListener('change', updateBulkBar);
+    const choice = document.createElement('label');
+    choice.className = 'band-choice band-choice-compact';
+    choice.appendChild(cb);
+    tr.children[9].appendChild(choice);
+    // 入团日期：就地可改（docs/03 §3.4「必须能改」）。改它会动出勤率分母，所以先确认
+    const joinedInput = document.createElement('input');
+    joinedInput.type = 'date';
+    joinedInput.value = m.joinedAt || '';
+    joinedInput.addEventListener('change', async () => {
+      const next = joinedInput.value || null;
+      if (next === (m.joinedAt || null)) return;
+      if (!await BAND.confirm({
+        title: `把 ${m.name} 的入团日期改为 ${next || '（清空）'}？`,
+        body: '它会动出勤率分母——应到名单按入团日期算。',
+      })) {
+        joinedInput.value = m.joinedAt || '';
+        return;
+      }
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { joinedAt: next } });
+      BAND.toast('已更新入团日期', 'success');
+      loadRows();
+    });
+    tr.children[6].appendChild(joinedInput);
+    const action = tr.children[7];
+    // 编辑（docs/03 §3.4 + docs/14 §14.5.1，#79）：角色 / 声部 / 状态。换届、毕业/退团都走它
+    const editBtn = document.createElement('button');
+    editBtn.className = 'go go-ghost go-sm';
+    editBtn.dataset.bandRipple = '';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => openEditModal(m));
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'go go-ghost go-sm';
+    resetBtn.dataset.bandRipple = '';
+    resetBtn.textContent = '重置密码';
+    resetBtn.addEventListener('click', async () => {
+      if (!await BAND.confirm({ title: `确定重置 ${m.name} 的密码？`, body: '原密码与登录态立即失效。' })) return;
+      const pw = await BAND.must(`/api/admin/members/${m.id}/reset-password`, { method: 'POST' });
+      showPassword(pw);
+    });
+    const kickBtn = document.createElement('button');
+    kickBtn.className = 'go go-ghost go-sm';
+    kickBtn.dataset.bandRipple = '';
+    kickBtn.textContent = '踢下线';
+    kickBtn.addEventListener('click', async () => {
+      if (!await BAND.confirm({ title: `确定把 ${m.name} 踢下线？`, body: '其全部登录态立即失效，但账号状态不变、可重新登录。' })) return;
+      await BAND.must(`/api/admin/members/${m.id}/revoke-sessions`, { method: 'POST' });
+      BAND.toast('已踢下线', 'success');
+    });
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'go go-ghost go-sm';
+    toggleBtn.dataset.bandRipple = '';
+    toggleBtn.textContent = m.status === 'ACTIVE' ? '设为休团' : '恢复在团';
+    toggleBtn.disabled = !['ACTIVE', 'PAUSED'].includes(m.status);
+    toggleBtn.addEventListener('click', async () => {
+      const status = m.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      if (!await BAND.confirm({
+        title: `${m.name} → ${BAND.statusLabel(status)}？`,
+        body: statusChangeHint(status),
+      })) return;
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { status } });
+      BAND.toast('已更新', 'success');
+      loadRows();
+    });
+    action.append(editBtn, resetBtn, kickBtn, toggleBtn);
+    // 荣誉团员（docs/03 §3.4）：仅已毕业可授予；有效期必填，默认毕业后 2 年；续期走同一入口
+    if (m.status === 'GRADUATED' && m.role !== 'HONORARY') {
+      const grantBtn = document.createElement('button');
+      grantBtn.className = 'go go-ghost go-sm';
+    grantBtn.dataset.bandRipple = '';
+      grantBtn.textContent = '授予荣誉团员';
+      grantBtn.addEventListener('click', () => openHonModal(m, plusTwoYears(m.leftAt)));
+      action.append(grantBtn);
+    } else if (m.role === 'HONORARY') {
+      const renewBtn = document.createElement('button');
+      renewBtn.className = 'go go-ghost go-sm';
+    renewBtn.dataset.bandRipple = '';
+      renewBtn.textContent = '续期';
+      renewBtn.addEventListener('click', () => openHonModal(m, m.honoraryUntil || plusTwoYears(m.leftAt)));
+      action.appendChild(renewBtn);
+    }
+    tbody.appendChild(tr);
+  }
+  document.getElementById('m-count').textContent =
+    `共 ${d.list.length} 人 · 入团日期就地可改`;
+  applyMemberFilter();                   // 重新加载后保留搜索词，别让过滤结果突然全回来
+  BAND.alive(document.getElementById('admin-members-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+  updateBulkBar();                       // 重渲染后勾选没了 ⇒ 底部那条的「已选 N 人」跟着归零
+}
+
+function applyMemberFilter() {
+  const q = document.getElementById('m-search').value.trim().toLowerCase();
+  document.querySelectorAll('#admin-members-table tbody tr').forEach((tr) => {
+    tr.hidden = !!q && !(tr.dataset.search || '').includes(q);
+  });
+}
+
+document.getElementById('m-search').addEventListener('input', applyMemberFilter);
+
+function showPassword(pw) {
+  document.getElementById('pw-text').textContent = pw;
+  new bootstrap.Modal(document.getElementById('pw-modal')).show();
+}
+
+let honTarget = null;
+function openHonModal(m, until) {
+  honTarget = m.id;
+  document.getElementById('hon-title').textContent = `${m.name} · ${m.role === 'HONORARY' ? '续期' : '授予荣誉团员'}`;
+  document.getElementById('hon-until').value = until || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('hon-modal')).show();
+}
+
+function plusTwoYears(dateStr) {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  d.setFullYear(d.getFullYear() + 2);
+  return BAND.dayKey(d);
+}
+
+document.getElementById('hon-save').addEventListener('click', async () => {
+  const until = document.getElementById('hon-until').value;
+  if (!until) {
+    BAND.toast('必须填写登录有效期');
+    return;
+  }
+  await BAND.must(`/api/admin/members/${honTarget}`, {
+    method: 'PUT',
+    body: { role: 'HONORARY', honoraryUntil: until },
+  });
+  bootstrap.Modal.getInstance(document.getElementById('hon-modal')).hide();
+  BAND.toast('已保存', 'success');
+  loadRows();
+});
+
+// ---------- 编辑弹窗（docs/03 §3.4「管理端『编辑团员』弹窗」，#79）----------
+const EDIT_ROLE_OPTIONS = [
+  ['MEMBER', '团员'], ['SECTION_LEADER', '声部长'], ['CONDUCTOR', '指挥'], ['LEADER', '团长'],
+];
+const EDIT_STATUS_OPTIONS = ['ACTIVE', 'PAUSED', 'LEFT', 'GRADUATED'];
+
+let editMember = null;
+
+function statusChangeHint(status, role, honoraryUntil) {
+  if (status === 'PAUSED') return '休团期间免出勤及录音作业，仍可登录并使用原角色功能。从操作当天生效，同日以最后一次状态为准。';
+  if (status === 'ACTIVE') return '从操作当天恢复出勤及本周录音作业要求，仍可使用原登录会话；同日以最后一次状态为准。';
+  if (status === 'GRADUATED' && role === 'HONORARY' && honoraryUntil
+      && honoraryUntil >= BAND.localDayKey()) return '有效荣誉身份仍可只读登录，登录有效期不变。';
+  return '其登录态将被吊销，不能再登录。';
+}
+
+function openEditModal(m) {
+  editMember = m;
+  document.getElementById('edit-title').textContent = m.name;
+  // 当前是荣誉团员时角色栏只给两项（docs/03 §3.4 边界③）：它必须配 honorary_until，授予/续期走既有入口
+  const roleOptions = m.role === 'HONORARY'
+    ? [['HONORARY', '荣誉团员（当前）'], ['MEMBER', '团员（撤销荣誉）']]
+    : EDIT_ROLE_OPTIONS;
+  const roleSel = document.getElementById('edit-role');
+  roleSel.innerHTML = roleOptions.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  roleSel.value = m.role;
+  const secSel = document.getElementById('edit-section');
+  BAND.fillSelect(secSel, sections.map((s) => ({ value: s.id, label: s.name })), '无声部');
+  secSel.value = m.sectionId == null ? '' : String(m.sectionId);
+  const stSel = document.getElementById('edit-status');
+  stSel.innerHTML = EDIT_STATUS_OPTIONS
+    .map((v) => `<option value="${v}">${BAND.statusLabel(v)}</option>`).join('');
+  stSel.value = m.status;
+  document.getElementById('edit-instrument').value = m.instrument || '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('edit-modal')).show();
+}
+
+document.getElementById('edit-save').addEventListener('click', async () => {
+  const m = editMember;
+  const body = {};   // 部分更新：只提交改动过的字段（docs/03 §3.4）
+  const role = document.getElementById('edit-role').value;
+  if (role !== m.role) body.role = role;
+  const rawSection = document.getElementById('edit-section').value;
+  const sectionId = rawSection ? Number(rawSection) : null;
+  if (sectionId !== (m.sectionId == null ? null : m.sectionId)) {
+    // 清空声部必须带显式标记——只发 sectionId:null 会被后端当"未提供"（docs/03 §3.4 边界②）
+    if (sectionId === null) body.clearSection = true;
+    else body.sectionId = sectionId;
+  }
+  const status = document.getElementById('edit-status').value;
+  if (status !== m.status) {
+    if (!await BAND.confirm({
+          title: `${m.name} → ${BAND.statusLabel(status)}？`,
+          body: statusChangeHint(status, role, m.honoraryUntil),
+        })) return;
+    body.status = status;
+  }
+  const rawInstrument = document.getElementById('edit-instrument').value.trim();
+  if (rawInstrument !== (m.instrument || '')) {
+    // 清空乐器必须带显式标记（#217）：不发 instrument 跟后端"未提供"分不开
+    if (rawInstrument === '') body.clearInstrument = true;
+    else body.instrument = rawInstrument;
+  }
+  if (!Object.keys(body).length) {
+    bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
+    return;
+  }
+  try {
+    await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body });
+  } catch (e) {
+    return;   // 失败不关浮层：BAND.must 已 toast 后端消息原文，改完可直接再点保存（docs/14 §14.5.1）
+  }
+  bootstrap.Modal.getInstance(document.getElementById('edit-modal')).hide();
+  BAND.toast('已保存', 'success');
+  loadRows();   // 后端可能有连带改动：清 honorary_until、写 left_at、吊销 token
+});
+
+// ---- 批量选择（`docs/14` §14.6.4 八·b，2026-09-30 `#105`）：开关 → 勾选列 → 底部 sticky 操作条 ----
+//  ⚠️ **只做手机端**：`.bulk-toggle` 在桌面端不显示、勾选列与操作条也都只在手机段的 CSS 里。
+//     规格没写这条要不要也做桌面端（`八·b` 所在的 §八 就是"手机端（≤720px）"那一节），已记 `交接单` §三。
+//  ⚠️ 没有"批量"接口 ⇒ 「设为休团」是**前端逐个发 `PUT`**（`docs/03` §3.3 那个端点的既有点法）。
+let picking = false;
+let rowsCache = [];
+const tableEl = document.getElementById('admin-members-table');
+const bulkBtn = document.getElementById('bulk-btn');
+const bulkCount = document.getElementById('bulk-count');
+const bulkStop = document.getElementById('bulk-stop');
+
+function checkedIds() {
+  const out = [];
+  tableEl.querySelectorAll('tbody tr').forEach((tr) => {
+    const cb = tr.querySelector('.t-pick input');
+    if (cb && cb.checked) out.push(Number(tr.dataset.mid));
+  });
+  return out;
+}
+
+function updateBulkBar() {
+  const n = checkedIds().length;
+  bulkCount.textContent = '已选 ' + n + ' 人';
+  bulkStop.disabled = n === 0;
+}
+
+bulkBtn.addEventListener('click', () => {
+  picking = !picking;
+  tableEl.classList.toggle('picking', picking);
+  bulkBtn.setAttribute('aria-pressed', String(picking));
+  if (!picking) {                       // 关掉时把勾选清干净，免得下次打开"上次选的人还勾着"
+    tableEl.querySelectorAll('.t-pick input').forEach((cb) => { cb.checked = false; });
+  }
+  updateBulkBar();
+});
+
+bulkStop.addEventListener('click', async () => {
+  const ids = checkedIds();
+  const victims = rowsCache.filter((m) => ids.includes(m.id) && m.status === 'ACTIVE');
+  if (!victims.length) { BAND.toast('选中成员中没有需要设为休团的在团成员'); return; }
+  if (!await BAND.confirm({ title: `把这 ${victims.length} 人设为休团？`, body: statusChangeHint('PAUSED') })) return;
+  let ok = 0, fail = 0;
+  for (const m of victims) {
+    try {
+      await BAND.must(`/api/admin/members/${m.id}`, { method: 'PUT', body: { status: 'PAUSED' } });
+      ok++;
+    } catch (e) { fail++; }              // 单个失败不打断其余：最后一次性报「N 成功 / M 失败」
+  }
+  BAND.toast(fail ? `已设为休团 ${ok} 人（${fail} 人失败）` : `已设为休团 ${ok} 人`, fail ? 'warning' : 'success');
+  loadRows();
+});
+
+// 导出走 fetch 而不是 <a href>：裸链接不带 Authorization 头，永远是 401
+document.getElementById('export-btn').addEventListener('click', async () => {
+  const res = await fetch('/api/admin/accounts/export', {
+    headers: { Authorization: 'Bearer ' + BAND.token() },
+  });
+  if (!res.ok) {
+    BAND.toast('导出失败（HTTP ' + res.status + '）');
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'accounts.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  BAND.toast('已导出', 'success');
+});
+
+document.getElementById('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('c-name').value.trim(),
+    account: document.getElementById('c-account').value.trim(),
+    sectionId: document.getElementById('c-section').value ? Number(document.getElementById('c-section').value) : null,
+    role: document.getElementById('c-role').value,
+    instrument: document.getElementById('c-instrument').value.trim() || null,
+    phone: document.getElementById('c-phone').value.trim() || null,
+    joinedAt: document.getElementById('c-joined').value || null,
+  };
+  const created = await BAND.must('/api/admin/members', { method: 'POST', body });
+  showPassword(created.initialPassword);
+  e.target.reset();
+  document.getElementById('c-joined').value = BAND.localDayKey();   // reset 会清空日期，补回默认当天
+  loadRows();
+});
+
+// ---------- #266 纪念头像发放（docs/02 §2.4、docs/14 §14.6.4） ----------
+// 只授予使用资格，不自动替换任何人的当前头像；未获授予者的头像网格不出现该项。
+// 撤回只用于纠错：必须填理由、只标记不删行；正佩戴者由后端回退姓名首字。
+let grantAvatars = [];
+let grantRecords = [];
+let grantSelected = new Set();
+
+function grantEl(id) {
+  return document.getElementById(id);
+}
+
+function grantAvatarId() {
+  return grantEl('grant-avatar').value || '';
+}
+
+function grantFmt(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function openGrant() {
+  await BAND.avatars();                  // 权威清单：vendor/avatars/manifest.json（不在别处再抄）
+  grantAvatars = (BAND.avatarList || []).filter((a) => a.grantOnly === true);
+  const sel = grantEl('grant-avatar');
+  sel.replaceChildren(...grantAvatars.map((a) => new Option(a.name, a.id)));
+  grantEl('grant-empty').hidden = grantAvatars.length > 0;
+  grantEl('grant-submit').disabled = grantAvatars.length === 0;
+  grantEl('grant-result').hidden = true;
+  grantEl('grant-search').value = '';
+  grantEl('grant-batch').value = '';
+  grantEl('grant-note').value = '';
+  grantSelected = new Set();
+  try {
+    await loadGrantRecords();
+  } catch (e) {
+    // 记录读不到也照样开面板；BAND.must 已提示错误，不让它变成未捕获异常。
+    grantRecords = [];
+    renderGrantRecords();
+    renderGrantPeople();
+  }
+  bootstrap.Modal.getOrCreateInstance(grantEl('grant-modal')).show();
+}
+
+function grantOwnedIds() {
+  const avatarId = grantAvatarId();
+  return new Set(grantRecords
+    .filter((r) => r.avatarId === avatarId && !r.revokedAt)
+    .map((r) => r.memberId));
+}
+
+function renderGrantPeople() {
+  const host = grantEl('grant-people');
+  const q = grantEl('grant-search').value.trim();
+  const owned = grantOwnedIds();
+  const people = (rowsCache || []).filter((m) => !q
+    || [m.name, m.account, m.sectionName].some((v) => (v || '').includes(q)));
+  host.replaceChildren();
+  if (!people.length) {
+    const p = document.createElement('p');
+    p.className = 'grant-hint';
+    p.textContent = '没有匹配的成员';
+    host.append(p);
+  }
+  for (const m of people) {
+    const label = document.createElement('label');
+    label.className = 'grant-person';
+    label.dataset.grantMember = m.id;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = m.id;
+    const name = document.createElement('span');
+    name.className = 'grant-person-name';
+    name.textContent = m.name;
+    const meta = document.createElement('span');
+    meta.className = 'grant-person-meta';
+    meta.textContent = [m.sectionName, m.account].filter(Boolean).join(' · ');
+    label.append(cb, name, meta);
+    if (owned.has(m.id)) {
+      // 已拥有：单独提示，不再让勾选（重复发放后端也会跳过，但没必要让人以为还会发一份）
+      label.dataset.own = '1';
+      label.classList.add('own');
+      cb.disabled = true;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = '已拥有';
+      label.append(chip);
+    } else {
+      cb.checked = grantSelected.has(m.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) grantSelected.add(m.id);
+        else grantSelected.delete(m.id);
+        syncGrantCount();
+      });
+    }
+    host.append(label);
+  }
+  syncGrantCount();
+}
+
+function syncGrantCount() {
+  grantEl('grant-count').textContent = `已选 ${grantSelected.size} 人`;
+}
+
+async function loadGrantRecords() {
+  const avatarId = grantAvatarId();
+  const path = '/api/admin/avatar-grants'
+    + (avatarId ? `?avatarId=${encodeURIComponent(avatarId)}` : '');
+  grantRecords = await BAND.must(path);
+  renderGrantRecords();
+  renderGrantPeople();
+}
+
+function renderGrantRecords() {
+  const host = grantEl('grant-records');
+  host.replaceChildren();
+  if (!grantRecords.length) {
+    const p = document.createElement('p');
+    p.className = 'grant-hint';
+    p.textContent = '还没有发放记录';
+    host.append(p);
+    return;
+  }
+  for (const r of grantRecords) {
+    const row = document.createElement('div');
+    row.className = 'grant-rec' + (r.revokedAt ? ' revoked' : '');
+    row.dataset.mid = r.memberId;
+    const who = document.createElement('span');
+    who.className = 'grant-who';
+    who.textContent = r.memberName || r.account || String(r.memberId);
+    const meta = document.createElement('span');
+    meta.className = 'grant-meta';
+    meta.textContent = [
+      r.batch,
+      grantFmt(r.grantedAt),
+      `发放人 ${r.grantedByName || r.grantedBy || '—'}`,
+    ].filter(Boolean).join(' · ');
+    const state = document.createElement('span');
+    state.className = 'grant-state';
+    state.textContent = r.revokedAt ? `已撤回 · ${r.revokeReason || '未写理由'}` : '已发放';
+    row.append(who, meta, state);
+    if (!r.revokedAt) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'go go-ghost go-sm grant-revoke';
+      btn.textContent = '撤回';
+      const box = document.createElement('span');
+      box.className = 'grant-revoke-box';
+      box.style.display = 'none';
+      const input = document.createElement('input');
+      input.className = 'inp grant-reason';
+      input.placeholder = '撤回理由（必填）';
+      const ok = document.createElement('button');
+      ok.type = 'button';
+      ok.className = 'go go-sm grant-revoke-ok';
+      ok.textContent = '确认撤回';
+      box.append(input, ok);
+      btn.addEventListener('click', () => {
+        const open = box.style.display === 'none';
+        box.style.display = open ? 'flex' : 'none';
+        if (open) input.focus();
+      });
+      ok.addEventListener('click', async () => {
+        const reason = input.value.trim();
+        if (!reason) {
+          BAND.toast('撤回必须填写理由');
+          input.focus();
+          return;
+        }
+        try {
+          await BAND.must(
+            `/api/admin/avatar-grants/${r.memberId}/${encodeURIComponent(r.avatarId)}`
+            + `?reason=${encodeURIComponent(reason)}`,
+            { method: 'DELETE' });
+          BAND.toast('已撤回', 'success');
+          await loadGrantRecords();
+        } catch (e) {
+          // BAND.must 已把错误 toast 出来；这里只防止未捕获的 Promise 报错。
+        }
+      });
+      row.append(btn, box);
+    }
+    host.append(row);
+  }
+}
+
+async function submitGrant() {
+  const avatarId = grantAvatarId();
+  if (!avatarId || !grantSelected.size) return;
+  const body = { avatarId, memberIds: [...grantSelected] };
+  const batch = grantEl('grant-batch').value.trim();
+  const note = grantEl('grant-note').value.trim();
+  if (batch) body.batch = batch;
+  if (note) body.note = note;
+  const btn = grantEl('grant-submit');
+  btn.disabled = true;
+  try {
+    const res = await BAND.must('/api/admin/avatar-grants', { method: 'POST', body });
+    const out = grantEl('grant-result');
+    out.hidden = false;
+    out.textContent = `新发放 ${(res.granted || []).length} 人 · 重新发放 `
+      + `${(res.reactivated || []).length} 人 · 跳过 ${(res.skipped || []).length} 人`;
+    grantSelected = new Set();
+    await loadGrantRecords();
+  } catch (e) {
+    // BAND.must 已提示；保留已勾选名单，方便改完再发。
+  } finally {
+    btn.disabled = grantAvatars.length === 0;
+  }
+}
+
+document.getElementById('grant-btn').addEventListener('click', openGrant);
+document.getElementById('grant-search').addEventListener('input', renderGrantPeople);
+document.getElementById('grant-avatar').addEventListener('change', () => {
+  grantSelected = new Set();
+  loadGrantRecords();
+});
+document.getElementById('grant-submit').addEventListener('click', submitGrant);
+
+load();
+</script>
+</body>
+</html>

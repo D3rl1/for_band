@@ -1,0 +1,75 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ---- 工具脚本（tools/）----
+# `tools/spec_check.py` 本身要进仓库（它是文档↔代码一致性的闸门，见 docs/00 §0.9.5）；
+# 只挡 Python 顺带产出的字节码缓存。
+__pycache__/
+*.pyc
+
+# ---- 构建与运行产物 ----
+logs/
+*.log
+
+# ---- 设计原型（**只留本地，不进仓库、不参与构建**）----
+# 这里放的是十几轮美术探索的可交互原型（含定稿样例 final-pc.html / final-phone.html
+# 与 rail-hover-pc.html / login-v2.html 等），docs/14 §14.6.4/§14.6.8 把它们当"定稿参照物"引用。
+# 所以：**别删本地这个目录**（不然规格里的指引就悬空了），但也**别提交**——
+# 它们不是产品代码，且早先放在 src/main/resources/static/ 下时会被 refresh.sh
+# 拷进 target/classes 并被**公开托管在 /design-samples/**（"不参与构建"这句话就变成了假话）。
+# → 2026-09-23 从 static/ 挪到仓库根；克隆仓库的人拿不到它，
+#   真正的参照物是已上线的 static/events.html（见 docs/14 §14.6.1）。
+design-samples/
+
+# ---- 🔴 上传的文件（录音 / 谱子 / 照片）----
+# 这些是用户数据，体积大、且不属于代码仓库。
+# 它们随数据库一起备份（见 docs/12），但绝不该进 git。
+data/
+uploads/
+
+# ---- 🔴 配置与机密 ----
+# 数据库密码、token 密钥等一律走环境变量，不落仓库。
+application-local.yml
+application-prod.yml
+*.env
+.env
+
+# ---- 公开仓库前的额外防线（2026-11-02）----
+.env.*
+*.pem
+*.key
+*.crt
+id_rsa*
+*.dump
+*.bak
+
+# ---- 数据库备份 ----
+*.sql
+*.sql.gz
+# 建表脚本必须进仓库（表结构以 docs/13 为唯一权威）
+!sql/schema.sql
+
+# ---- Android 壳（android/）----
+# 源码与脚本入库；构建产物、签名钥匙、发布出的安装包不入库。
+android/build/
+android/dist/
+android/keys/
+*.p12
+*.jks
+src/main/resources/static/app/*.apk
+src/main/resources/static/app/version.json
+
+# ---- 操作系统 ----
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,40 @@
+name: 问题 / Bug
+description: 报告问题；不要贴密码、真实数据或服务器信息
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        不要在公开 Issue 里贴密码、token、真实团员数据、服务器 IP。
+        安全问题请走 security advisories 私密报告，不要开公开 Issue。
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象
+      description: 哪个页面、点了什么、看到什么
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: 发生时间
+      placeholder: "2026-11-02 14:30 左右"
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 安全检查
+      options:
+        - label: 不含密码、密钥、真实团员数据、服务器 IP
+          required: true

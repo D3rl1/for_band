@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>活动 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+
+<!-- 欢迎过渡黑幕（docs/14 §14.6.4）：**必须内联在 body 最前**，登录成功那次首帧就铺黑。
+     平时由 <html> 上的 wel-armed 类（band-nav.js 首帧前决定）保持 display:none，不闪黑。
+     内容由 app.js playWelcome 填充。 -->
+<div class="wel" id="wel" aria-hidden="true">
+  <div class="wel-av"></div>
+  <div class="wel-tx">欢迎回来，<span class="wname"></span></div>
+</div>
+
+
+<div id="navbar"></div>
+
+<!-- ══ 外观控件行（<b>只在活动页</b>，docs/14 §14.6.2b）══════════════════════════════
+     今天 + 配色（popover）/ 深浅两个图标按钮。切一次 ⇒ 配色 token 全站生效（band-nav.js 首帧读回）。
+     ⚠️ 页面里**零内联 style 定色**（AGENTS.md）：配色入口现在是 `/theme.html` 的真实链接；页面不再保留配色弹层。 -->
+<div class="ev-appbar">
+  <span class="ev-today">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>
+    <b id="today-txt">今天</b>
+  </span>
+  <a class="ticon" id="theme-btn" href="/theme.html" aria-label="主题设置" title="主题设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="9.5" cy="10" r="1.1" fill="currentColor"/><circle cx="14.5" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="14.4" r="1.1" fill="currentColor"/></svg>
+  </a>
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+</div>
+
+<!-- ══ Hero：下一场（未取消、未开始的最近一场；`renderHero`）══ -->
+<section class="ev-hero" aria-label="下一场">
+  <span class="lab"><span class="tick"></span>下一场 · <span id="hero-kind">排练</span></span>
+  <h2 id="hero-title">——</h2>
+  <p class="when" id="hero-when"></p>
+  <div class="act">
+    <a class="ev-btn ev-btn-primary" href="#" id="hero-go">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7 10.5 16.5 6 12"/></svg>
+      签 到
+    </a>
+    <span class="count" id="hero-count"></span>
+  </div>
+</section>
+
+<!-- ══ 指标条（三数 → 待办 → 工具）══
+     ⚠️ 每个数在**自己的元素**里（`data-count`）——「界面的活性」①要求如此。 -->
+<section class="ev-stats" aria-label="我的数据">
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 7v8M16 7v8M4 11v4M20 11v4"/></svg>录音</div>
+    <p class="v" id="n-rec" data-count>—</p>
+  </div>
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7 10.5 16.5 6 12"/></svg>出勤场次</div>
+    <p class="v" id="n-att" data-count>—</p>
+  </div>
+  <div class="ev-stat">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>在团天数</div>
+    <p class="v" id="n-days" data-count>—</p>
+  </div>
+  <div class="ev-stat warn" id="todo-cell">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h11l3 3v13H5Z"/><path d="M8 4v5h7"/></svg>待办</div>
+    <p class="v"><span id="todo-big" data-count>0</span><small id="todo-note" hidden></small></p>
+  </div>
+  <div class="ev-stat ev-tools">
+    <div class="k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-5.6 5.6 1.4 1.4 5.6-5.6a4 4 0 0 0 5.4-5.4l-2.3 2.3-1.8-1.8Z"/></svg>工具</div>
+    <div class="toolrow">
+      <a class="tbtn" href="/tuner.html" title="调音器">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h3l2-6 4 14 3-9 2 3h4"/></svg>调音器
+      </a>
+      <a class="tbtn" href="/metronome.html" title="节拍器">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 6 19M12 3l6 16"/><path d="M8 15h8M5 19h14M12 3v3"/><path d="m12 9 3.5-3"/></svg>节拍器
+      </a>
+      <a class="tbtn" href="/recordings.html" title="录音">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>录音
+      </a>
+      <a class="tbtn" href="/pieces.html" title="曲谱">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="11" cy="14" r="2"/><path d="M13 14V7"/></svg>曲谱
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 列表头 + 筛选 ══ -->
+<div class="ev-lhead">
+  <h2>活动安排</h2>
+  <div class="ev-filters" id="filters" role="group" aria-label="按类型筛选"></div>
+</div>
+
+<div id="groups"></div>
+
+<div class="ev-empty" id="empty">
+  <span class="ic">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v3M16 3v3M9 15h6"/></svg>
+  </span>
+  <b>这一类暂时没有活动</b>
+  <span>换个类型筛选看看，或等新安排</span>
+</div>
+
+<script>
+'use strict';
+
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const KIND_LV = { REHEARSAL: 1, SECTION_CLASS: 2, DRESS_REHEARSAL: 3 };
+
+/* 当前筛选（'ALL' 或某个 kind）。筛选走后端 ⇒ 点击 chip 重新 load()。 */
+let filter = 'ALL';
+
+function wdOf(dateStr) { return WD[new Date(dateStr + 'T12:00').getDay()]; }
+function md(dateStr) { return `${+dateStr.slice(5, 7)} 月 ${+dateStr.slice(8, 10)} 日`; }
+
+/* 今天 = 本地日期串（与后端 date 字段同格式） */
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function isToday(dateStr) { return dateStr === todayStr(); }
+
+/* 本周 / 下周 / 稍后 / 更早 —— 以今天所在一周（周一起）为「本周」。
+   ⚠️ 顺序是「近期优先」：本周 → 下周 → 稍后 → 更早（历史压底），不要改回按时间正序。
+   「更早」组内部由近到远（`desc`），越早的活动越靠下。 */
+function groupOf(dateStr) {
+  const t = new Date(todayStr() + 'T12:00');
+  const d = new Date(dateStr + 'T12:00');
+  const mon = new Date(t); mon.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+  const diff = Math.round((d - mon) / 86400000);
+  if (diff < 0) return { key: 'past', label: '更早', order: 4, desc: true };
+  if (diff < 7) return { key: 'this', label: '本周', order: 1 };
+  if (diff < 14) return { key: 'next', label: '下周', order: 2 };
+  return { key: 'later', label: '稍后', order: 3 };
+}
+function sortKey(e) { return e.date + e.startTime; }
+function whenText(e) {
+  return `${md(e.date)} 周${wdOf(e.date)} ${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}` +
+    (e.location ? ` · ${e.location}` : '');
+}
+
+/* ---------- 加载 ---------- */
+async function load() {
+  const me = await BAND.renderNav('events.html');
+  if (!me) return;
+  BAND.navigation.registerList({capture:()=>({filter}),restore:s=>{if(s.filter==='ALL'||Object.hasOwn(KIND_LV,s.filter))filter=s.filter;}});
+
+  const d = await BAND.must(`/api/events?size=100${filter !== 'ALL' ? '&kind=' + filter : ''}`);
+  // ⚠️ 等两个汇总都写进 DOM 之后才播「活性」——它们没写完就播，快照到的是 `—` / 空点阵，
+  // 而"播过"的标志一置位就**再也不播**了（docs/14 §14.6.4 ③"只在首次出现数一次"的前提）
+  renderHero(d.list);
+  renderFilters();
+  renderList(d.list);
+  await renderMineAndTodo(me);
+  BAND.alive(document.querySelector('.ev-stats'), document.getElementById('groups'));
+  BAND.navigation.restoreScroll();
+}
+
+/* ---------- hero（下一场） ---------- */
+function renderHero(list) {
+  // 主角：未取消、未开始的最近一场（**不认样张那个手工 hero 布尔**）
+  const now = Date.now();
+  const upcoming = list
+    .filter((e) => e.status !== 'CANCELED' && new Date(`${e.date}T${e.startTime}`) > now)
+    .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  const heroTitle = document.getElementById('hero-title');
+  const heroGo = document.getElementById('hero-go');
+  if (upcoming.length > 0) {
+    const nx = upcoming[0];
+    heroTitle.textContent = nx.title;
+    document.getElementById('hero-kind').textContent = BAND.kindLabel(nx.kind);
+    document.getElementById('hero-when').textContent = whenText(nx);
+    heroGo.href = `/event-detail.html?id=${nx.id}`;
+    heroGo.hidden = false;
+    const days = Math.round((new Date(nx.date + 'T12:00') - new Date(todayStr() + 'T12:00')) / 86400000);
+    document.getElementById('hero-count').innerHTML = isToday(nx.date)
+      ? '就在<b>今天</b>'
+      : `还有 <b>${days}</b> 天`;
+  } else {
+    heroTitle.textContent = '暂无安排';
+    document.getElementById('hero-when').textContent = '';
+    document.getElementById('hero-count').textContent = '';
+    heroGo.hidden = true;
+  }
+}
+
+/* ---------- 待审批整格直达（#254，docs/14 §14.6.4） ---------- */
+/** 审批角色的「请假待我审批」整格换成**原生链接**（`#254`）：
+ *  · 用真 `<a href>`——Tab / Enter / 中键 / 新标签都走浏览器原生行为，别绑 div 的 onclick；
+ *  · 链接存不存在**只看角色**，不看条数：0 条 / 加载中 / 取数失败时审批角色照样能进；
+ *  · 在 `BAND.alive()` 之前换（本函数由 load() 在 alive 前调用），数字滚动仍能认领新节点。 */
+function linkTodoCell() {
+  const cell = document.getElementById('todo-cell');
+  if (!cell || cell.tagName === 'A') return;
+  const a = document.createElement('a');
+  a.id = 'todo-cell';
+  a.className = cell.className + ' ev-todo-link';
+  a.href = '/approve-leave.html';
+  while (cell.firstChild) a.appendChild(cell.firstChild);
+  cell.replaceWith(a);
+}
+
+/* ---------- 「我的」三个数 + 待办 ---------- */
+/** 「我的」那三个数（docs/14 §14.6.4 九·b，交接单 #117）。
+ *  ⚠️ 值**直接写终态**：数字滚动会自己从 0 滚上去（ALIVE.play 读元素原文当终值）；
+ *  拿不到的写 `—`（specOf 认不出数字 ⇒ 不数，也不会被滚成 0）。 */
+async function renderMineAndTodo(me) {
+  const approver = NAV_ROLES.approver.includes(me.role);   // 复用侧栏「请假审批」的同一份角色表
+  if (approver) linkTodoCell();   // 角色一确定就直通，不等任何取数（#254 验收：0 条 / 失败也可进）
+  try {
+    const [rec, sum] = await Promise.all([
+      BAND.must(`/api/recordings?memberId=${me.id}&size=1`),
+      BAND.must(`/api/members/${me.id}/attendance-summary`),
+    ]);
+    document.getElementById('n-rec').textContent = String(rec.total || 0);
+    document.getElementById('n-att').textContent =
+      String((sum.rehearsal.present || 0) + (sum.sectionClass.present || 0));
+  } catch (e) {
+    document.getElementById('n-rec').textContent = '—';
+    document.getElementById('n-att').textContent = '—';
+  }
+  document.getElementById('n-days').textContent =
+    me.joinedAt ? String(BAND.daysSince(me.joinedAt)) : '—';
+
+  const big = document.getElementById('todo-big');
+  const note = document.getElementById('todo-note');
+  const scope = approver ? 'needsMe' : 'mine';
+  try {
+    const d = await BAND.must(`/api/leave-requests?scope=${scope}&status=PENDING&size=50`);
+    big.textContent = String(d.total);
+    note.hidden = false;
+    note.textContent = approver ? '请假待我审批' : '我的请假待审批';
+  } catch (e) {
+    big.textContent = '0';
+  }
+}
+
+/* ---------- 筛选 chip（不走计数——计数要额外拉一次列表，先不做） ---------- */
+function renderFilters() {
+  const defs = [['ALL', '全部']].concat(Object.keys(KIND_LV).map((k) => [k, BAND.kindLabel(k)]));
+  const host = document.getElementById('filters');
+  host.innerHTML = defs.map(([k, lab]) => {
+    const on = filter === k;
+    const dot = k === 'ALL' ? '' : `<span class="dot"></span>`;
+    return `<button class="fchip" type="button" data-k="${k}" aria-pressed="${on}">${dot}${lab}</button>`;
+  }).join('');
+  host.querySelectorAll('.fchip').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (filter === b.dataset.k) return;
+      filter = b.dataset.k;
+      load();                       // 筛选走后端（与原 select 行为一致）
+    });
+  });
+}
+
+/* ---------- 列表（按周分组） ---------- */
+function renderList(list) {
+  const host = document.getElementById('groups');
+  const empty = document.getElementById('empty');
+  const sorted = [...list].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  empty.classList.toggle('show', sorted.length === 0);
+  host.innerHTML = '';
+
+  const groups = {};
+  for (const e of sorted) {
+    const g = groupOf(e.date);
+    (groups[g.key] = groups[g.key] || { meta: g, items: [] }).items.push(e);
+  }
+  const ordered = Object.values(groups).sort((a, b) => a.meta.order - b.meta.order);
+
+  for (const g of ordered) {
+    if (g.meta.desc) g.items.reverse();   // 「更早」：全局正序已按时间排过，反转即由近到远
+    const sec = document.createElement('section');
+    sec.className = 'ev-group';
+    sec.innerHTML = `<div class="g-h"><span class="t">${g.meta.label}</span><i class="ln"></i><span class="c">${g.items.length} 场</span></div>`;
+    const rows = document.createElement('div');
+    rows.className = 'ev-rows';
+    for (const e of g.items) rows.appendChild(evRow(e));
+    sec.appendChild(rows);
+    host.appendChild(sec);
+  }
+}
+
+/** 一行活动：日期块 + 主文 + 状态 + `›`；点行跳详情页（真站既有行为）。 */
+function evRow(e) {
+  const btn = document.createElement('a');
+  btn.className = 'evrow' + (e.status === 'CANCELED' ? ' is-cancel' : '') + (isToday(e.date) ? ' is-today' : '');
+  btn.href = `/event-detail.html?id=${e.id}`;
+  const st = e.status === 'CANCELED'
+    ? '<span class="ev-tag cancel">已取消</span>'
+    : (isToday(e.date) ? '<span class="ev-tag today">今天</span>' : '');
+  btn.innerHTML =
+    `<span class="datebox"><span class="d">${+e.date.slice(8, 10)}</span><span class="w">周${wdOf(e.date)}</span></span>
+     <span class="body">
+       <span class="title"><i class="type" data-k="${e.kind}"></i><b></b></span>
+       <span class="meta"></span>
+     </span>
+     <span class="st">${st}</span>
+     <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 5l7 7-7 7"/></svg></span>`;
+  btn.querySelector('.title b').textContent = e.title;
+  btn.querySelector('.meta').textContent = [
+    `${e.startTime.slice(0, 5)}–${e.endTime.slice(0, 5)}`, e.location, e.sectionName,
+  ].filter(Boolean).join(' · ');
+  return btn;
+}
+
+/* ---------- 页头「今天」 ---------- */
+function renderToday() {
+  const d = new Date();
+  document.getElementById('today-txt').textContent =
+    `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 周${WD[d.getDay()]}`;
+}
+
+/* 配色 / 深浅控件由 `BAND.appearance` 统一接线（band-core.js），`band-shell` 负责挂载（#239）。 */
+renderToday();
+load();
+</script>
+</body>
+</html>

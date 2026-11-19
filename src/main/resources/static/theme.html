@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>主题设置 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<!-- 颜色引擎：自托管 @material/material-color-utilities@0.4.0（来源 / SHA-256 见同目录 SOURCE.md）。
+     只有本页加载；其他页面首帧恢复走 band.theme.settings.v2 里已算好的令牌缓存。 -->
+<script src="/vendor/material-color-utilities/0.4.0/index.iife.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body class="page-theme">
+<div id="navbar"></div>
+
+<!-- 日夜沿用原按钮：即时生效、不进草稿（docs/14 §14.6.2c）。主题页不再放「进主题页」的入口。 -->
+<div class="ev-appbar">
+  <button class="ticon" id="night-btn" type="button" aria-pressed="false" aria-label="切换到深色" title="深浅色">
+    <svg id="night-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z"/></svg>
+  </button>
+</div>
+
+<div class="theme-page">
+  <!-- 返回入口由 theme.js 按 #248 插到标题左侧（真实 href、可键盘、≥44px）。 -->
+  <p class="theme-lead">挑一个种子色，或用十六进制值自定义；对比度只改前景与背景的配对，不改字号和版式。改完先看右侧预览，满意再应用到全站。</p>
+
+  <div class="theme-notice" id="theme-notice" role="status" hidden></div>
+
+  <div class="theme-grid">
+    <section class="theme-settings" aria-labelledby="theme-seeds-title">
+      <div class="theme-block">
+        <h2 class="theme-sec-title" id="theme-seeds-title">种子色</h2>
+        <div class="theme-seeds" id="theme-seeds" role="group" aria-label="预置种子色"></div>
+
+        <div class="theme-custom">
+          <label class="theme-label" for="theme-color">自定义颜色</label>
+          <span class="theme-swatch-pick">
+            <input type="color" id="theme-color" value="#1f6f5c" aria-label="选择自定义种子色">
+          </span>
+          <label class="sr-only" for="theme-hex">十六进制色值</label>
+          <input class="theme-hex" id="theme-hex" type="text" inputmode="text" autocomplete="off"
+                 spellcheck="false" maxlength="7" placeholder="#1F6F5C" aria-describedby="theme-hex-err">
+        </div>
+        <p class="theme-err" id="theme-hex-err" role="status" hidden>请输入 #RRGGBB 或 #RGB 格式的色值。</p>
+      </div>
+
+      <div class="theme-block">
+        <h2 class="theme-sec-title">对比度</h2>
+        <fieldset class="theme-contrast">
+          <legend class="sr-only">对比度档位</legend>
+          <div class="theme-seg" id="theme-seg">
+            <label><input type="radio" name="contrast" value="standard" data-level="0"><span>标准</span></label>
+            <label><input type="radio" name="contrast" value="medium" data-level="0.5"><span>中</span></label>
+            <label><input type="radio" name="contrast" value="high" data-level="1"><span>高</span></label>
+          </div>
+        </fieldset>
+        <p class="theme-hint">“中 / 高”会拉开文字与底色的差距，并加深边界；不改变字号、布局或动效。</p>
+      </div>
+
+      <div class="theme-block">
+        <div class="theme-draft" id="theme-draft">
+          <span class="theme-dot" id="theme-dot" aria-hidden="true"></span>
+          <span id="theme-draft-text">正在读取已应用的主题…</span>
+        </div>
+        <div class="theme-actions">
+          <button class="go" id="theme-apply" type="button">应用到全站</button>
+          <button class="go go-ghost go-sm" id="theme-reset" type="button">恢复默认</button>
+          <button class="go go-ghost go-sm" id="theme-discard" type="button">取消草稿</button>
+        </div>
+      </div>
+
+      <details class="theme-details">
+        <summary>查看配色细节</summary>
+        <p class="theme-hint">种子色如何派生成整套颜色。色阶不随对比度档位变化。</p>
+        <div class="theme-ramp" id="theme-ramp" aria-hidden="true"></div>
+      </details>
+    </section>
+
+    <section class="theme-preview-wrap" aria-labelledby="theme-preview-title">
+      <h2 class="theme-sec-title" id="theme-preview-title">预览</h2>
+      <div class="theme-preview" id="theme-preview" tabindex="-1">
+        <div class="tpv-top">
+          <span class="tpv-brand">山水民族管弦乐团</span>
+          <span class="tpv-tag">示意</span>
+        </div>
+
+        <nav class="tpv-nav" aria-label="预览导航">
+          <span class="tpv-nav-item on" aria-current="page">活动</span>
+          <span class="tpv-nav-item">演出</span>
+          <span class="tpv-nav-item">曲谱</span>
+        </nav>
+
+        <article class="tpv-card">
+          <span class="tpv-date"><b>18</b><span>周六</span></span>
+          <span class="tpv-card-body">
+            <span class="tpv-title">周末排练</span>
+            <span class="tpv-meta">19:00–21:00 · 排练厅</span>
+            <span class="tpv-desc">请提前十分钟到场，带好谱夹。</span>
+          </span>
+          <span class="tpv-chip">今天</span>
+        </article>
+
+        <div class="tpv-actions">
+          <button class="tpv-btn primary" type="button">签到</button>
+          <button class="tpv-btn ghost" type="button">查看详情</button>
+          <button class="tpv-btn ghost" type="button" disabled>已结束</button>
+        </div>
+
+        <label class="tpv-field" for="tpv-input">备注
+          <input id="tpv-input" type="text" placeholder="只在本页演示，不提交">
+        </label>
+
+        <div class="tpv-notes">
+          <span class="tpv-note ok">状态正常</span>
+          <span class="tpv-note cancel">已取消</span>
+        </div>
+        <p class="theme-hint tpv-hint">预览里的控件只用于试色，不会请求真实活动或团员数据。</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- 手机端实时预览条（docs/14 §14.6.2c，2026-11-04 补）：≤620px 且完整预览不在视野时出现，
+     颜色跟草稿；点击滚到完整预览。高度 / 重叠按实际布局测量，不写死 66px。 -->
+<button class="theme-sticky" id="theme-sticky" type="button" data-show="0" aria-label="查看完整主题预览">
+  <span class="theme-sticky-card">
+    <span class="theme-sticky-title">周末排练</span>
+    <span class="theme-sticky-text">19:00 · 排练厅</span>
+  </span>
+  <span class="theme-sticky-btn primary">签到</span>
+  <span class="theme-sticky-btn ghost">详情</span>
+  <span class="theme-sticky-level" id="theme-sticky-level">标准</span>
+</button>
+
+<script src="/theme.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "山水民族管弦乐团",
+  "short_name": "山水乐团",
+  "description": "山水民族管弦乐团内部管理系统",
+  "lang": "zh-CN",
+  "start_url": "/events.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#13211D",
+  "theme_color": "#13211D",
+  "icons": [
+    { "src": "/icons/pwa-rounded-261/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/pwa-rounded-261/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/pwa-252/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

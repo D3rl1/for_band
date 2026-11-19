@@ -1,0 +1,13 @@
+{
+  "_comment": "头像框清单——唯一权威（docs/14 §14.6.4）。member.avatar_frame 存这里 id，服务端校验 ∈ 本清单 ∪ {null}，前端读同一份渲染。框是独立装饰层，不替换头像；dir 下固定有 assets/tree.webp、still.webp、leaf-1..5.webp。条目可带可选字符串 description（纯文本说明，渲染在选中框名称下方）——与头像同一口径：文案人工定稿后才写，没定稿就省略。",
+  "frames": [
+    {
+      "id": "autumn-wrap",
+      "name": "秋日树",
+      "dir": "autumn-wrap",
+      "file": "still.webp",
+      "animated": true,
+      "description": "无边落木萧萧下"
+    }
+  ]
+}

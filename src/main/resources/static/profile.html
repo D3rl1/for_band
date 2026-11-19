@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>个人资料 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<header class="pn-header">
+  <div><p class="pn-kicker">个人资料</p><h2>我的名片</h2></div>
+  <div id="edit-entry" hidden><button id="edit-btn" class="go go-ghost go-sm" type="button" data-band-ripple aria-controls="pf-edit" aria-expanded="false">编辑名片</button></div>
+</header>
+<p class="pn-admin-note" id="admin-note">姓名 / 声部 / 乐器 / 角色 / 学号由管理员维护，需要修改请联系管理员</p>
+<p class="pn-admin-note" id="honorary-note" hidden>荣誉团员为只读身份，头像与个人资料由管理员维护</p>
+<div class="pn-workspace" id="pn-workspace" hidden>
+  <article class="pn-preview" id="pf-card" aria-label="我的名片预览">
+    <div class="pn-card-heading"><span>团员名片</span><span id="preview-mode">已保存资料</span></div>
+    <div class="pn-lead"><div class="pn-identity"><p id="big-tags" class="pn-tags"></p><h2 id="big-name"></h2></div><div class="pn-portrait"><div id="big-av" class="pn-avatar"></div></div></div>
+    <section class="pn-signature"><h3>个人简介</h3><p id="big-intro"></p></section>
+    <div class="pn-mini-details"><span id="mini-birthday"></span><span id="mini-contact"></span></div>
+    <section class="pn-journey"><h3>与乐团同行</h3><div class="pn-journey-grid"><div><strong id="big-joined">—</strong><span>入团年份</span></div><div><strong><b id="showcase-n">—</b><small> 场</small></strong><span>参演专场</span></div></div></section>
+    <section class="pn-basic"><h3>基础资料</h3><dl><div><dt>生日</dt><dd id="big-birthday">未填</dd></div><div><dt>联系方式</dt><dd id="big-contact">未填</dd></div></dl></section>
+  </article>
+  <section class="pn-editor" id="pf-edit" aria-label="编辑名片" hidden>
+    <div class="pn-editor-heading"><h2>编辑名片</h2><span>更改实时预览，保存后生效</span></div>
+    <div class="pn-tabs" id="pn-tabs-root" role="tablist" aria-label="资料分组">
+      <button id="pn-tab-intro" type="button" role="tab" aria-selected="true" aria-controls="pn-panel-intro" data-pn-tab="intro">签名</button>
+      <button id="pn-tab-avatar" type="button" role="tab" aria-selected="false" aria-controls="pn-panel-avatar" tabindex="-1" data-pn-tab="avatar">装扮</button>
+      <button id="pn-tab-details" type="button" role="tab" aria-selected="false" aria-controls="pn-panel-details" tabindex="-1" data-pn-tab="details">资料</button>
+    </div>
+    <form id="pn-form">
+      <fieldset id="pn-fields">
+        <div id="pn-panel-intro" role="tabpanel" aria-labelledby="pn-tab-intro">
+          <div class="pn-field"><label for="f-intro">个人简介 / 签名<span id="intro-help"><span id="intro-count">0</span> / 100</span></label><textarea id="f-intro" class="band-input" maxlength="100" rows="5" aria-describedby="intro-help" placeholder="留一句话，介绍此刻的自己。"></textarea></div>
+        </div>
+        <div id="pn-panel-avatar" role="tabpanel" aria-labelledby="pn-tab-avatar" hidden>
+          <div class="pn-tabs pn-subtabs" id="pn-tabs-adorn" role="tablist" aria-label="装扮类型">
+            <button id="pn-subtab-avatar" type="button" role="tab" aria-selected="true" aria-controls="pn-subpanel-avatar" data-pn-subtab="avatar">头像</button>
+            <button id="pn-subtab-frame" type="button" role="tab" aria-selected="false" aria-controls="pn-subpanel-frame" tabindex="-1" data-pn-subtab="frame">头像框</button>
+          </div>
+          <div id="pn-subpanel-avatar" role="tabpanel" aria-labelledby="pn-subtab-avatar">
+            <div class="pn-field"><div class="pn-field-heading"><span>预置头像</span></div><div id="av-grid" class="av-groups"></div><div class="av-picked"><strong id="av-name">不用头像</strong><p id="av-desc" hidden></p></div><p class="pn-help">从共享头像清单中选择，或用姓名首字。</p></div>
+          </div>
+          <div id="pn-subpanel-frame" role="tabpanel" aria-labelledby="pn-subtab-frame" hidden>
+            <div class="pn-field"><div class="pn-field-heading"><span>预置头像框</span></div><div id="fr-grid" class="av-groups"></div><div class="av-picked"><strong id="fr-name">不用头像框</strong><p id="fr-desc" hidden></p></div><p class="pn-help">头像框只装饰头像，不会替换头像本身。</p></div>
+          </div>
+        </div>
+        <div id="pn-panel-details" role="tabpanel" aria-labelledby="pn-tab-details" hidden>
+          <div class="pn-field"><label for="f-contact">联系方式<span id="contact-help"><span id="contact-count">0</span> / 128</span></label><input id="f-contact" class="band-input" maxlength="128" aria-describedby="contact-help" placeholder="自由填写，如 微信 / QQ"></div>
+          <div class="pn-field"><label for="f-birthday">生日<span id="bd-state"></span></label><input id="f-birthday" type="date" class="band-input" aria-describedby="bd-state bd-note"><div class="pn-birthday-actions"><button id="clear-bd" class="pf-link" type="button" data-band-ripple>清空生日</button><button id="undo-bd" class="pf-link" type="button" data-band-ripple hidden>撤销清空</button></div><p class="pn-help" id="bd-note">填了生日，全团会在那天看到你的生日通告；公开处只显示月-日。</p></div>
+        </div>
+      </fieldset>
+      <div class="pn-actions"><button id="edit-cancel" class="go go-ghost go-sm" type="button" data-band-ripple>取消</button><button id="save" class="go go-sm" type="submit" data-band-ripple>保存</button></div>
+    </form>
+    <p class="pn-status" id="save-status" role="status" aria-live="polite"></p>
+  </section>
+</div>
+<p class="pn-status" id="pn-status" role="status" aria-live="polite"></p>
+<script>
+'use strict';
+let me = null, profile = null, picked = null, pickedFrame = null, editing = false, leaving = false;
+let lastAv = undefined, lastFrame = undefined;   // 输入简介 / 联系方式时不必每敲一字重建框（会重置落叶动画）
+const el = id => document.getElementById(id);
+const saveMotion = BAND.dots(el('save'), { busy:'正在保存', success:'已保存', error:'保存失败' });
+function monthDay(v) { const m=String(v||'').match(/^\d{4}-(\d{2})-(\d{2})/); return m?m[1]+'-'+m[2]:''; }
+function draft() { return { avatar:picked,avatarFrame:pickedFrame,intro:el('f-intro').value,contact:el('f-contact').value,birthday:el('f-birthday').value||null }; }
+function renderCard() {
+  if (!profile) return;
+  const v=editing?draft():profile;
+  if(v.avatar!==lastAv||v.avatarFrame!==lastFrame){
+    BAND.paintAvatar(el('big-av'),{name:profile.name,avatar:v.avatar,avatarFrame:v.avatarFrame});
+    lastAv=v.avatar;lastFrame=v.avatarFrame;
+  }
+  el('big-name').textContent=profile.name;
+  el('big-tags').textContent=BAND.identityTags(profile);
+  el('big-intro').textContent=v.intro||'留一句话，介绍此刻的自己。';
+  el('big-intro').classList.toggle('pn-empty',!v.intro);
+  el('big-birthday').textContent=monthDay(v.birthday)||'未填';
+  el('big-contact').textContent=v.contact||'未填';
+  el('big-joined').textContent=profile.joinedAt?String(profile.joinedAt).slice(0,4):'—';
+  el('mini-birthday').textContent='生日 '+(monthDay(v.birthday)||'未填');
+  el('mini-contact').textContent=v.contact||'联系方式未填';
+  el('preview-mode').textContent=editing?'草稿预览':'已保存资料';
+}
+function syncCounts() { el('intro-count').textContent=el('f-intro').value.length;el('contact-count').textContent=el('f-contact').value.length; }
+function syncAvatarName() {
+  const item=[{id:null,name:'不用头像'}].concat(BAND.avatarList||[]).find(a=>a.id===picked);
+  // #266：限定头像在选中区点名"纪念限定（批次）"，与格子上的角标互相印证（格子太小，只放两个字）。
+  const batch=item&&item.grantOnly&&BAND.avatarGrants?BAND.avatarGrants.get(item.id):null;
+  el('av-name').textContent=item?(item.name+(item.grantOnly?' · 纪念限定'+(batch?'（'+batch+'）':''):'')):'姓名首字回退';
+  // #260：说明是可选纯文本，只渲染一段；空 / 非字符串 / 缺省一律不占位。
+  const desc=item&&typeof item.description==='string'?item.description:'';
+  el('av-desc').textContent=desc;el('av-desc').hidden=!desc.trim();
+}
+function syncFrameName() {
+  const item=[{id:null,name:'不用头像框'}].concat(BAND.frameList||[]).find(a=>a.id===pickedFrame);
+  el('fr-name').textContent=item?item.name:'头像框不可用';
+  const desc=item&&typeof item.description==='string'?item.description:'';
+  el('fr-desc').textContent=desc;el('fr-desc').hidden=!desc.trim();
+}
+function fillForm() {
+  picked=profile.avatar||null;pickedFrame=profile.avatarFrame||null;el('f-intro').value=profile.intro||'';el('f-contact').value=profile.contact||'';el('f-birthday').value=profile.birthday||'';
+  el('bd-state').textContent=profile.birthday?'已填':'未填';el('undo-bd').hidden=true;syncCounts();syncAvatarName();syncFrameName();renderCard();
+}
+async function renderGrid() {
+  // #266：清单与本人资格并行取。资格失败会返回空集 ⇒ 限定项不出现（失败即隐藏）。
+  const [,grants]=await Promise.all([BAND.avatars(),BAND.myAvatarGrants()]);const host=el('av-grid');
+  // 重绘（reduce 切换等）可能把焦点从格子按钮上拿走：#260 要求焦点不丢，先记下再重建。
+  const focused=host.contains(document.activeElement)?document.activeElement.dataset.avatarId:null;
+  host.replaceChildren();
+  // #253：分组唯一依据 = 清单条目的 animated===true；不按后缀 / id / stillFile 猜。
+  // 「不用头像」只放静态组首项，动态组不复制；两组共用一个 picked 与一套选中样式。
+  // 未获授予的限定项**不出现**（不是"显示但锁住"）：docs/02 §2.4「展示与选择」。
+  const all=(BAND.avatarList||[]).filter(a=>!a.grantOnly||grants.has(a.id));
+  const groups=[
+    {title:'静态头像',items:[{id:null,name:'不用头像'}].concat(all.filter(a=>a.animated!==true))},
+    {title:'动态头像',items:all.filter(a=>a.animated===true)},
+  ];
+  for(const g of groups){
+    const sec=document.createElement('section');sec.className='av-group';
+    const h=document.createElement('h4');h.className='av-group-t';h.textContent=g.title;sec.append(h);
+    if(!g.items.length){const p=document.createElement('p');p.className='av-group-empty';p.textContent='暂无动态头像';sec.append(p);host.append(sec);continue;}
+    const grid=document.createElement('div');grid.className='av-grid pn-avatar-grid';
+    for(const item of g.items) {
+      const b=document.createElement('button');b.type='button';b.className='av-cell';b.dataset.avatarId=item.id||'__none__';b.title=item.name;b.setAttribute('aria-label',item.grantOnly?item.name+'（纪念限定）':item.name);b.setAttribute('aria-pressed',String(item.id===picked));
+      if(item.id){const img=document.createElement('img');img.className='av-img';img.alt='';img.src='/vendor/avatars/'+encodeURIComponent(BAND.avatarFile(item));b.append(img);}else{b.textContent='首字';}
+      // 限定角标：格子只有 46–52px，只放「限定」两字；完整说法在 aria-label 与选中区。
+      if(item.grantOnly){const t=document.createElement('span');t.className='av-limit';t.textContent='限定';t.setAttribute('aria-hidden','true');b.append(t);}
+      b.addEventListener('click',()=>{if(saveMotion.isBusy())return;picked=item.id;host.querySelectorAll('button').forEach(x=>{x.classList.remove('on');x.setAttribute('aria-pressed','false');});b.classList.add('on');b.setAttribute('aria-pressed','true');syncAvatarName();renderCard();});
+      b.classList.toggle('on',item.id===picked);grid.append(b);
+    }
+    sec.append(grid);host.append(sec);
+  }
+  if(focused){const target=[...host.querySelectorAll('[data-avatar-id]')].find(x=>x.dataset.avatarId===focused);if(target)target.focus({preventScroll:true});}
+  syncAvatarName(); // 清单可能刚从网络 / 旧缓存更新：说明跟着最新元数据走，不动 picked / 草稿
+}
+async function renderFrameGrid() {
+  await BAND.frames();const host=el('fr-grid');
+  const focused=host.contains(document.activeElement)?document.activeElement.dataset.frameId:null;
+  host.replaceChildren();
+  const sec=document.createElement('section');sec.className='av-group';
+  const grid=document.createElement('div');grid.className='av-grid pn-avatar-grid';
+  const items=[{id:null,name:'不用头像框'}].concat(BAND.frameList||[]);
+  for(const item of items) {
+    const b=document.createElement('button');b.type='button';b.className='av-cell';b.dataset.frameId=item.id||'__none__';b.title=item.name;b.setAttribute('aria-label',item.name);b.setAttribute('aria-pressed',String(item.id===pickedFrame));
+    if(item.id){const img=document.createElement('img');img.className='fr-img';img.alt='';img.src='/vendor/avatar-frames/'+encodeURIComponent(item.dir)+'/assets/'+encodeURIComponent(item.file||'still.webp');b.append(img);}else{b.textContent='不用';}
+    b.addEventListener('click',()=>{if(saveMotion.isBusy())return;pickedFrame=item.id;host.querySelectorAll('button').forEach(x=>{x.classList.remove('on');x.setAttribute('aria-pressed','false');});b.classList.add('on');b.setAttribute('aria-pressed','true');syncFrameName();renderCard();});
+    b.classList.toggle('on',item.id===pickedFrame);grid.append(b);
+  }
+  sec.append(grid);
+  if(!BAND.frameList||!BAND.frameList.length){const p=document.createElement('p');p.className='av-group-empty';p.textContent='暂无可用头像框';sec.append(p);}
+  host.append(sec);
+  if(focused){const target=[...host.querySelectorAll('[data-frame-id]')].find(x=>x.dataset.frameId===focused);if(target)target.focus({preventScroll:true});}
+  syncFrameName();
+}
+// 运行中切 reduce：网格换静帧（只重画素材，picked / 草稿不动）；名片走 paintAvatar 自己重画。
+if(window.matchMedia){const mq=window.matchMedia('(prefers-reduced-motion: reduce)');const onMotion=()=>{if(editing)renderGrid();};if(mq.addEventListener)mq.addEventListener('change',onMotion);else if(mq.addListener)mq.addListener(onMotion);}
+function changedFields() {
+  if(!profile)return [];const v=draft(),out=[];
+  if((profile.avatar||null)!==v.avatar)out.push('头像');if((profile.avatarFrame||null)!==v.avatarFrame)out.push('头像框');if((profile.intro||'')!==v.intro.trim())out.push('简介');if((profile.contact||'')!==v.contact.trim())out.push('联系方式');if((profile.birthday||null)!==v.birthday)out.push('生日');return out;
+}
+function selectGroup(group) { el('pn-workspace').dataset.group=group;document.querySelectorAll('[data-pn-tab]').forEach(b=>{const on=b.dataset.pnTab===group;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;el('pn-panel-'+b.dataset.pnTab).hidden=!on;}); }
+// #260：内外两层 tablist 各自独立——内层只切「头像 / 头像框」，不改外层选中，也不碰草稿。
+function selectAdorn(group) { document.querySelectorAll('[data-pn-subtab]').forEach(b=>{const on=b.dataset.pnSubtab===group;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;el('pn-subpanel-'+b.dataset.pnSubtab).hidden=!on;}); }
+function closeEdit() { editing=false;leaving=false;el('pf-edit').hidden=true;el('pn-workspace').classList.remove('pn-editing');el('edit-btn').disabled=false;el('edit-btn').setAttribute('aria-expanded','false');fillForm();el('edit-btn').focus({preventScroll:true}); }
+async function canLeave() {
+  if(!editing)return true;
+  if(saveMotion.isBusy()){BAND.toast('正在保存，请稍候');return false;}
+  if(!changedFields().length)return true;
+  const ok=await BAND.confirm({title:'放弃这次修改？',body:'还有未保存的名片更改。',ok:'放弃更改',cancel:'继续编辑'});
+  if(ok)leaving=true;return ok;
+}
+el('edit-btn').addEventListener('click',async()=>{
+  if(!profile||me.role==='HONORARY'||editing)return;
+  fillForm();await Promise.all([renderGrid(),renderFrameGrid()]);editing=true;saveMotion.cancel();el('save-status').textContent='';selectGroup('intro');selectAdorn('avatar');el('pf-edit').hidden=false;el('pn-workspace').classList.add('pn-editing');el('edit-btn').disabled=true;el('edit-btn').setAttribute('aria-expanded','true');renderCard();el('f-intro').focus();
+});
+el('edit-cancel').addEventListener('click',async()=>{if(await canLeave())closeEdit();});
+document.querySelectorAll('[data-pn-tab]').forEach(b=>b.addEventListener('click',()=>selectGroup(b.dataset.pnTab)));
+document.querySelectorAll('[data-pn-subtab]').forEach(b=>b.addEventListener('click',()=>selectAdorn(b.dataset.pnSubtab)));
+// 键盘操作只在本层 tablist 内循环：内外两层各自查自己的按钮，不能互相抢。
+function wireTabKeys(host,selector){host.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||saveMotion.isBusy())return;const bs=[...host.querySelectorAll(selector)],i=bs.indexOf(e.target);if(i<0)return;e.preventDefault();const n=e.key==='Home'?0:e.key==='End'?bs.length-1:(i+(e.key==='ArrowRight'?1:-1)+bs.length)%bs.length;bs[n].click();bs[n].focus();});}
+wireTabKeys(el('pn-tabs-root'),'[data-pn-tab]');
+wireTabKeys(el('pn-tabs-adorn'),'[data-pn-subtab]');
+for(const id of ['f-intro','f-contact','f-birthday'])el(id).addEventListener('input',()=>{syncCounts();renderCard();});
+el('f-birthday').addEventListener('input',()=>{
+  const value=el('f-birthday').value,changed=(profile.birthday||'')!==value;
+  el('bd-state').textContent=changed?(value?'待保存':'待清空'):(value?'已填':'未填');
+  el('undo-bd').hidden=!!value||!profile.birthday;
+});
+el('clear-bd').addEventListener('click',()=>{if(!el('f-birthday').value)return;el('f-birthday').value='';el('bd-state').textContent='待清空';el('undo-bd').hidden=!profile.birthday;renderCard();});
+el('undo-bd').addEventListener('click',()=>{el('f-birthday').value=profile.birthday||'';el('bd-state').textContent=profile.birthday?'已填':'未填';el('undo-bd').hidden=true;renderCard();});
+el('pn-form').addEventListener('submit',async e=>{
+  e.preventDefault();if(!editing||me.role==='HONORARY'||saveMotion.isBusy())return;
+  const changed=changedFields();if(!changed.length){BAND.toast('没有改动','success');return;}
+  const v=draft(),body={};if(changed.includes('头像'))body.avatar=v.avatar;if(changed.includes('头像框')){if(v.avatarFrame)body.avatarFrame=v.avatarFrame;else body.clearAvatarFrame=true;}if(changed.includes('简介'))body.intro=v.intro.trim();if(changed.includes('联系方式'))body.contact=v.contact.trim();if(changed.includes('生日')){if(v.birthday)body.birthday=v.birthday;else body.clearBirthday=true;}
+  if(!saveMotion.start())return;
+  el('pn-fields').disabled=true;el('edit-cancel').disabled=true;document.querySelectorAll('[data-pn-tab]').forEach(b=>b.disabled=true);el('save-status').textContent='正在保存';
+  let updated;
+  try { updated=await BAND.must('/api/me/profile',{method:'PUT',body}); }
+  catch(err){saveMotion.fail();el('save-status').textContent='保存失败，草稿已保留，可以重试。';}
+  if(updated){profile=updated;await saveMotion.success();closeEdit();el('pn-status').textContent='名片已保存';}
+  el('pn-fields').disabled=false;el('edit-cancel').disabled=false;document.querySelectorAll('[data-pn-tab]').forEach(b=>b.disabled=false);
+});
+window.addEventListener('beforeunload',e=>{if(!leaving&&editing&&changedFields().length){e.preventDefault();e.returnValue='';}});
+async function load() {
+  me=await BAND.renderNav('profile.html');if(!me)return;
+  profile=await BAND.must('/api/me/profile');await BAND.frames();fillForm();el('pn-workspace').hidden=false;
+  const honorary=me.role==='HONORARY';el('edit-entry').hidden=honorary;el('admin-note').hidden=honorary;el('honorary-note').hidden=!honorary;
+  BAND.navigation.setGuard(canLeave,()=>editing&&(saveMotion.isBusy()||changedFields().length>0));
+  await BAND.mountShowcaseCount(el('showcase-n'),profile.id);
+}
+load().catch(()=>{el('pn-status').textContent='个人资料暂时无法加载，请稍后刷新。';});
+</script>
+</body>
+</html>

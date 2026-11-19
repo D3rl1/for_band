@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>琵琶 · 调音器</title>
+<style>
+/* 纸色挂在 :root 与 [data-theme="paper"] 两处：夜墨转场的揭幕布要显式挂 data-theme="paper"
+   才拿得到纸色 token（只写 :root 的话，它挂 data-theme 时会继承 html 的夜墨变量）。 */
+:root, [data-theme="paper"]{
+  --paper:#F3EDE0; --paper-2:#E7DFCC; --paper-3:#DCD2BA;
+  --ink:#221D16; --ink-2:#5B5245; --ink-3:#6E6455;
+  --red:#A8322A; --red-soft:#C4574C; --gold:#B08536; --teal:#2C4E54; --ok:#2F7D52;
+  --line:rgba(34,29,22,.14);
+  --card:rgba(255,253,248,.62);
+  --seal-ink:#FBF3E6;
+  --chip:rgba(255,253,248,.72);
+  --serif:"Songti SC","STZhongsong","SimSun","Noto Serif SC",serif;
+  --sans:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,sans-serif;
+  --num:"Bahnschrift","DIN Alternate",Consolas,ui-monospace,monospace;
+  --paper-bg:radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--paper) 88%, #fff) 0%, var(--paper) 45%, var(--paper-2) 100%);
+}
+[data-theme="night"]{
+  --paper:#17140F; --paper-2:#1E1A14; --paper-3:#262119;
+  --ink:#E8E1D3; --ink-2:#B8AF9C; --ink-3:#8A8272;
+  --red:#D2736A; --red-soft:#D2736A; --gold:#B08536; --teal:#7FB0B8; --ok:#5FB98A;
+  --line:rgba(232,225,211,.14);
+  --card:rgba(255,255,255,.025);
+  --seal-ink:#17140F;
+  --chip:rgba(255,255,255,.03);
+  --paper-bg:radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--paper) 88%, #fff) 0%, var(--paper) 45%, var(--paper-2) 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans); color:var(--ink); min-height:100%;
+  background:var(--paper-bg);
+  -webkit-font-smoothing:antialiased; position:relative; overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.055;
+  mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:14px 12px 20px}
+
+/* 夜墨转场：揭幕层里放一份「目标主题」的整页内容克隆（.cwrap > 克隆的 .wrap），
+   圆从按钮圆心揭开 —— 扫过处是同一份内容当场换配色，不是被蒙版盖住看不见。
+   扫过是翻页、不是淡入，所以跟 §5 的零过渡不冲突。
+   底色与颗粒逐字复刻 body / body::before，被摘掉时才看不出接缝；
+   颗粒 z-index:0 必须在克隆内容**下面**（原始页里 body::before 就在 .wrap 下面）。 */
+.curtain{
+  position:fixed;inset:0;overflow:hidden;z-index:60;pointer-events:none;
+  background:var(--paper-bg); color:var(--ink);   /* color 是继承的「计算值」：不留这句，克隆里 h1/.big 会沿用旧主题墨色 */
+  clip-path:circle(0px at var(--cx,50%) var(--cy,50%));
+  transition:clip-path 480ms cubic-bezier(.22,.61,.36,1);
+  /* 别在 .curtain 上写 will-change:clip-path 求加速 —— clip-path 不在 Chromium 的促层白名单里
+     （只有 opacity / transform / top|left|bottom|right），实测写与不写掉帧率都是 0.0%。 */
+}
+.curtain.go{clip-path:circle(var(--cr,150vmax) at var(--cx,50%) var(--cy,50%))}
+.curtain::before{
+  content:"";position:fixed;inset:0;z-index:0;opacity:.055;mix-blend-mode:multiply;
+  /* 提成独立合成层（两个提示都给，免得某个引擎只认一个）：带 blend 的层若留在动画层里，
+     会跟着圆每一帧重新栅格化 —— 实测掉帧率 24.2% → 0.0%，而颗粒像素一模一样（方差 0.80 → 0.79） */
+  will-change:transform;transform:translateZ(0);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.curtain .cwrap{position:relative;z-index:1}
+@media (prefers-reduced-motion: reduce){ .curtain{transition:none} }
+
+/* ---------- 头部 ---------- */
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.seal{
+  width:34px;height:34px;flex:0 0 34px;border-radius:5px;
+  background:linear-gradient(155deg,var(--red) 0%,#8E2820 100%);
+  color:var(--seal-ink);font-family:var(--serif);font-size:18px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;user-select:none;
+  box-shadow:0 3px 10px rgba(168,50,42,.28);
+}
+[data-theme="night"] .seal{background:var(--red);box-shadow:none}
+h1{font-family:var(--serif);font-size:19px;font-weight:700;letter-spacing:.06em;line-height:1.1}
+.kicker{font-size:11px;letter-spacing:.16em;color:var(--ink-3);font-family:var(--num);margin-top:2px}
+.headright{display:flex;align-items:center;gap:8px}
+.iconbtn{
+  width:44px;height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink-2);
+  cursor:pointer;transition:color .18s,border-color .18s;
+}
+.iconbtn:hover{color:var(--ink);border-color:var(--ink-3)}
+.iconbtn svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* A4 基准：最显眼 */
+.a4box{
+  display:flex;align-items:center;gap:6px;border:1px solid var(--red-soft);border-radius:10px;
+  padding:5px 8px;background:var(--card);
+}
+.a4box .lb{font-size:11px;letter-spacing:.08em;color:var(--ink-3)}
+.a4box input{
+  width:62px;height:44px;font-family:var(--num);font-variant-numeric:tabular-nums;
+  font-size:15px;font-weight:600;color:var(--ink);text-align:center;
+  border:1px solid var(--line);background:transparent;border-radius:6px;
+}
+.a4box .unit{font-size:11px;color:var(--ink-3)}
+.a4box .tip{font-size:10px;color:var(--red);letter-spacing:.02em}
+input:focus-visible,button:focus-visible,summary:focus-visible,select:focus-visible{
+  outline:2px solid var(--teal);outline-offset:2px;
+}
+
+/* ---------- 乐器图：纯显示器，不接受点击 → 不受 44px 触控约束 ----------
+   高度是这张图**唯一能变大的自由度**（宽由 viewBox 的 200:150 比例定死），想再大就得从
+   别处挪出等量高度。这里取 19.5vh 一档：矮屏自动收，高屏给满 150px。 */
+.fig{display:block;height:clamp(108px,19.5vh,150px);width:auto;max-width:100%;margin:0 auto 2px}
+.fig .frame{fill:none;stroke:var(--ink-3);stroke-opacity:.5;stroke-width:1.1;stroke-linejoin:round}
+.fig .peg{stroke:var(--ink-3);stroke-opacity:.38;stroke-width:3;stroke-linecap:round}
+.fig .str{stroke:var(--ink-3);stroke-opacity:.3;stroke-width:2;stroke-linecap:round}
+.fig .lab{font-family:var(--sans);font-size:14px;fill:var(--ink-3);fill-opacity:.7;text-anchor:middle}
+/* 三状态：选中=浓墨加粗；准了=绿（--ok，与指针条同一个绿）。准了写在后面 → 记录态压过选中态。
+   两套主题都不用写分支：--ink / --ink-3 / --ok 本来就随 data-theme 反转。 */
+.fig .peg.sel,.fig .str.sel{stroke:var(--ink);stroke-opacity:1;stroke-width:3.6}
+.fig .lab.sel{fill:var(--ink);fill-opacity:1}
+.fig .peg.tuned,.fig .str.tuned{stroke:var(--ok);stroke-opacity:1;stroke-width:3.6}
+.fig .lab.tuned{fill:var(--ok);fill-opacity:1;font-weight:700}
+
+/* 提示：一次只有一根弦在响，全局一行就够。**不再是单独一条 44px 的行** ——
+   那条行原本只剩一颗「重调」按钮在撑（44px 触控），为它白吃 52px 行高，图就抬不起来。
+   现在提示是图下面一行居中文字，「重调」挪去和「开始调音」并排。静音看门狗也挤这行。 */
+.hint{display:block;min-height:17px;margin:5px 0 7px;text-align:center;
+  font-size:12.5px;letter-spacing:.02em;color:var(--ink-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint.ok{color:var(--ok);font-weight:600}
+.hint.warn{color:var(--gold)}
+
+/* ---------- 四面板（2×2，一块一根弦） ---------- */
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:7px;min-width:0}
+.panel{
+  position:relative;min-width:0;border:1px solid var(--line);border-radius:13px;
+  background:linear-gradient(180deg,rgba(255,253,248,.9),rgba(247,242,232,.7));
+  padding:5px 8px 6px;text-align:center;cursor:pointer;
+}
+[data-theme="night"] .panel{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  box-shadow:inset 0 1px 0 rgba(232,225,211,.09);
+}
+.panel .tag{
+  display:block;padding-right:40px;text-align:left;
+  font-size:11px;letter-spacing:.04em;color:var(--ink-3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+}
+/* 听音键浮在右上角：占一行的话它 44px 高，四块面板白吃 120px 行高 */
+.listen{
+  position:absolute;top:1px;right:1px;width:44px;height:44px;
+  display:flex;align-items:center;justify-content:center;
+  border:0;background:transparent;color:var(--ink-3);cursor:pointer;border-radius:11px;
+  transition:color .18s,background .18s;
+}
+.listen:hover{color:var(--red);background:rgba(168,50,42,.07)}
+.listen svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.big{font-family:var(--sans);font-weight:700;font-size:clamp(26px,8vw,34px);line-height:1.1;letter-spacing:.01em}
+/* 简谱八度点：数字上下各堆一层小点（低音点在下面）。二胡的度数恒为 0，所以那边不需要这套。 */
+.sol{display:inline-flex;flex-direction:column;align-items:center;line-height:1.02;vertical-align:middle}
+.sol .dt,.sol .db{font-size:.42em;line-height:1;letter-spacing:.14em;text-indent:.14em;opacity:.85}
+.track{
+  position:relative;height:16px;margin-top:4px;border:1px solid var(--line);border-radius:6px;
+  background:linear-gradient(180deg,var(--line),transparent 60%);
+}
+.track .mid{position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--ink-3);opacity:.5}
+.track .pt{
+  position:absolute;top:-3px;bottom:-3px;width:3px;margin-left:-1.5px;border-radius:3px;
+  background:var(--ink);transition:left .07s linear;
+}
+.track .pt.off{opacity:0}
+.track .pt.ok{background:var(--ok)}
+/* 音分与实测 Hz 挤一行：原来两行，砍掉一行给乐器图腾地方 */
+.cents{margin-top:3px;font-family:var(--num);font-variant-numeric:tabular-nums;font-size:17px;font-weight:600;min-height:20px;white-space:nowrap}
+.cents small{font-size:10px;font-weight:400;color:var(--ink-3);margin-left:2px}
+.cents .hz{font-size:11px;font-weight:400;color:var(--ink-3);margin-left:6px}
+/* 状态：优先 准了（记录）> 锁定 > 选中。锁是「角标 + 青」的持久标记，会一直挂着；
+   边框谁响谁上色。下面按 锁定 → 命中 → 准 的顺序写，同优先级时后写的盖前写的。 */
+.panel.locked{border-color:var(--teal);box-shadow:inset 0 0 0 1px rgba(44,78,84,.3)}
+.panel.locked::after{content:"锁";position:absolute;top:4px;left:6px;font-size:10px;font-weight:700;color:var(--teal)}
+.panel.locked .tag{color:var(--teal);font-weight:600}
+.panel.active{border-color:var(--red);box-shadow:inset 0 0 0 1px rgba(168,50,42,.25)}
+.panel.active .tag{color:var(--red);font-weight:600}
+.panel.ok{border-color:var(--ok);box-shadow:inset 0 0 0 1px rgba(47,125,82,.28)}
+.panel.ok .big,.panel.ok .cents,.panel.ok .tag{color:var(--ok)}
+.panel.ok .tag{font-weight:600}
+.panel.dim{opacity:.45}
+
+/* 电平 */
+.level{margin-top:6px;display:flex;align-items:center;gap:9px}
+.level span{font-size:11px;color:var(--ink-3);letter-spacing:.1em;white-space:nowrap}
+.level .lbar{flex:1;height:4px;border-radius:3px;background:var(--line);overflow:hidden}
+.level .lfill{height:100%;width:0;background:var(--gold);border-radius:3px;transition:width .08s linear}
+
+/* 控制 */
+.controls{margin-top:8px;display:flex;gap:10px}
+.btn{
+  flex:1;font-family:var(--serif);font-size:16px;letter-spacing:.12em;
+  min-height:46px;padding:10px 18px;border-radius:11px;border:0;cursor:pointer;
+  background:linear-gradient(160deg,var(--red) 0%,#8E2820 100%);color:#FBF3E6;
+  box-shadow:0 6px 18px -8px rgba(168,50,42,.75);transition:filter .18s;
+}
+[data-theme="night"] .btn{background:var(--red);color:#17140F;box-shadow:none}
+.btn:hover{filter:brightness(1.06)}
+.btn:active{transform:translateY(1px)}
+.btn.stop{background:var(--ink);color:var(--paper)}
+[data-theme="night"] .btn.stop{color:#17140F}
+/* 重调：描边式、不填色，和实心的「开始调音」明确分开（用户提醒过并排的控件形状要拉开，
+   别让人点错）。仍在 46px 高度里 —— 可点元素 ≥44×44 是闸门在卡的硬线。 */
+.btn.ghost{
+  flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:10px 14px;
+  font-family:var(--sans);font-size:13px;letter-spacing:.04em;
+  background:transparent;color:var(--ink-3);border:1px solid var(--line);box-shadow:none;
+}
+[data-theme="night"] .btn.ghost{background:transparent;color:var(--ink-3)}
+.btn.ghost:hover{filter:none;color:var(--ink);border-color:var(--ink-3)}
+.btn.ghost svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.msg{
+  margin-top:10px;font-size:13px;line-height:1.6;color:var(--ink-2);
+  padding:11px 13px;border-left:3px solid var(--gold);border-radius:0 8px 8px 0;
+  background:rgba(176,133,54,.1);
+}
+.msg.err{border-left-color:var(--red);background:rgba(168,50,42,.1)}
+.msg.hide{display:none}
+
+/* 高级 */
+.adv{margin-top:8px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+.adv summary{
+  cursor:pointer;padding:11px 12px;font-family:var(--serif);font-size:14px;
+  letter-spacing:.06em;color:var(--ink-2);list-style:none;display:flex;justify-content:space-between;align-items:center;
+  min-height:44px;
+}
+.adv summary::-webkit-details-marker{display:none}
+.adv summary::after{content:"＋";font-family:var(--num);color:var(--ink-3)}
+.adv[open] summary::after{content:"−"}
+.advbody{padding:0 12px 12px;border-top:1px solid var(--line)}
+.row{margin-top:11px;min-width:0}
+.row .lab{display:block;font-size:11px;letter-spacing:.08em;color:var(--ink-3);margin-bottom:5px}
+.row .note{font-size:11px;color:var(--ink-3);margin-top:4px;line-height:1.5}
+.picks{display:flex;flex-wrap:wrap;gap:5px}
+.pick{
+  font-family:var(--serif);font-size:13px;letter-spacing:.02em;min-height:44px;padding:7px 11px;
+  border:1px solid var(--line);border-radius:9px;background:var(--chip);color:var(--ink-2);
+  cursor:pointer;transition:.18s;
+}
+.pick:hover{border-color:var(--ink-3);color:var(--ink)}
+.pick.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.cust{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cust input{
+  width:74px;min-height:44px;font-family:var(--num);font-size:14px;color:var(--ink);
+  border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 8px;text-align:center;
+}
+.cust .sep{font-size:11px;color:var(--ink-3)}
+.cust button{
+  min-height:44px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);
+  background:var(--chip);color:var(--ink-2);cursor:pointer;font-family:var(--serif);font-size:13px;transition:.18s;
+}
+.cust button:hover{border-color:var(--ink-3);color:var(--ink)}
+.sens{display:flex;align-items:center;gap:9px}
+.sens input[type=range]{flex:1;min-width:0;height:44px;accent-color:var(--red);cursor:pointer}
+.sens .sv{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:11px;color:var(--ink-3);white-space:nowrap}
+
+footer{margin-top:8px;text-align:center;font-size:11px;color:var(--ink-3);letter-spacing:.03em;line-height:1.3}
+
+@media (max-width:420px){
+  .wrap{padding:10px 9px 10px}
+  h1{font-size:17px}
+  /* 窄屏上把那行英文小字收掉：它就是 147px 宽，留着头部就得折成两行，一屏就装不下了 */
+  .kicker{display:none}
+  .a4box .tip{display:none}
+  /* 窄屏把 A4 输入框收窄，否则 头部 164+174+10 > 可用宽 → 折成两行，白吃 46px */
+  .a4box input{width:46px}
+  .panel .tag{font-size:10px}
+}
+</style>
+</head>
+<body>
+<script>/* 仅在乐团系统 /tuner/ 路径下要求登录；本地直开(file:// 或 localhost)路径不匹配，不受影响。见 for_band/docs/18 */
+if(location.pathname.startsWith('/tuner/')&&!localStorage.getItem('band_token'))location.replace('/login.html');</script>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="seal">琵</div>
+      <div>
+        <h1>琵琶 · 调音器</h1>
+        <div class="kicker">PIPA TUNER · 十二平均律</div>
+      </div>
+    </div>
+    <div class="headright">
+      <div class="a4box">
+        <span class="lb">A4</span>
+        <input id="a4" type="number" value="442" min="400" max="480" step="1" inputmode="numeric" aria-label="标准音 A4 频率">
+        <span class="unit">Hz</span>
+        <span class="tip">乐团标准</span>
+      </div>
+      <button class="iconbtn" id="theme" aria-label="切换夜间模式" title="切换夜间模式">
+        <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <svg class="fig" id="fig" viewBox="0 0 200 150" role="img" aria-label="琵琶琴颈示意图"></svg>
+  <div class="hint" id="hint"></div>
+
+  <div class="panels" id="panels"></div>
+
+  <div class="level">
+    <span>信号</span>
+    <div class="lbar"><div class="lfill" id="lfill"></div></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="toggle">开始调音</button>
+    <button class="btn ghost" id="reset" aria-label="重新开始调音（清空调音进度）" title="重新开始调音">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"></path><path d="M3 4.5V9h4.5"></path></svg>重调
+    </button>
+  </div>
+
+  <div class="msg hide" id="msg"></div>
+
+  <details class="adv" id="adv">
+    <summary>高级：换定弦 · 唱名 · 灵敏度</summary>
+    <div class="advbody">
+      <div class="row">
+        <span class="lab">定弦（默认北琶标准 a-d¹-e¹-a¹，含南音琵琶与曲目专用变调）</span>
+        <div class="picks" id="presets"></div>
+        <div class="note" id="presetnote"></div>
+      </div>
+      <div class="row" id="keyrow">
+        <span class="lab">唱名（只改简谱标注，不改音高）</span>
+        <div class="picks" id="keys"></div>
+        <div class="note" id="keynote"></div>
+      </div>
+      <div class="row">
+        <span class="lab">自定义定弦</span>
+        <div class="cust">
+          <span class="sep">四</span><input id="c0" placeholder="A2" aria-label="四弦目标音">
+          <span class="sep">三</span><input id="c1" placeholder="D3" aria-label="三弦目标音">
+          <span class="sep">二</span><input id="c2" placeholder="E3" aria-label="二弦目标音">
+          <span class="sep">一</span><input id="c3" placeholder="A3" aria-label="一弦目标音">
+          <button id="capply">应用</button>
+        </div>
+        <div class="note">写法：<code>A2</code> · <code>#F3</code> · <code>Bb2</code>，或直接填 Hz（如 <code>440</code>）。填不对会退回原定弦。</div>
+      </div>
+      <div class="row">
+        <span class="lab">灵敏度（麦克风收进来的声音太小就往右调）</span>
+        <div class="sens">
+          <input type="range" id="sens" min="0" max="100" step="1" value="46" aria-label="麦克风灵敏度">
+          <span class="sv" id="sensval"></span>
+        </div>
+        <div class="note">调高会更容易起振，代价是收进更多背景音。检测清晰度门限固定 0.40，不跟着动。</div>
+      </div>
+    </div>
+  </details>
+
+  <footer>
+    拨一根弦 · 指针进中间即为准 · 点面板可锁定那根弦<br>
+    声音只在本机处理，不上传
+  </footer>
+</div>
+
+<script>
+/*==CORE-START==*/
+/* 民乐调音器 · 乐器无关 CORE（唯一一份）
+   ------------------------------------------------------------------
+   这里只放「换乐器也不改一行」的东西：音名换算、简谱级换算、MPM 音高检测、定弦匹配。
+   **各乐器的数据**（TUNINGS / KEYS / DEG_BY_SEMI / MATCH_CENTS）写在各自的 src/config.js 里，
+   构建时由 build.py 把本文件 + 该乐器 config 一起内联进单文件 index.html，
+   并夹在一对 CORE 起止注释标记之间 —— verify_*.mjs 抽的正是那一段。
+   （这两行里**不能**写出标记原文：标记里的斜杠星号会提前关掉本注释。）
+
+   依赖方向：本文件的 degreeOf / stringsOf / matchString 会在**调用时**读 config.js 里的
+   KEYS / DEG_BY_SEMI / TUNINGS / MATCH_CENTS（const 提升，函数体在调用时求值即可）。
+
+   来源：逐字取自 琵琶调音器 的 CORE 段（改注释、不改代码），因此与已交付的
+   阮 / 古筝 / 二胡 / 琵琶 四件实现同源。动了 mpmPitch 或任何数学函数 = 动了全部乐器。
+   ------------------------------------------------------------------ */
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FLAT_NAMES = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const A4_MIDI = 69;
+
+function midiToFreq(midi, a4)   { return a4 * Math.pow(2, (midi - A4_MIDI) / 12); }
+function freqToMidiFloat(f, a4) { return A4_MIDI + 12 * Math.log2(f / a4); }
+function nameOf(midi, useFlat)  {
+  const p = ((midi % 12) + 12) % 12;
+  return (useFlat ? FLAT_NAMES : NOTE_NAMES)[p] + (Math.floor(midi / 12) - 1);
+}
+
+/* MIDI → 简谱级 + 八度点。KEYS（各调主音）与 DEG_BY_SEMI（半音→唱名）来自 config.js。 */
+function degreeOf(midi, keyKey) {
+  const k = KEYS[keyKey];
+  if (!k) return null;
+  const semi = ((((midi % 12) - (k.tonic % 12)) % 12) + 12) % 12;
+  const deg = DEG_BY_SEMI[semi];
+  if (!deg) return null;
+  return { deg: deg, dots: Math.floor((midi - 36) / 12) - 2 };
+}
+
+/* 一套定弦下的全部弦（低音弦 → 高音弦）。带唱名标注的只有 keys=true 的定弦。 */
+function stringsOf(presetKey, keyKey, a4) {
+  const t = TUNINGS[presetKey] || TUNINGS.standard;
+  const k = KEYS[keyKey];
+  const useFlat = !!(k && k.tonic === 10);
+  return t.strings.map(function (s) {
+    const d = t.keys ? degreeOf(s.midi, keyKey) : null;
+    return {
+      no: s.no,
+      midi: s.midi, freq: midiToFreq(s.midi, a4),
+      name: nameOf(s.midi, useFlat),
+      deg: d ? d.deg : null, dots: d ? d.dots : 0
+    };
+  });
+}
+
+/* 解析自定义定弦输入：'G3' / '#F4' / 'Bb2' / '440'(按 Hz) → MIDI；非法返回 null */
+const NOTE_IDX = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+function parseTarget(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) {                 // 纯数字 = Hz，取最近的音
+    const hz = parseFloat(s);
+    if (!(hz > 20 && hz < 8000)) return null;
+    // 这里的 440 是**名义基准**、不是调音器的 A4 设置：442 vs 440 只差 7.85 音分，
+    // 取哪个都四舍五入到同一个 MIDI。真正用哪个基准在后头 midiToFreq(midi, a4) 那步。
+    return Math.round(freqToMidiFloat(hz, 440));
+  }
+  const m = /^([#b]?)([A-Ga-g])([#b]?)(-?\d+)$/.exec(s); // 变音号可在字母前或后
+  if (!m) return null;
+  const semi = NOTE_IDX[m[2].toUpperCase()];
+  const acc  = (m[1] === '#' ? 1 : m[1] === 'b' ? -1 : 0)
+             + (m[3] === '#' ? 1 : m[3] === 'b' ? -1 : 0);
+  const midi = (parseInt(m[4], 10) + 1) * 12 + semi + acc;
+  if (midi < 12 || midi > 108) return null;
+  return midi;
+}
+
+const MPM_K        = 0.9;    // 峰值门限系数（阈值 = 0.9×最高分）
+const MPM_TAU_MAX  = 1200;   // τ 上限 ≈ 覆盖到 40 Hz，最低弦 A2=110 绰绰有余
+const RMS_GATE     = 0.004;  // 静音门限（灵敏度滑杆调的是它）
+const CLARITY_GATE = 0.40;   // 认识度门限（先锁死，别和灵敏度混成一个旋钮）
+/* 离最近目标弦多少音分内算「在调这根」—— 各乐器不同，写在 config.js。
+   取值必须 < 该乐器「最小相邻音程」的一半，否则两根弦的判定区会重叠。 */
+
+/* MPM（McLeod Pitch Method）—— 与阮/古筝/二胡/琵琶调音器逐字同源，改这里必须同步全部乐器 */
+function mpmPitch(buf, sampleRate, opts) {
+  opts = opts || {};
+  const k        = opts.k        != null ? opts.k        : MPM_K;
+  const tauMax   = Math.min(opts.tauMax != null ? opts.tauMax : MPM_TAU_MAX, buf.length >> 1);
+  const rmsGate  = opts.rmsGate  != null ? opts.rmsGate  : RMS_GATE;
+  const N = buf.length;
+
+  let sq = 0;
+  for (let i = 0; i < N; i++) sq += buf[i] * buf[i];
+  const rms = Math.sqrt(sq / N);
+  if (rms < rmsGate) return { freq: -1, rms: rms, clarity: 0 };
+
+  // 前缀平方和 → 归一化项 m(τ) 可以 O(1) 取
+  const S = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) S[i + 1] = S[i] + buf[i] * buf[i];
+
+  // NSDF: r(τ) = 2·Σx[i]x[i+τ] / Σ(x[i]² + x[i+τ]²)
+  const nsdf = new Float64Array(tauMax);
+  for (let tau = 0; tau < tauMax; tau++) {
+    const w = N - tau;
+    let acf = 0;
+    for (let i = 0; i < w; i++) acf += buf[i] * buf[i + tau];
+    const m = S[w] + (S[N] - S[tau]);
+    nsdf[tau] = m > 1e-12 ? (2 * acf) / m : 0;
+  }
+
+  // 峰值挑选：跳过含 τ=0 的第一段，逐段取正区间内的局部极大
+  const maxima = [];
+  let tau = 1;
+  while (tau < tauMax && nsdf[tau] > 0) tau++;
+  while (tau < tauMax) {
+    while (tau < tauMax && nsdf[tau] <= 0) tau++;
+    if (tau >= tauMax) break;
+    let bT = tau, bV = nsdf[tau];
+    while (tau < tauMax && nsdf[tau] > 0) {
+      if (nsdf[tau] > bV) { bV = nsdf[tau]; bT = tau; }
+      tau++;
+    }
+    maxima.push([bT, bV]);
+  }
+  if (!maxima.length) return { freq: -1, rms: rms, clarity: 0 };
+
+  let globalMax = 0;
+  for (let i = 0; i < maxima.length; i++) if (maxima[i][1] > globalMax) globalMax = maxima[i][1];
+  const th = k * globalMax;
+  // 取「第一个够高」的峰 —— 这一步就是防八度错判的关键
+  let chosen = maxima[maxima.length - 1];
+  for (let i = 0; i < maxima.length; i++) if (maxima[i][1] >= th) { chosen = maxima[i]; break; }
+
+  // 抛物线插值取亚样点精度
+  let t = chosen[0];
+  if (t > 0 && t < tauMax - 1) {
+    const y1 = nsdf[t - 1], y2 = nsdf[t], y3 = nsdf[t + 1];
+    const den = 2 * (2 * y2 - y1 - y3);
+    if (Math.abs(den) > 1e-12) {
+      const d = (y3 - y1) / den;
+      if (Math.abs(d) < 1) t += d;
+    }
+  }
+  return { freq: sampleRate / t, rms: rms, clarity: chosen[1] };
+}
+
+/* 把检测频率对到「最近的目标弦」；超出 MATCH_CENTS 判 null（不在定弦附近） */
+function matchString(freq, strings, a4) {
+  const mf = freqToMidiFloat(freq, a4);
+  let best = null;
+  for (let i = 0; i < strings.length; i++) {
+    const cents = (mf - strings[i].midi) * 100;
+    if (!best || Math.abs(cents) < Math.abs(best.cents)) best = { i: i, cents: cents };
+  }
+  if (best && Math.abs(best.cents) <= MATCH_CENTS) return best;
+  return null;
+}
+
+/* 琵琶数据 —— 唯一一份。改这里跑 `python build.py` 即可，人不必碰 index.html。
+   定弦依据见 `定弦表-核实.md`。 */
+
+/* 定弦预设：每条弦自带「弦名 + 目标 MIDI」。四根弦各有名字（四弦=缠弦最低音 … 一弦=子弦最高音），
+   所以不像二胡那样写死「内/外」—— 加一套定弦只加数据，不加 if。
+   keys=true 表示这套定弦下「唱名（简谱级）」有意义，只有北琶标准定弦才有；
+   换调不改频率、换定弦不改唱名，这是两张正交的表。
+   依据：琵琶调音器/定弦表-核实.md —— 除标准定弦外全是次级记载（五弦琵琶三种版本互相打架，都列出来）。 */
+const TUNINGS = {
+  standard:{ label:'北琶标准 a-d¹-e¹-a¹', keys:true,
+    note:'缠弦 A2 · 老弦 D3 · 中弦 E3 · 子弦 A3；音程「纯四度 · 大二度 · 纯四度」。',
+    strings:[ {no:'四弦', midi:45}, {no:'三弦', midi:50}, {no:'二弦', midi:52}, {no:'一弦', midi:57} ]},
+  nanyin:  { label:'南音琵琶 d-g-a-d¹', keys:false,
+    note:'南音琵琶定弦，音程结构与北琶相同。八度归属见核实表。',
+    strings:[ {no:'四弦', midi:50}, {no:'三弦', midi:55}, {no:'二弦', midi:57}, {no:'一弦', midi:62} ]},
+  qu_lowg: { label:'变调 G-d-e-a', keys:false,
+    note:'曲目专用定弦：《小普庵咒》《浏阳河》等。',
+    strings:[ {no:'四弦', midi:43}, {no:'三弦', midi:50}, {no:'二弦', midi:52}, {no:'一弦', midi:57} ]},
+  qu_lowb: { label:'变调 A-B-e-a', keys:false,
+    note:'曲目专用定弦：《海青》《霸王卸甲》等。',
+    strings:[ {no:'四弦', midi:45}, {no:'三弦', midi:47}, {no:'二弦', midi:52}, {no:'一弦', midi:57} ]},
+  wuxian1: { label:'五弦 ① E-A-d-e-a', keys:false,
+    note:'五弦琵琶历代定弦记载不一，这是其中一说 —— 以核实表为准。',
+    strings:[ {no:'五弦', midi:40}, {no:'四弦', midi:45}, {no:'三弦', midi:50}, {no:'二弦', midi:52}, {no:'一弦', midi:57} ]},
+  wuxian2: { label:'五弦 ② A-d-a-d¹-a¹', keys:false,
+    note:'五弦琵琶历代定弦记载不一，这是其中一说 —— 以核实表为准。',
+    strings:[ {no:'五弦', midi:45}, {no:'四弦', midi:50}, {no:'三弦', midi:57}, {no:'二弦', midi:62}, {no:'一弦', midi:69} ]},
+  wuxian3: { label:'五弦 ③ A-d-g-a-d¹', keys:false,
+    note:'五弦琵琶历代定弦记载不一，这是其中一说 —— 以核实表为准。',
+    strings:[ {no:'五弦', midi:45}, {no:'四弦', midi:50}, {no:'三弦', midi:55}, {no:'二弦', midi:57}, {no:'一弦', midi:62} ]},
+  custom:  { label:'自定义', keys:false, note:'',
+    strings:[ {no:'四弦', midi:45}, {no:'三弦', midi:50}, {no:'二弦', midi:52}, {no:'一弦', midi:57} ]},   // 界面可改
+};
+
+/* 六个常用调。tonic = 主音音级（0=C … 11=B）。label 里是四弦→一弦的唱名，闸门对表。 */
+const KEYS = {
+  D:  { label:'D调 5-1-2-5',   tonic:2  },
+  G:  { label:'G调 2-5-6-2',   tonic:7  },
+  C:  { label:'C调 6-2-3-6',   tonic:0  },
+  F:  { label:'F调 3-6-7-3',   tonic:5  },
+  bB: { label:'降B调 7-3-#4-7', tonic:10 },
+  A:  { label:'A调 1-4-5-1',   tonic:9  },
+};
+/* 七声。**6:'#4' 是琵琶专有的一级**：1=降B 时二弦 E3 正好落在三全音上；二胡那六个调从没碰到过。 */
+const DEG_BY_SEMI = { 0:'1', 2:'2', 4:'3', 5:'4', 6:'#4', 7:'5', 9:'6', 11:'7' };
+
+/* 离最近目标弦多少音分内算「在调这根」。**琵琶必须比其他三件紧**：
+   最小相邻音程是 三弦 D3 → 二弦 E3 的大二度 = 200 音分，中点就在 100 音分处，
+   所以这个数必须 < 100，取 70（= 半音程的 0.7，与二胡 250/350≈0.71 同比例）。
+   对照：二胡 250 / 古筝 100 / 阮 60。弦松过头时用户仍可「锁定」那根弦看音分 —— 锁定会绕过匹配。 */
+const MATCH_CENTS = 70;
+/*==CORE-END==*/
+
+/* ================= 界面 ================= */
+const $ = (id) => document.getElementById(id);
+const el = {
+  panels:$('panels'), fig:$('fig'), hint:$('hint'), reset:$('reset'), lfill:$('lfill'),
+  toggle:$('toggle'), msg:$('msg'), presetnote:$('presetnote'),
+  presets:$('presets'), keys:$('keys'), keyrow:$('keyrow'), keynote:$('keynote'),
+  cust:[$('c0'), $('c1'), $('c2'), $('c3')], capply:$('capply'), sens:$('sens'), sensval:$('sensval'),
+  a4:$('a4'), theme:$('theme'), themeIcon:$('themeIcon')
+};
+
+let preset = 'standard', key = 'D', a4 = 442, lockedIdx = null;   // 442 = 乐团标准音
+let running = false, playing = false;
+let audioCtx = null, analyser = null, stream = null, buf = null, raf = 0, lastRun = 0, lastVoice = 0;
+let rmsGate = RMS_GATE;
+let activeIdx = -1, inTune = false;
+
+/* 「已调准」是**记录**不是实时状态：绿了就不掉，切去调别的弦它照样绿（四根全绿=调完了）。
+   只有「切回那根弦」时才重新实时测它，跑偏就掉绿。换定弦/改 A4 清空（目标音高变了），换调不清。 */
+let tuned = [];
+let okIdx = -1, okStreak = 0;                       // 连续几次检测都进绿区（防假绿）
+const OK_CENTS  = 5;                                // 与既有 .pt.ok 指针同一条线
+const OK_HYST   = 8;                                // 掉绿要超过这条线（迟滞，免得在边缘闪）
+const OK_STREAK = 3;                                // 连续 3 帧（约 180ms）都进 ±5 才认
+let warned = false;                                 // 看门狗是否正占着提示行
+
+const WATCHDOG_MS = 15000;  // 静音这么久就提示。琵琶是**拨弦**：拨一下响一两秒就衰减没了、要反复拨，
+                            // 所以比二胡（8s，弓不离弦）放长。真机上拨几下再定。
+
+function currentStrings() { return stringsOf(preset, key, a4); }
+
+function solHTML(deg, dots) {
+  const top = dots > 0 ? '•'.repeat(dots) : '';
+  const bot = dots < 0 ? '•'.repeat(-dots) : '';
+  return '<span class="sol">'
+       + (top ? '<span class="dt">' + top + '</span>' : '')
+       + deg
+       + (bot ? '<span class="db">' + bot + '</span>' : '')
+       + '</span>';
+}
+
+/* ---------- 乐器图：只当显示器，不接受点击（所以不受 44px 触控约束） ---------- */
+const FIG_CX = 100, FIG_TOP = 10, FIG_ROW = 15, FIG_HALF = 38;
+const FIG_BOT = 126, FIG_LAB = 143;
+let figNodes = [];                                  // 重建后缓存节点，刷状态不必再查 DOM
+
+function renderFigure() {
+  const ss = currentStrings(), n = ss.length;
+  const nutY = FIG_TOP + (Math.ceil(n / 2) - 1) * FIG_ROW + 15;   // 山口：给弦轴让出几行
+  const yBot = 144;
+  const hw = FIG_HALF + 13, nw = FIG_HALF + 9, bw = FIG_HALF + 21;
+  let g = '';
+  // 琴头（弦轴座）+ 琴颈（往下渐宽）
+  g += '<rect class="frame" x="' + (FIG_CX - hw) + '" y="7" width="' + (2 * hw) + '" height="' + (nutY - 13) + '" rx="9"/>';
+  g += '<path class="frame" d="M' + (FIG_CX - nw) + ' ' + nutY + ' L' + (FIG_CX - bw) + ' ' + yBot
+     + ' H' + (FIG_CX + bw) + ' L' + (FIG_CX + nw) + ' ' + nutY + ' Z"/>';
+  // 弦轴：左右轮流、各占一行（五弦也放得下）
+  for (let i = 0; i < n; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const y = FIG_TOP + Math.floor(i / 2) * FIG_ROW;
+    const x1 = FIG_CX + side * (hw - 2);
+    g += '<line class="peg" data-i="' + i + '" x1="' + x1 + '" y1="' + y + '" x2="' + (x1 + side * 16) + '" y2="' + y + '"/>';
+  }
+  // 山口 + 三道品
+  g += '<line class="frame" x1="' + (FIG_CX - nw - 5) + '" y1="' + nutY + '" x2="' + (FIG_CX + nw + 5) + '" y2="' + nutY + '" stroke-width="2"/>';
+  for (let k = 1; k <= 3; k++) {
+    const y = nutY + k * (yBot - nutY) / 4;
+    const w = nw + (bw - nw) * (y - nutY) / (yBot - nutY) - 6;
+    g += '<line class="frame" x1="' + (FIG_CX - w) + '" y1="' + y + '" x2="' + (FIG_CX + w) + '" y2="' + y + '"/>';
+  }
+  // 弦 + 末端小字（四/三/二/一，与面板上的弦名对得上）
+  const sp = n > 1 ? (FIG_HALF * 2) / (n - 1) : 0;
+  for (let i = 0; i < n; i++) {
+    const x = FIG_CX - FIG_HALF + i * sp;
+    g += '<line class="str" data-i="' + i + '" x1="' + x + '" y1="' + nutY + '" x2="' + x + '" y2="' + FIG_BOT + '"/>';
+    g += '<text class="lab" data-i="' + i + '" x="' + x + '" y="' + FIG_LAB + '">' + ss[i].no.replace(/弦$/, '') + '</text>';
+  }
+  el.fig.innerHTML = g;
+  el.fig.setAttribute('aria-label', '琵琶琴颈示意图：' + ss.map(function (s) { return s.no + ' ' + s.name; }).join('、'));
+  figNodes = ss.map(function (s, i) {
+    return { str: el.fig.querySelector('.str[data-i="' + i + '"]'),
+             peg: el.fig.querySelector('.peg[data-i="' + i + '"]'),
+             lab: el.fig.querySelector('.lab[data-i="' + i + '"]') };
+  });
+}
+
+/* 图上三状态：准了（绿·记录）> 选中（浓墨加粗）> 普通（淡墨细） */
+function paintFigure(idx) {
+  for (let i = 0; i < figNodes.length; i++) {
+    const st = tuned[i] ? ' tuned' : (i === idx ? ' sel' : '');
+    const nd = figNodes[i];
+    if (nd.str) nd.str.setAttribute('class', 'str' + st);
+    if (nd.peg) nd.peg.setAttribute('class', 'peg' + st);
+    if (nd.lab) nd.lab.setAttribute('class', 'lab' + st);
+  }
+}
+
+function setHint(text, cls) {
+  el.hint.className = 'hint' + (cls ? ' ' + cls : '');
+  el.hint.textContent = text || '';
+}
+
+/* ---------- 四面板 ---------- */
+function renderPanels(keepTuned) {
+  const ss = currentStrings();
+  el.panels.innerHTML = '';
+  ss.forEach(function (s, i) {
+    const d = document.createElement('div');
+    d.className = 'panel'; d.dataset.i = i;
+    d.innerHTML =
+      '<span class="tag">' + s.no + ' · ' + s.name + '</span>'
+      + '<button class="listen" data-i="' + i + '" aria-label="听' + s.no + '参考音" title="听参考音">'
+      +   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h3l5 4V5L7 9H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg>'
+      + '</button>'
+      + '<div class="big">' + (s.deg ? solHTML(s.deg, s.dots) : s.name) + '</div>'
+      + '<div class="track"><div class="mid"></div><div class="pt off"></div></div>'
+      + '<div class="cents">—<span class="hz"></span></div>';
+    el.panels.appendChild(d);
+  });
+  if (!keepTuned) tuned = ss.map(function () { return false; });   // 换调不清（换调不改频率），其余都清
+  renderFigure();
+  activeIdx = -1; inTune = false; okIdx = -1; okStreak = 0;
+  paintPanels(-1, false);
+}
+
+function paintPanels(idx, ok) {
+  activeIdx = idx; inTune = ok;
+  const kids = el.panels.children;
+  for (let i = 0; i < kids.length; i++) {
+    const p = kids[i];
+    let cls = 'panel';
+    if (lockedIdx === i) cls += ' locked';
+    if (tuned[i]) cls += ' ok';                      // 记录态：已调准的弦一直亮着
+    else if (i === idx) cls += ok ? ' ok' : ' active';
+    if (idx >= 0 && i !== idx && !tuned[i] && lockedIdx !== i) cls += ' dim';
+    p.className = cls;
+  }
+  paintFigure(idx);
+}
+
+function showIdlePanels(tag) {
+  const ss = currentStrings();
+  for (let i = 0; i < el.panels.children.length; i++) {
+    const p = el.panels.children[i];
+    p.querySelector('.pt').className = 'pt off';
+    p.querySelector('.pt').style.left = '50%';
+    p.querySelector('.cents').innerHTML = '—<span class="hz">目标 ' + ss[i].freq.toFixed(1) + '</span>';
+  }
+  okIdx = -1; okStreak = 0;
+  if (!warned) setHint(tag || '');                   // 看门狗正占着这行时别擦掉它
+  paintPanels(-1, false);
+}
+
+function setMsg(text, isErr) {
+  if (!text) { el.msg.className = 'msg hide'; el.msg.textContent = ''; return; }
+  el.msg.className = 'msg' + (isErr ? ' err' : '');
+  el.msg.textContent = text;
+}
+function showWd(on) {
+  if (on === warned) return;
+  warned = on;
+  setHint(on ? '还没听到声音 · 拨一根弦试试' : '', on ? 'warn' : '');
+}
+
+/* ---------- 高级区 ---------- */
+function renderPresets() {
+  el.presets.innerHTML = '';
+  Object.keys(TUNINGS).forEach(function (p) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pick' + (p === preset ? ' on' : '');
+    b.dataset.preset = p; b.textContent = TUNINGS[p].label;
+    el.presets.appendChild(b);
+  });
+  el.presetnote.textContent = TUNINGS[preset].note || '';
+}
+function renderKeys() {
+  el.keys.innerHTML = '';
+  Object.keys(KEYS).forEach(function (k) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pick' + (k === key ? ' on' : '');
+    b.dataset.key = k; b.textContent = KEYS[k].label;
+    el.keys.appendChild(b);
+  });
+  const t = TUNINGS[preset];
+  el.keyrow.style.display = t.keys ? '' : 'none';
+  el.keynote.textContent = t.keys
+    ? '六个常用调（四弦→一弦）：D 5-1-2-5 / G 2-5-6-2 / C 6-2-3-6 / F 3-6-7-3 / 降B 7-3-#4-7 / A 1-4-5-1。换调只改谱面唱名，四根弦的音高一根都不动。'
+    : t.label + ' 用固定唱名，不参与换调。';
+}
+
+/* ---------- 听参考音（播放时暂停检测，否则麦克风会听见自己） ---------- */
+function playRef(freq) {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  if (!audioCtx) audioCtx = new Ctx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const t0 = audioCtx.currentTime;
+  const dur = 1.2, rel = 1.0;                       // 起音 10ms / 释音 1000ms（照 bg_tuner.pd）
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(0.22, t0 + 0.01);
+  g.gain.setValueAtTime(0.22, t0 + dur);
+  g.gain.linearRampToValueAtTime(0, t0 + dur + rel);
+  g.connect(audioCtx.destination);
+  [[1, 1], [2, 0.28], [3, 0.12]].forEach(function (h) {
+    const o = audioCtx.createOscillator(), og = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq * h[0];
+    og.gain.value = h[1];
+    o.connect(og); og.connect(g); o.start(t0); o.stop(t0 + dur + rel + 0.05);
+  });
+  playing = true;
+  setMsg('正在放参考音，放完自动继续听音。', false);
+  setTimeout(function () {
+    playing = false;
+    setMsg('');
+    lastVoice = performance.now();
+  }, (dur + rel) * 1000 + 60);
+}
+
+/* ---------- 渲染一帧 ---------- */
+function paint(freq, rms, clarity) {
+  el.lfill.style.width = Math.min(100, rms * 420) + '%';
+  const ss = currentStrings();
+
+  if (freq <= 0 || clarity < CLARITY_GATE) {
+    if (activeIdx >= 0) showIdlePanels('');
+    return;
+  }
+  lastVoice = performance.now();
+  showWd(false);
+
+  const mf = freqToMidiFloat(freq, a4);
+  let hit;
+  if (lockedIdx !== null) {
+    hit = { i: lockedIdx, cents: (mf - ss[lockedIdx].midi) * 100 };
+  } else {
+    hit = matchString(freq, ss, a4);
+    if (!hit) {                                   // 不在定弦附近：只报实测 Hz，不认弦
+      for (let i = 0; i < ss.length; i++) {
+        const p = el.panels.children[i];
+        p.querySelector('.pt').className = 'pt off';
+        p.querySelector('.cents').innerHTML = '<span class="hz">' + freq.toFixed(1) + '</span>';
+      }
+      setHint('这个音对不上任何一根弦（' + freq.toFixed(1) + 'Hz）');
+      okIdx = -1; okStreak = 0;
+      paintPanels(-1, false);
+      return;
+    }
+  }
+
+  const c = hit.cents;
+  /* 起音偏高、衰减中会飘，单帧判定会假绿也会闪绿：连续 3 帧都进 ±5 才置绿，掉出 ±8 才撤。
+     5~8 音分之间是死区，什么都不改。 */
+  const inGreen = Math.abs(c) <= OK_CENTS;
+  if (hit.i !== okIdx) { okIdx = hit.i; okStreak = 0; }
+  if (inGreen) {
+    if (++okStreak >= OK_STREAK) tuned[hit.i] = true;
+  } else {
+    okStreak = 0;                                  // 断一次就从头数（数的是「连续」）
+    if (Math.abs(c) > OK_HYST) tuned[hit.i] = false;   // 切回该弦时重新实测，跑偏就掉绿
+  }
+  const ok = inGreen;
+
+  for (let i = 0; i < ss.length; i++) {
+    const p = el.panels.children[i];
+    if (i !== hit.i) {                            // 另外几根弦：不显示电平，只留目标
+      p.querySelector('.pt').className = 'pt off';
+      p.querySelector('.cents').innerHTML = '—<span class="hz">目标 ' + ss[i].freq.toFixed(1) + '</span>';
+      continue;
+    }
+    const pct = Math.max(-50, Math.min(50, c));
+    const pt = p.querySelector('.pt');
+    pt.className = 'pt' + (ok ? ' ok' : '');
+    pt.style.left = (50 + pct) + '%';
+    const sign = c > 0 ? '+' : (c < 0 ? '−' : '');
+    p.querySelector('.cents').innerHTML = (ok ? '准' : sign + Math.abs(c).toFixed(0) + '<small>音分</small>')
+      + '<span class="hz">' + freq.toFixed(1) + '</span>';
+  }
+  setHint(ss[hit.i].no + (ok ? ' 准了' : (c < 0 ? ' 偏低 · 拧紧弦轴' : ' 偏高 · 拧松弦轴')), ok ? 'ok' : '');
+  paintPanels(hit.i, ok);
+}
+
+/* ---------- 主循环 ---------- */
+function loop(now) {
+  raf = requestAnimationFrame(loop);
+  if (!analyser) return;
+  if (now - lastRun < 60) return;                 // 约 16 次/秒，够用也不烧 CPU
+  lastRun = now;
+  if (playing) return;                            // 放参考音时闭嘴，别听自己
+  if (themeFading) return;                        // 转场中别每 60ms 去失效底层页面：那层正被逐帧重裁
+  analyser.getFloatTimeDomainData(buf);
+  const r = mpmPitch(buf, audioCtx.sampleRate, { rmsGate: rmsGate });
+  paint(r.freq, r.rms, r.clarity);
+  if (r.freq > 0 && r.clarity >= CLARITY_GATE) lastVoice = now;
+  else if (now - lastVoice > WATCHDOG_MS) showWd(true);
+}
+
+async function start() {
+  el.toggle.disabled = true;
+  setMsg('');
+  try {
+    // iOS Safari：AudioContext 必须在点击回调里同步建好，且放在 await 之前
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw Object.assign(new Error('no mediaDevices'), { name: 'NoMediaDevices' });
+    }
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 4096;                      // ≈93ms 窗，够覆盖最低弦 A2=110 的 10 个周期
+    analyser.smoothingTimeConstant = 0;
+    buf = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    running = true;
+    el.toggle.textContent = '停止';
+    el.toggle.classList.add('stop');
+    showIdlePanels('');
+    showWd(false);
+    lastRun = 0; lastVoice = performance.now();
+    raf = requestAnimationFrame(loop);
+  } catch (e) {
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+    const n = e && e.name;
+    if (n === 'NotAllowedError')
+      setMsg('麦克风被拒绝了。点地址栏左边的图标把「麦克风」改成允许；若手机同时弹了系统权限框，选「允许」，再点一次开始。', true);
+    else if (n === 'NotFoundError')
+      setMsg('没找到麦克风设备。', true);
+    else if (n === 'NoMediaDevices' || !navigator.mediaDevices)
+      setMsg('这个地址拿不到麦克风。需要用 https 链接打开（本机用 http://localhost 也行），普通 http 网址不行。', true);
+    else
+      // NotReadableError（"Could not start audio source"）也落到这里：安卓系统层没给这个浏览器麦克风权限
+      // 时最常报它（系统还会自动收回久未使用 App 的权限）⇒ 给能照做的中文，别把英文原样抛给团员
+      setMsg('麦克风起不来。请到手机「设置 → 应用管理」给这个浏览器开麦克风权限（选「仅在使用时允许」），再点一次；还不行就换手机自带浏览器或 Chrome 打开。', true);
+  } finally {
+    el.toggle.disabled = false;
+  }
+}
+
+function stop() {
+  cancelAnimationFrame(raf); raf = 0;
+  if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+  if (audioCtx) audioCtx.close();
+  stream = null; audioCtx = null; analyser = null; running = false; playing = false;
+  el.toggle.textContent = '开始调音';
+  el.toggle.classList.remove('stop');
+  showIdlePanels(''); showWd(false); setMsg('');
+}
+
+/* ---------- 事件 ---------- */
+el.toggle.addEventListener('click', function () { running ? stop() : start(); });
+
+el.panels.addEventListener('click', function (e) {
+  const l = e.target.closest('.listen');
+  if (l) {                                        // 听参考音
+    const i = Number(l.dataset.i);
+    playRef(currentStrings()[i].freq);
+    return;
+  }
+  const p = e.target.closest('.panel');
+  if (!p) return;
+  const i = Number(p.dataset.i);
+  lockedIdx = (lockedIdx === i) ? null : i;        // 点一下锁定，再点取消
+  paintPanels(activeIdx, inTune);
+});
+
+/* 重调：清空「已调准」记录，四根弦一起灰回去。不动定弦、不动锁定。 */
+el.reset.addEventListener('click', function () {
+  tuned = currentStrings().map(function () { return false; });
+  okIdx = -1; okStreak = 0;
+  paintPanels(-1, false);
+});
+
+el.presets.addEventListener('click', function (e) {
+  const b = e.target.closest('.pick'); if (!b) return;
+  preset = b.dataset.preset;
+  lockedIdx = null;
+  renderPresets(); renderKeys(); renderPanels(); showIdlePanels(''); setMsg('');
+});
+
+el.keys.addEventListener('click', function (e) {
+  const b = e.target.closest('.pick'); if (!b) return;
+  key = b.dataset.key;
+  lockedIdx = null;                                // 换调只改唱名，四根弦的目标频率一根都不动
+  renderKeys(); renderPanels(true); showIdlePanels(''); setMsg('');   // 频率没变 → 调准记录留着
+});
+
+const CUST_NO = ['四弦', '三弦', '二弦', '一弦'];
+el.capply.addEventListener('click', function () {
+  const v = el.cust.map(function (inp) { return parseTarget(inp.value); });
+  if (v.some(function (x) { return x === null; })) {
+    setMsg('定弦写法不认识。四/三/二/一弦依次填 —— 例：A2 / D3 / E3 / A3，或直接填 Hz（如 110）。已退回原定弦。', true);
+    return;
+  }
+  TUNINGS.custom.strings = v.map(function (m, i) { return { no: CUST_NO[i], midi: m }; });
+  preset = 'custom';
+  lockedIdx = null;
+  renderPresets(); renderKeys(); renderPanels(); showIdlePanels(''); setMsg('');
+});
+
+el.sens.addEventListener('input', function () {
+  rmsGate = 0.001 * Math.pow(20, Number(el.sens.value) / 100);   // 0.001 ~ 0.02（对数）
+  el.sensval.textContent = rmsGate.toFixed(4);
+});
+
+el.a4.addEventListener('change', function () {
+  const v = parseFloat(el.a4.value);
+  a4 = (isFinite(v) && v >= 400 && v <= 480) ? v : 442;   // 越界退回乐团标准音，不是 440
+  el.a4.value = a4;
+  /* 这里**不能**用 renderPanels()。A4 的 change 是用户「点到别处」才触发的：点面板那一下，
+     mousedown 先让输入框失焦、change 当场把四块面板的 DOM 全换掉，等手指抬起（mouseup）时
+     按下时的那个节点已经不在文档里，click 根本不落到 .panels 上 —— 表现为**改完 A4 后
+     第一次点面板没反应、要点两次**。目标音高变了要清空「已调准」记录，就地做即可；
+     面板上「目标 X.X」的显示本来就由 showIdlePanels() 现刷，不需要重建节点。 */
+  tuned = currentStrings().map(function () { return false; });
+  okIdx = -1; okStreak = 0;
+  showIdlePanels('');
+});
+
+/* 夜墨开关：揭幕层里放一份「目标主题」的整页内容克隆，圆从按钮圆心揭开，铺满后才换主题。
+   主题放在最后改 + 与摘层同一个 tick，所以全程没有中间帧，收尾不闪。 */
+const SUN_ICON = '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path>';
+const MOON_ICON = '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"></path>';
+let themeBusy = false, themeFading = false;      // themeFading：转场期间让麦克风循环闭嘴
+
+function prefersReduced() {                       // 每次现查：系统设置中途改了也能跟上（回归要模拟它）
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function syncThemeIcon(night) {
+  el.themeIcon.innerHTML = night ? SUN_ICON : MOON_ICON;
+  el.theme.setAttribute('aria-pressed', night ? 'true' : 'false');
+}
+function applyTheme(night) {
+  document.documentElement.setAttribute('data-theme', night ? 'night' : '');
+  syncThemeIcon(night);
+}
+
+el.theme.addEventListener('click', function () {
+  if (themeBusy) return;                          // 转场中就忽略，免得叠出坏中间态
+  const night = document.documentElement.getAttribute('data-theme') === 'night';
+  const next = !night;
+  if (prefersReduced()) { applyTheme(next); return; }
+
+  themeBusy = true; themeFading = true;
+  const r = el.theme.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;   // 视口坐标，与 fixed 的揭幕布同一系
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const cr = Math.hypot(Math.max(cx, vw - cx), Math.max(cy, vh - cy)) * 1.02;  // 铺满整屏还要兜住最远角
+
+  const layer = document.createElement('div');
+  layer.id = 'curtain';
+  layer.className = 'curtain';
+  layer.setAttribute('data-theme', next ? 'night' : 'paper');   // 按「目标」主题取 token（克隆靠它换色）
+  layer.setAttribute('aria-hidden', 'true');
+  if ('inert' in HTMLElement.prototype) layer.inert = true;     // 克隆不接焦点、不读给读屏
+
+  // 克隆整页内容：圆扫过处看到的是「同一份内容在目标主题下的渲染」——字和面板都还在，只是配色变了
+  const live = document.querySelector('.wrap');
+  const holder = document.createElement('div');
+  holder.className = 'cwrap';
+  holder.style.transform = 'translateY(' + (-window.scrollY) + 'px)';   // 文档坐标 → fixed 视口坐标
+  const clone = live.cloneNode(true);
+  holder.appendChild(clone);
+  layer.appendChild(holder);
+  // 用户手打的 input 值克隆不过来（属性 ≠ 属性值），按顺序补一次
+  const src = live.querySelectorAll('input'), dst = clone.querySelectorAll('input');
+  for (let i = 0; i < src.length; i++) dst[i].value = src[i].value;
+  // 克隆里那颗日月图标与 aria 也先摆成目标态，否则转场中图标是旧的、收尾才跳
+  clone.querySelector('#themeIcon').innerHTML = next ? SUN_ICON : MOON_ICON;
+  clone.querySelector('#theme').setAttribute('aria-pressed', next ? 'true' : 'false');
+
+  layer.style.setProperty('--cx', cx + 'px');
+  layer.style.setProperty('--cy', cy + 'px');
+  layer.style.setProperty('--cr', cr + 'px');
+  document.body.appendChild(layer);
+  layer.getBoundingClientRect();                  // 强制把起始态提交掉，clip-path 过渡才会跑
+
+  let done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    applyTheme(next);
+    layer.remove();
+    themeBusy = false; themeFading = false;
+  }
+  layer.addEventListener('transitionend', function (e) {
+    if (e.target === layer && e.propertyName === 'clip-path') finish();
+  });
+  // transitionend 万一不来就兜底收尾。**必须跟着实际时长走**：写死 700ms 的话，
+  // 一旦有人改了 CSS 时长、或机器慢到把 transitionend 拖后，兜底会抢跑、把揭幕截断。
+  const dur = parseFloat(getComputedStyle(layer).transitionDuration) * 1000 || 480;
+  setTimeout(finish, dur + 250);
+
+  layer.classList.add('go');
+});
+
+/* ---------- 初始化 ---------- */
+rmsGate = 0.001 * Math.pow(20, Number(el.sens.value) / 100);
+el.sensval.textContent = rmsGate.toFixed(4);
+renderPresets(); renderKeys(); renderPanels(); showIdlePanels('');
+syncThemeIcon(document.documentElement.getAttribute('data-theme') === 'night');
+</script>
+</body>
+</html>

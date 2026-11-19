@@ -1,0 +1,46 @@
+spring:
+  profiles:
+    default: local
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/band?characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: band_app
+  servlet:
+    multipart:
+      # ⚠️ 默认只有 1MB：不放开的话，超过 1MB 的上传会以"上传失败"的形式炸在这里，与真实的尺寸校验无关
+      max-file-size: 25MB
+      max-request-size: 30MB
+
+server:
+  port: 8080
+  compression:
+    # 打开响应压缩。起因：`docs/12` §12.6 的 Nginx 配置**没有 gzip/brotli**，
+    # 于是首屏那几份资源是明文传的（实测 `bootstrap.min.css` 232KB + `band.css` 117KB +
+    # `app.js` 122KB + `bootstrap.bundle.min.js` 81KB），网络慢时会把"打开页面"那一下的
+    # 白窗拉长（见 `debug_log` 2026-09-30「首帧白闪」：白窗长度 = 提交 → first-paint）。
+    # ⚠️ **本机 localhost 收益 ≈ 0**（同一台机器传输本来只要 ~13ms），它治的是**网络上**那一段。
+    # ⚠️ 在 jar 这层开，是为了**不依赖服务器有没有配 Nginx gzip**。
+    enabled: true
+    mime-types: text/html,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024   # 默认 2048；小文件（如 band-nav.js 3.5KB）不值得压
+
+band:
+  storage:
+    # 上传文件的落盘目录：**在仓库之外、不进 git**（docs/08 §8.5）。
+    # 服务器按 docs/12 改成 /data/band/uploads/；本机默认放用户目录下。
+    dir: ${user.home}/band-uploads
+    # 单文件上限（可配置，见移交事项：规格原文只写"校验类型与大小"，没给数值）
+    max-audio-bytes: 20971520   # 20MB（8 分钟的 m4a 约 6~10MB，留足余量）
+    max-image-bytes: 8388608    # 8MB（前端会先压到长边 1920 / 质量 80%，约 1~2MB）
+    max-score-bytes: 20971520   # 20MB（谱子 PDF）
+    # 存储用量警戒线：超过它就在管理后台把用量那一行标成醒目色（docs/08 §8.3「到阈值时提醒管理员」）。
+    # ⚠️ 规格没给这个数值，取 2GB 并做成可配置（已记移交请规格登记）。**只提醒，绝不自动删任何东西。**
+    warn-bytes: 2147483648
+  backup:
+    # 备份脚本写的状态文件（docs/12 §12.5「⚡ 备份成败怎么让应用知道」）。
+    # ⚠️ **脚本写、应用只读**：应用绝不发起备份、也不写这个文件（理由见 BackupStatusService 的注释）。
+    # 服务器上就是 /opt/band/backup-status.json，与备份脚本里那条路径必须逐字相同。
+    status-file: /opt/band/backup-status.json
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true

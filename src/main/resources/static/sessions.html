@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>登录设备 · 乐团管理系统</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#13211D">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/pwa-252/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/pwa-252/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="山水乐团">
+
+<link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+<link rel="stylesheet" href="/band.css">
+<script src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/band-nav.js"></script>
+<script src="/band-alive.js"></script>
+<script src="/band-core.js"></script>
+<script src="/band-media.js"></script>
+<script src="/band-notify.js"></script>
+<script src="/band-profile.js"></script>
+<script src="/band-shell.js"></script>
+<script src="/band-welcome.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<!-- 2026-10-18 精装：当前行铺浅绿底 +「当前设备」徽标，且**不渲染踢按钮**；手机转两行式行卡。 -->
+<div class="table-card">
+  <table class="tb dv-table" id="sessions-table">
+    <thead><tr><th>设备</th><th>IP</th><th>登录时间</th><th>最后活跃</th><th class="act">当前</th><th class="act"></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<p class="dv-note">登出不影响其他设备；改密码会让所有设备退出。过期与已踢的会话不在此列，但服务端保留为登录流水。</p>
+<p id="dv-others-note" class="dv-note" hidden>除当前设备外，没有别的登录记录了。</p>
+
+<div class="dv-actions">
+  <button class="go go-ghost go-sm" id="revoke-others">踢掉其他所有设备</button>
+</div>
+
+<script>
+const fmt = (iso) => iso ? BAND.stamp(iso) : '—';
+
+async function load() {
+  const me = await BAND.renderNav('sessions.html');
+  if (!me) return;
+  const list = await BAND.must('/api/auth/sessions');
+  const tbody = document.getElementById('rows');
+  tbody.innerHTML = '';
+  for (const s of list) {
+    const tr = document.createElement('tr');
+    tr.className = s.current ? 'cur' : '';
+    tr.innerHTML = '<td class="dev"></td><td class="ip"></td><td class="when login"></td>'
+      + '<td class="when live"></td><td class="cur"></td><td class="act"></td>';
+    tr.children[0].textContent = s.device;
+    tr.children[1].textContent = s.ip || '—';
+    tr.children[2].textContent = fmt(s.issuedAt);
+    tr.children[3].textContent = fmt(s.lastSeenAt);
+    const cur = tr.children[4];
+    const action = tr.children[5];
+    if (s.current) {
+      // 当前设备行：带徽标、**不给「踢」按钮**——踢自己等于登出，用「退出」就够了（docs/14 §14.6.4）
+      const badge = document.createElement('span');
+      badge.className = 'dev-chip';
+      badge.textContent = '当前设备';
+      cur.appendChild(badge);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'go go-ghost go-sm';
+      btn.textContent = '踢';
+      btn.addEventListener('click', async () => {
+        if (!await BAND.confirm({ title: `确定踢掉「${s.device}」？`, body: '该设备会立即退出登录。' })) return;
+        await BAND.must(`/api/auth/sessions/${s.id}/revoke`, { method: 'POST' });
+        BAND.toast('已踢掉', 'success');
+        load();
+      });
+      action.appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  }
+  // 只剩当前设备时：全踢按钮禁用，并给一句空态说明（不是把按钮藏起来）
+  const others = list.filter((s) => !s.current);
+  document.getElementById('revoke-others').disabled = others.length === 0;
+  document.getElementById('dv-others-note').hidden = others.length > 0;
+  BAND.alive(document.getElementById('sessions-table'));   // 「列表逐行入场」（docs/14 §14.6.4 ③）
+}
+
+// 「踢掉其他所有设备」放列表下方——它跟"某一台"不是一档操作，别混在同一列按钮里（docs/14 §14.6.4）
+document.getElementById('revoke-others').addEventListener('click', async () => {
+  if (!await BAND.confirm({ title: '确定踢掉其他所有设备？', body: '当前这台会保留。' })) return;
+  await BAND.must('/api/auth/sessions/revoke-others', { method: 'POST' });
+  BAND.toast('已踢掉其他所有设备', 'success');
+  load();
+});
+
+load();
+</script>
+</body>
+</html>
